@@ -1,0 +1,12 @@
+# Force LF for files that run inside Linux containers, so a Windows
+# checkout/clone doesn't reintroduce CRLF (which breaks bash scripts and
+# some config parsers). Fixes "mongod-setup exit 2" / mongot startup issues.
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.conf  text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# mongot password file must stay exactly as-is (no EOL, no normalization)
+config/pwfile -text

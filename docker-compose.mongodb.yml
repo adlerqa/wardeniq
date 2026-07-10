@@ -1,0 +1,107 @@
+# wardenIQ — bundled MongoDB (Community 8.3, 3-node HA replica set) + mongot search.
+# OPTIONAL: include this only if you want the built-in database. To use YOUR OWN
+# MongoDB instead, DON'T include this file and set MONGO_URI in .env (see .env.example).
+#
+#   full stack :  docker compose up -d --build            (docker-compose.yml includes this)
+#   just the DB:  docker compose -f docker-compose.mongodb.yml up -d
+#
+# This is a 3-member replica set (mongod1/2/3) for high availability — a real
+# deployment posture (one node can fail without downtime). It's heavier than a
+# single node (~3x the DB memory/disk); for a light local demo you can point
+# MONGO_URI at a single external MongoDB instead and skip this file.
+services:
+  mongod1:
+    image: ${MONGO_IMAGE:-mongodb/mongodb-community-server:8.3-ubi9}
+    container_name: warden-mongod1
+    command: ["--config", "/etc/mongod.conf", "--replSet", "rs0"]
+    ports: ["27017:27017"]
+    volumes:
+      - ./config/mongod.conf:/etc/mongod.conf:ro
+      - mongod1_data:/data/db
+    networks:
+      warden-net: { aliases: [mongod1.warden-net] }
+    healthcheck:
+      test: mongosh --quiet --eval "db.adminCommand('ping')" || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+    restart: unless-stopped
+
+  mongod2:
+    image: ${MONGO_IMAGE:-mongodb/mongodb-community-server:8.3-ubi9}
+    container_name: warden-mongod2
+    command: ["--config", "/etc/mongod.conf", "--replSet", "rs0"]
+    volumes:
+      - ./config/mongod.conf:/etc/mongod.conf:ro
+      - mongod2_data:/data/db
+    networks:
+      warden-net: { aliases: [mongod2.warden-net] }
+    healthcheck:
+      test: mongosh --quiet --eval "db.adminCommand('ping')" || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+    restart: unless-stopped
+
+  mongod3:
+    image: ${MONGO_IMAGE:-mongodb/mongodb-community-server:8.3-ubi9}
+    container_name: warden-mongod3
+    command: ["--config", "/etc/mongod.conf", "--replSet", "rs0"]
+    volumes:
+      - ./config/mongod.conf:/etc/mongod.conf:ro
+      - mongod3_data:/data/db
+    networks:
+      warden-net: { aliases: [mongod3.warden-net] }
+    healthcheck:
+      test: mongosh --quiet --eval "db.adminCommand('ping')" || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+    restart: unless-stopped
+
+  mongod-setup:
+    image: ${MONGO_IMAGE:-mongodb/mongodb-community-server:8.3-ubi9}
+    container_name: warden-setup
+    depends_on:
+      mongod1: { condition: service_healthy }
+      mongod2: { condition: service_healthy }
+      mongod3: { condition: service_healthy }
+    command: bash /setup-replica-set.sh
+    volumes:
+      - ./config/setup-replica-set.sh:/setup-replica-set.sh:ro
+    networks: [warden-net]
+    restart: "no"
+
+  # Self-managed MongoDB Search (mongot). The official image's entrypoint is fixed,
+  # so we wrap it with a script that self-heals a NUL-corrupted config journal and
+  # copies the secret to a private 0400 path, then execs the official binary.
+  mongot:
+    image: ${MONGOT_IMAGE:-mongodb/mongodb-community-search:0.65.1}
+    container_name: warden-mongot
+    entrypoint: ["/bin/sh", "/usr/local/bin/wardeniq-mongot-entrypoint.sh"]
+    environment:
+      - JAVA_TOOL_OPTIONS=-XX:+IgnoreUnrecognizedVMOptions -XX:UseSVE=0
+    depends_on:
+      mongod-setup: { condition: service_completed_successfully }
+    volumes:
+      - mongot_data:/var/lib/mongot
+      - ./config/mongot.conf:/mongot-community/config.default.yml:ro
+      - ./config/pwfile:/etc/mongot/secrets/passwordFile:ro
+      - ./config/mongot-entrypoint.sh:/usr/local/bin/wardeniq-mongot-entrypoint.sh:ro
+    ports: ["27027:27027", "9946:9946"]
+    networks:
+      warden-net: { aliases: [mongot.warden-net] }
+    restart: unless-stopped
+
+volumes:
+  mongod1_data:
+  mongod2_data:
+  mongod3_data:
+  mongot_data:
+
+networks:
+  warden-net:
+    name: warden-net

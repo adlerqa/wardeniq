@@ -1,0 +1,17 @@
+# wardenIQ — full bundled stack (app + MongoDB/mongot + Ollama).
+#
+# This file just COMBINES the three per-service files so `docker compose up` runs
+# everything together (the batteries-included / open-source quick-start):
+#   ./run.sh            or    docker compose up -d --build
+#
+# To run pieces on their own (e.g. bring your own database), target the files
+# directly instead — see docker-compose.app.yml and .env.example:
+#   bring your own DB :  MONGO_URI=... in .env, then
+#                        docker compose -f docker-compose.app.yml up -d
+#   app + own AI only :  docker compose -f docker-compose.app.yml -f docker-compose.mongodb.yml up -d
+#
+# (Requires Docker Compose v2.20+ for `include:`.)
+include:
+  - docker-compose.app.yml
+  - docker-compose.mongodb.yml
+  - docker-compose.ollama.yml

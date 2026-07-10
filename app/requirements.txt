@@ -1,0 +1,26 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pymongo==4.10.1
+dnspython==2.7.0          # required for mongodb+srv:// URIs (MongoDB Atlas / cloud)
+httpx==0.28.1
+python-multipart==0.0.20
+pypdf==5.1.0
+python-docx==1.1.2
+cryptography==44.0.0
+reportlab==4.2.5
+
+# --- code-intelligence: grounded parsing / matching / fast vector math ---
+# These power accurate, evidence-backed code coverage & commit analysis.
+unidiff==0.7.5            # unified-diff parsing with exact new-file line numbers
+numpy==2.2.6             # vectorized cosine over the in-memory code index
+tree-sitter==0.25.2     # multi-language, error-tolerant source parsing (offline)
+tree-sitter-python==0.25.0
+tree-sitter-javascript==0.25.0
+tree-sitter-typescript==0.23.2
+tree-sitter-go==0.25.0
+tree-sitter-java==0.23.5
+tree-sitter-ruby==0.23.1
+rank-bm25==0.2.2          # lexical BM25 for hybrid (lexical+vector) code retrieval
+json-repair==0.35.0
+openpyxl==3.1.5            # XLSX read/write for Import Sheet feature
+boto3==1.35.99            # AWS Bedrock provider (LLM + embeddings); imported lazily — only used when provider=bedrock

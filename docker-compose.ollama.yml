@@ -1,0 +1,40 @@
+# wardenIQ — bundled Ollama (local embeddings + LLM).
+# OPTIONAL: include this only if you want local models. To use a hosted provider
+# instead (OpenAI / Gemini / Voyage / Anthropic), DON'T include this file and
+# configure the provider in the app's Settings (or via env). The app talks to
+# Ollama via OLLAMA_URL, which defaults to this container.
+#
+#   full stack   :  docker compose up -d --build          (docker-compose.yml includes this)
+#   just Ollama  :  docker compose -f docker-compose.ollama.yml up -d
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: warden-ollama
+    ports: ["11434:11434"]
+    volumes: [ollama_data:/root/.ollama]
+    networks: [warden-net]
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 5s
+    restart: unless-stopped
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: warden-ollama-pull
+    depends_on:
+      ollama: { condition: service_healthy }
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: ["/bin/sh", "-c", "ollama pull ${EMBED_MODEL:-nomic-embed-text} && ollama pull ${GEN_MODEL:-qwen2.5:3b}"]
+    networks: [warden-net]
+    restart: "no"
+
+volumes:
+  ollama_data:
+
+networks:
+  warden-net:
+    name: warden-net

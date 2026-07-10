@@ -1,0 +1,25 @@
+# Keep the Docker build context small and reproducible. The image builds the
+# frontend from source (frontend/) and copies app/ — everything else is noise.
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/*.pyo
+.git
+.github
+.venv
+venv
+env
+logs
+tmp
+output
+tests
+.pytest_cache
+# Built SPA is produced by the frontend build stage, never taken from context.
+app/static-react
+frontend/dist
+frontend/.vite
+frontend/vite.config.js.timestamp-*
+# Never bake secrets or local env into the image (mounted at runtime instead).
+.env
+*.log
+.DS_Store

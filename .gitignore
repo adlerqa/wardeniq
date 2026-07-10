@@ -1,0 +1,66 @@
+# local env & secrets
+# (the placeholder template IS tracked; real .env stays ignored)
+.env
+.env.*
+!.env.example
+AGENTS.md
+docs
+
+# internal docs — only README.md is public
+*.md
+!README.md
+# captured logs
+logs/
+*.log
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# dependencies
+node_modules/
+
+# build / cache
+dist/
+build/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# built React SPA — produced by the frontend build / Docker image, not tracked
+app/static-react/
+frontend/.vite/
+frontend/vite.config.js.timestamp-*
+
+# os / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# docker / local database data
+data/
+postgres-data/
+docker-data/
+*.db
+*.sqlite
+*.sqlite3
+
+# local uploads / temp
+uploads/
+local_uploads/
+tmp/
+temp/
+
+# secrets / keys
+*.pem
+*.key
+*.crt
+service-account*.json

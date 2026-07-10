@@ -1,0 +1,82 @@
+# wardenIQ — the application (core). This is the ONLY service a client needs.
+#
+# The app connects to its database and AI purely via configuration, so you can
+# point it anywhere:
+#   MONGO_URI   — the database (bundled default, or YOUR own MongoDB with
+#                 username/password/SSL — see .env.example)
+#   OLLAMA_URL  — local Ollama, or leave default and use a hosted LLM/embedding
+#                 provider configured in the app's Settings
+#
+# Open-source users (have the code):   build from ./app  (default below)
+# Client / no source (e.g. on AWS):    set APP_IMAGE=<your-registry>/wardeniq:<tag>
+#                                       in .env and `docker pull` it — the build
+#                                       line stays dormant when the image exists.
+#
+#   full bundled stack :  docker compose up -d --build
+#   bring your own DB  :  set MONGO_URI in .env, then
+#                         docker compose -f docker-compose.app.yml up -d
+services:
+  wardeniq:
+    # Build context is the repo root so the image can compile frontend/ into the
+    # served SPA (see app/Dockerfile). `./run.sh` alone brings up a ready UI.
+    build:
+      context: .
+      dockerfile: app/Dockerfile
+    image: ${APP_IMAGE:-wardeniq:0.1.0-beta}
+    container_name: warden-app
+    ports: ["8001:8001"]
+    environment:
+      # ── Database & AI endpoints (the "bring your own" knobs) ──
+      # An explicit value in .env WINS and locks the field in the UI. Left unset,
+      # the app uses the *_BUNDLED default and the value is editable from the
+      # frontend (which writes it back into .env; see the ./.env mount below).
+      - MONGO_URI=${MONGO_URI:-}
+      - MONGO_URI_BUNDLED=mongodb://mongod1.warden-net:27017,mongod2.warden-net:27017,mongod3.warden-net:27017/?replicaSet=rs0
+      - OLLAMA_URL=${OLLAMA_URL:-}
+      - OLLAMA_URL_BUNDLED=http://ollama:11434
+      - ENV_FILE_PATH=/app/.env
+      - EMBED_MODEL=${EMBED_MODEL:-nomic-embed-text}
+      - EMBED_DIM=${EMBED_DIM:-768}
+      # Small default so the bundled (CPU-only in Docker) demo is usable everywhere.
+      # For higher quality, use a bigger model on native Ollama or a hosted provider.
+      - GEN_MODEL=${GEN_MODEL:-qwen2.5:3b}
+      - DB_NAME=${DB_NAME:-wardeniq}
+      # ── App config ──
+      - AUTO_SETUP=true
+      - APP_ENV=${APP_ENV:-development}
+      - APP_SECRET=${APP_SECRET:-change-me-in-production}
+      # Optional: split APP_SECRET's two roles. Blank = fall back to APP_SECRET.
+      - SESSION_SECRET=${SESSION_SECRET:-}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - POLL_INTERVAL_SECONDS=${POLL_INTERVAL_SECONDS:-120}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
+      - GEN_TOTAL=${GEN_TOTAL:-16}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-}
+      - COOKIE_SECURE=${COOKIE_SECURE:-false}
+      - SESSION_TTL_SECONDS=${SESSION_TTL_SECONDS:-604800}
+      - OTP_TTL_SECONDS=${OTP_TTL_SECONDS:-600}
+      - ALLOW_WEAK_SECRET=${ALLOW_WEAK_SECRET:-false}
+      # ── SMTP (optional; via .env, survives secret rotation) ──
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - SMTP_TLS=${SMTP_TLS:-true}
+      - SMTP_SSL=${SMTP_SSL:-false}
+      - APP_WORKSPACE_NAME=${APP_WORKSPACE_NAME:-WardenIQ}
+    # NOTE: no depends_on — the app retries its DB connection on boot, so this file
+    # can run standalone against an external MONGO_URI (bring-your-own-DB), and also
+    # works when merged with the bundled mongodb/ollama files.
+    volumes:
+      # Bind-mount the project's .env so the app can PERSIST frontend config changes
+      # (MongoDB URI) back into it. Changes apply on the next `docker compose up -d`
+      # (compose re-reads .env). Requires the file to exist — `run.sh` creates it.
+      - ./.env:/app/.env
+    networks: [warden-net]
+    restart: unless-stopped
+
+networks:
+  warden-net:
+    name: warden-net

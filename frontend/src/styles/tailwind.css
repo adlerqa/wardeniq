@@ -1,0 +1,12 @@
+/*
+ * Tailwind entry file. Because tailwind.config.js sets `corePlugins.preflight = false`,
+ * ONLY the utilities used by our React code are compiled — the legacy stylesheet
+ * in global.css keeps ownership of resets, typography, and base element styling.
+ *
+ * As you port views out of src/legacy/ into idiomatic React under src/features/,
+ * write markup using Tailwind utility classes here (bg-panel, text-muted,
+ * border-line, etc. — see tailwind.config.js for the design-token bridge).
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

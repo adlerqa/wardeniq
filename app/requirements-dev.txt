@@ -1,0 +1,5 @@
+# Dev / test dependencies (not needed at runtime).
+# Install with:  pip install -r app/requirements.txt -r app/requirements-dev.txt
+pytest==8.3.4
+pytest-mock==3.14.0
+ruff==0.8.4
