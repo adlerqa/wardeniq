@@ -95,6 +95,11 @@ class Store:
         )
         self.cases.create_index([("project_id", 1), ("identity_hash", 1)])
         self.cases.create_index([("project_id", 1), ("test_slug", 1)])
+        # Backs the step-library usage count (previously an unindexed collscan
+        # per step, which turned /api/steps into an O(N) hot path).
+        self.cases.create_index([("step_ids", 1)])
+        # Cheap lookup for the stale-job sweeper (running + updated_at range).
+        self.db["jobs"].create_index([("status", 1), ("updated_at", 1)])
         self.feature_imports.create_index([("project_id", 1), ("feature_id", 1), ("file_sha256", 1)])
         self.feature_imports.create_index([("project_id", 1), ("file_sha256", 1)])
         self.feature_imports.create_index([("project_id", 1), ("content_signature_sha256", 1)])
@@ -635,6 +640,50 @@ class Store:
             print(f"[Jobs] Marked {len(orphaned)} orphaned running job(s) as failed.", flush=True)
         return len(orphaned)
 
+    def sweep_stale_jobs(self, ttl_seconds=600):
+        """Fail any 'running' job whose heartbeat (`updated_at`) is older than
+        ttl_seconds. Workers call update_job_progress() regularly, so a stale
+        updated_at means the worker thread is dead or hung. Runs on a timer,
+        not just at startup, so live-process hangs also recover and the UI
+        stops spinning forever.
+        """
+        now = time.time()
+        cutoff = now - ttl_seconds
+        stale = list(self.db["jobs"].find(
+            {"status": "running", "updated_at": {"$lt": cutoff}},
+            {"_id": 1, "stage": 1, "updated_at": 1}))
+        for job in stale:
+            stage = job.get("stage") or "unknown"
+            idle = int(now - float(job.get("updated_at") or now))
+            message = (
+                f"Worker heartbeat lost — no progress for {idle}s while at: "
+                f"{stage}. Marked failed by the stale-job sweeper. Retry to continue."
+            )
+            self.db["jobs"].update_one(
+                {"_id": job["_id"], "status": "running"},
+                {
+                    "$set": {
+                        "status": "failed",
+                        "stage": "stalled",
+                        "error": message,
+                        "updated_at": now,
+                    },
+                    "$push": {
+                        "logs": {
+                            "$each": [{
+                                "stage": "stalled — worker heartbeat lost",
+                                "progress": None,
+                                "at": now,
+                            }],
+                            "$slice": -80,
+                        }
+                    },
+                },
+            )
+        if stale:
+            print(f"[Jobs] Swept {len(stale)} stalled running job(s).", flush=True)
+        return len(stale)
+
     # ---- projects ------------------------------------------------------------
     def create_project(self, name, key=None, description="", jira_project_key=None,
                        jira_project_name=None, confluence_space_key=None,
@@ -1112,10 +1161,31 @@ class Store:
         return {"updated": sid, "affected_cases": affected}
 
     def list_steps(self, limit=200, skip=0):
+        # Fetch the page first, then compute usage counts in ONE aggregation
+        # against cases.step_ids (indexed). Previously this was N count_documents
+        # calls, one per step, which was the main cause of the step-library
+        # loader appearing to hang on non-trivial datasets.
+        steps = list(
+            self.steps.find({}, {"embedding": 0})
+            .sort("usage_count", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+        ids = [str(s["_id"]) for s in steps]
+        counts = {}
+        if ids:
+            pipeline = [
+                {"$match": {"step_ids": {"$in": ids}}},
+                {"$unwind": "$step_ids"},
+                {"$match": {"step_ids": {"$in": ids}}},
+                {"$group": {"_id": "$step_ids", "n": {"$sum": 1}}},
+            ]
+            for row in self.cases.aggregate(pipeline):
+                counts[row["_id"]] = row["n"]
         out = []
-        for s in self.steps.find({}, {"embedding": 0}).sort("usage_count", -1).skip(skip).limit(limit):
+        for s in steps:
             s["id"] = str(s.pop("_id"))
-            s["used_in_cases"] = self.cases.count_documents({"step_ids": s["id"]})
+            s["used_in_cases"] = counts.get(s["id"], 0)
             out.append(s)
         return out
 

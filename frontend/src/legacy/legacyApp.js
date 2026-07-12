@@ -1350,8 +1350,25 @@ if($("#usage-refresh"))$("#usage-refresh").onclick=loadUsage;
 // retained as a fallback for proxies that buffer or block event streams.
 function watchJob(jobId, onTick, intervalMs){
   let stop=false,settled=false,es=null,pollTimer=null;
+  // Client-side stall detector — if the server's updated_at never advances
+  // while status stays "running", the worker thread is likely dead (backend
+  // sweeper will confirm it shortly). Deliver a synthetic "failed" tick so the
+  // loader in the caller is replaced instead of spinning forever.
+  let lastUpdatedAt=null,lastAdvanceMs=Date.now();
+  const STALL_MS=120000;   // 2 min without progress = give up; slightly longer than backend sweep default
   const finish=()=>{settled=true;if(es){es.close();es=null;}if(pollTimer){clearTimeout(pollTimer);pollTimer=null;}};
-  const deliver=j=>{if(stop||settled)return;onTick(j);if(j.status!=="running")finish();};
+  const deliver=j=>{
+    if(stop||settled)return;
+    // Track heartbeat: any change in updated_at (or stage/progress) is progress.
+    const beat=(j&&(j.updated_at!=null))?j.updated_at:null;
+    if(beat!==null&&beat!==lastUpdatedAt){lastUpdatedAt=beat;lastAdvanceMs=Date.now();}
+    if(j&&j.status==="running"&&(Date.now()-lastAdvanceMs)>STALL_MS){
+      const synth=Object.assign({},j,{status:"failed",stage:"stalled",
+        error:(j.error||"Worker appears unresponsive — please retry.")});
+      onTick(synth);finish();return;
+    }
+    onTick(j);if(j.status!=="running")finish();
+  };
   // Safety poll ALWAYS runs alongside SSE (slow cadence). SSE gives instant updates,
   // but if the stream goes quiet on a long job (proxy buffering, busy event loop)
   // without firing onerror, the poll still catches the terminal state so the UI never
@@ -3319,7 +3336,13 @@ function renderMindmapDiag(perRepo){
          ${(r.impl_sample||[]).length?`<div class="muted" style="margin-top:3px">indexed files: ${r.impl_sample.map(s=>`<code>${esc(s)}</code>`).join(" ")}</div>`
             :(r.sample||[]).length?`<div class="muted" style="margin-top:3px">sample paths: ${r.sample.slice(0,8).map(s=>`<code>${esc(s)}</code>`).join(" ")}</div>`:""}</div>`).join("")+`</details></div>`;
 }
-async function loadMindmap(){const pid=$("#mm-proj").value||currentProject;if(!pid)return;
+async function loadMindmap(){const pid=$("#mm-proj").value||currentProject;
+  // Guard: if we're called with no project (selector cleared while an Analyze
+  // job was in flight, or nav returned before a project is picked), CLEAR the
+  // loader first — otherwise the "Downloading repository code…" loader set by
+  // the Analyze click stays on screen forever.
+  const mmEl=$("#mm-map");
+  if(!pid){if(mmEl)mmEl.innerHTML=`<div class="card"><span class="muted">Pick a project to see its coverage map.</span></div>`;return;}
   brandLoaderIn("#mm-map","analyze",{compact:false,inline:true,messages:["Loading coverage map…","Reading code analysis…","Mapping cases to code…"]});
   try{const r=await api(`/api/projects/${pid}/mindmap`);
     if(!r.features.length){$("#mm-map").innerHTML=`<div class="card"><span class="muted">No features in this project yet.</span></div>`;return;}
@@ -3539,8 +3562,15 @@ $("#login-send").onclick=async()=>{const email=$("#login-email").value.trim();if
   try{const r=await api("/api/auth/request-otp",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email})});
     $("#login-step1").hidden=true;$("#login-step2").hidden=false;$("#login-to").textContent=email;
     if(r&&r.delivery==="log"){
-      $("#login-sent-text").textContent="Email isn't set up yet — your one-time code was printed to the server log for ";
-      $("#login-msg").textContent="Check the server log (e.g. docker logs wardeniq) for the code, then set up email under Configuration → Email.";
+      $("#login-sent-text").textContent="Email isn't set up (demo mode) — your one-time code for ";
+      // Show the code inline so contributors/evaluators can sign in without SMTP.
+      // The same code is also printed to the server log (docker logs wardeniq).
+      const code=r.dev_code?String(r.dev_code):"";
+      if(code){
+        $("#login-msg").innerHTML="Demo sign-in code: <b style=\"font-size:16px;letter-spacing:.3em;font-family:ui-monospace,monospace\">"+esc(code)+"</b><br><span style=\"opacity:.75\">Configure SMTP under Configuration → Email to stop showing codes in the UI.</span>";
+      }else{
+        $("#login-msg").textContent="Check the server log (e.g. docker logs wardeniq) for the code, then set up email under Configuration → Email.";
+      }
     }else{
       $("#login-sent-text").textContent="We emailed a 6-digit code to ";
       $("#login-msg").textContent="Code sent — check your email.";

@@ -71,7 +71,7 @@ the containers.
 ## Quick start (about 5 minutes)
 
 ```bash
-git clone https://github.com/adlerqa/wardenIQ-openSource.git wardenIQ && cd wardenIQ
+git clone https://github.com/adlerqa/wardeniq.git wardenIQ && cd wardenIQ
 cp .env.example .env        # open .env and change APP_SECRET to any long random string
 ./run.sh                    # builds + starts everything
 ```

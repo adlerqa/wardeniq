@@ -799,9 +799,29 @@ def bootstrap():
     BOOT.update(stage="ready", ready=True, detail="")
 
 
+STALE_JOB_TTL_SECONDS = int(os.getenv("STALE_JOB_TTL_SECONDS", "600"))
+STALE_JOB_SWEEP_INTERVAL_SECONDS = int(os.getenv("STALE_JOB_SWEEP_INTERVAL_SECONDS", "60"))
+
+
+def _stale_job_sweeper():
+    """Periodically fail 'running' jobs whose worker thread died silently
+    (OOM, C-level segfault, network deadlock) — startup recovery alone
+    doesn't help when the process is still up. Keeps loaders from spinning
+    forever on the client."""
+    while True:
+        try:
+            time.sleep(max(15, STALE_JOB_SWEEP_INTERVAL_SECONDS))
+            if not BOOT.get("ready"):
+                continue
+            store.sweep_stale_jobs(ttl_seconds=STALE_JOB_TTL_SECONDS)
+        except Exception as e:  # noqa: BLE001
+            print(f"[stale-sweeper] {e}", flush=True)
+
+
 @app.on_event("startup")
 def _startup():
     threading.Thread(target=bootstrap, daemon=True).start()
+    threading.Thread(target=_stale_job_sweeper, daemon=True).start()
 
 
 # --------------------------------------------------------------- generation pipeline
@@ -3915,32 +3935,35 @@ def _smtp_cfg():
     return _smtp_cfg_from_env()
 
 def _deliver_otp(email, code, recipient_name="", is_admin=False):
-    """Returns ('sent'|'logged'|'refused'|'error', detail).
+    """Returns ('sent'|'logged'|'error', detail).
     - 'sent'    : emailed via SMTP.
-    - 'logged'  : no SMTP yet AND the account is an admin -> the code is printed to
-                  the server log so the first admin can bootstrap and then configure
-                  email in-app. This path is available ONLY while SMTP is unset;
-                  once SMTP is configured every code is emailed and never logged.
-    - 'refused' : no SMTP and the account is not an admin -> caller must 503. A
-                  non-admin cannot bootstrap; an admin must set up email first.
+    - 'logged'  : no SMTP configured -> the code is printed to the server log AND
+                  returned to the caller so the sign-in screen can display it
+                  directly. This is the demo/dev-mode path: it makes wardenIQ
+                  usable without configuring email so contributors and evaluators
+                  can sign in and try the app. Once SMTP is configured every code
+                  is emailed and never logged or returned.
     - 'error'   : SMTP configured but the send failed.
+
+    The `is_admin` argument is retained for callers/log context but no longer
+    gates the 'logged' path — see the note above on demo-mode behavior.
     """
     cfg = _smtp_cfg()
     if not cfg:
-        if is_admin:
-            # First-run bootstrap: whoever can read the server log controls the
-            # host anyway, so this is an acceptable way to admit the first admin.
-            print("\n" + "=" * 64 +
-                  f"\n[wardenIQ] SMTP is not configured yet — one-time sign-in code"
-                  f"\n[wardenIQ]   {email}: {code}"
-                  f"\n[wardenIQ] Sign in with this code, then set up email under"
-                  f"\n[wardenIQ] Configuration → Email. This log path turns off once"
-                  f"\n[wardenIQ] SMTP is configured.\n" + "=" * 64 + "\n",
-                  flush=True)
-            return "logged", "printed to server log"
-        print("[wardenIQ][OTP refused] SMTP not configured and requester is not an "
-              "admin (an administrator must configure email first)", flush=True)
-        return "refused", "smtp not configured"
+        # No SMTP -> demo/dev mode. Log the code (operators reading `docker logs`
+        # can still fetch it) and return it so the UI can show it inline. Anyone
+        # who can hit the sign-in endpoint on this host is trusted at this point:
+        # a public deployment must configure SMTP before exposing wardenIQ.
+        role_hint = "admin" if is_admin else "user"
+        print("\n" + "=" * 64 +
+              f"\n[wardenIQ] SMTP is not configured — one-time sign-in code"
+              f"\n[wardenIQ]   {email} ({role_hint}): {code}"
+              f"\n[wardenIQ] The code is also shown on the sign-in screen. Set up"
+              f"\n[wardenIQ] email under Configuration → Email to disable this"
+              f"\n[wardenIQ] demo path (codes will then only be emailed).\n"
+              + "=" * 64 + "\n",
+              flush=True)
+        return "logged", code
 
     ok, err = email_send.send_otp(cfg, email, code, recipient_name)
     if ok:
@@ -3979,17 +4002,17 @@ def request_otp(body: OtpRequestIn):
     store.set_otp(user["id"], auth.hash_otp(code), time.time() + auth.OTP_TTL)
     mode, detail = _deliver_otp(email, code, user.get("name") or email.split("@")[0],
                                 is_admin=(user.get("role") == "admin"))
-    if mode == "refused":
-        # No SMTP and the requester is not an admin → they can't bootstrap. An
-        # administrator must configure email (Configuration → Email) first.
-        raise HTTPException(503, "sign-in unavailable: email delivery isn't set up "
-                                 "yet — an administrator must configure SMTP first")
     if mode == "error":
         raise HTTPException(502, "could not send the sign-in email — please try again "
                                  "or contact your administrator")
-    # delivery: "email" (SMTP) or "log" (first-admin bootstrap, code in server log).
-    return {"sent": True, "bootstrap": bootstrap,
+    # delivery: "email" (SMTP) or "log" (demo/dev mode — no SMTP configured, code
+    # is printed to the server log AND returned in `dev_code` for the sign-in UI).
+    resp = {"sent": True, "bootstrap": bootstrap,
             "delivery": "log" if mode == "logged" else "email"}
+    if mode == "logged":
+        # `detail` holds the plaintext code in this mode (see _deliver_otp).
+        resp["dev_code"] = detail
+    return resp
 
 
 class OtpVerifyIn(BaseModel):

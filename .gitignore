@@ -6,9 +6,6 @@
 AGENTS.md
 docs
 
-# internal docs — only README.md is public
-*.md
-!README.md
 # captured logs
 logs/
 *.log
