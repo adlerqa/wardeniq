@@ -280,7 +280,9 @@ def _webhook_base_url(request: Request | None = None) -> str:
         return base
     if request is not None:
         # `request.base_url` ends with `/`.
-        return str(request.base_url).rstrip("/")
+        base_url = getattr(request, "base_url", None)
+        if base_url:
+            return str(base_url).rstrip("/")
     return ""
 
 # --------------------------------------------------------------- auth gateway

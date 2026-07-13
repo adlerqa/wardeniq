@@ -31,6 +31,9 @@ class FakeUsers:
         self._n = 0
         self.otps = {}
 
+    def get_settings(self):
+        return {}
+
     def get_user(self, uid):
         return self.docs.get(uid)
 
@@ -77,6 +80,25 @@ class FakeUsers:
         if u and u.get("invite_status") == "pending":
             u["invite_status"] = "active"
 
+    def set_invite_token(self, uid, token_hash, expires):
+        if uid in self.docs:
+            self.docs[uid]["invite_token_hash"] = token_hash
+            self.docs[uid]["invite_token_expires"] = expires
+
+    def clear_invite_token(self, uid):
+        if uid in self.docs:
+            self.docs[uid].pop("invite_token_hash", None)
+            self.docs[uid].pop("invite_token_expires", None)
+
+    def get_user_by_invite_token(self, token):
+        import auth as _auth
+        h = _auth.hash_token(token)
+        for u in self.docs.values():
+            if u.get("invite_token_hash") == h:
+                return u
+        return None
+
+
 
 class FakeReq:
     def __init__(self, user=None):
@@ -88,13 +110,15 @@ def main_mod(monkeypatch):
     m = _import_main()
     fake = FakeUsers()
     monkeypatch.setattr(m, "store", fake)
+    monkeypatch.setattr(m, "_smtp_cfg", lambda: {"host": "localhost"})
+    import email_send
+    monkeypatch.setattr(email_send, "send_invite", lambda *a, **k: (True, ""))
     return m, fake
 
 
 class TestInvite:
     def test_invite_creates_pending_and_issues_code(self, main_mod, monkeypatch):
         m, fake = main_mod
-        monkeypatch.setattr(m, "_deliver_otp", lambda e, c: ("sent", ""))
         body = m.UserIn(email="Newbie@Example.com", name="New", role="editor")
         resp = m.invite_user(body, FakeReq(user={"id": "admin1"}))
         u = resp["user"]
@@ -102,16 +126,16 @@ class TestInvite:
         assert u["email"] == "newbie@example.com"
         assert u["role"] == "editor"
         assert resp["delivery"] == "sent"
-        assert "emailed" in resp["message"]
-        assert fake.otps.get(u["id"]) is not None
+        assert "Invite sent" in resp["message"]
+        assert fake.docs[u["id"]]["invite_token_hash"] is not None
         assert fake.docs[u["id"]]["invited_by"] == "admin1"
 
     def test_invite_refused_reports_honestly(self, main_mod, monkeypatch):
         m, fake = main_mod
-        monkeypatch.setattr(m, "_deliver_otp", lambda e, c: ("refused", "smtp not configured"))
+        monkeypatch.setattr(m, "_smtp_cfg", lambda: None)
         resp = m.invite_user(m.UserIn(email="r@e.com"), FakeReq(user={"id": "a"}))
         assert resp["delivery"] == "refused"
-        assert "no sign-in code was sent" in resp["message"]
+        assert "no invitation email was sent" in resp["message"]
         assert "dev_code" not in resp        # never leak a code we didn't send
         assert fake.get_user_by_email("r@e.com") is not None
 
@@ -123,7 +147,6 @@ class TestInvite:
 
     def test_invite_rejects_duplicate(self, main_mod, monkeypatch):
         m, fake = main_mod
-        monkeypatch.setattr(m, "_deliver_otp", lambda e, c: ("sent", ""))
         m.invite_user(m.UserIn(email="dup@e.com"), FakeReq(user={"id": "a"}))
         with pytest.raises(m.HTTPException) as ei:
             m.invite_user(m.UserIn(email="dup@e.com"), FakeReq(user={"id": "a"}))
@@ -132,30 +155,28 @@ class TestInvite:
 
 class TestResendCancel:
     def _pending(self, m, fake, monkeypatch):
-        monkeypatch.setattr(m, "_deliver_otp", lambda e, c: ("sent", ""))
         return m.invite_user(m.UserIn(email="p@e.com"), FakeReq(user={"id": "a"}))["user"]
 
     def test_resend_reissues_code(self, main_mod, monkeypatch):
         m, fake = main_mod
         u = self._pending(m, fake, monkeypatch)
-        old = fake.otps[u["id"]]
-        monkeypatch.setattr(m, "_deliver_otp", lambda e, c: ("sent", ""))
-        resp = m.resend_invite(u["id"])
+        old = fake.docs[u["id"]]["invite_token_hash"]
+        resp = m.resend_invite(u["id"], FakeReq(user={"id": "admin1"}))
         assert resp["delivery"] == "sent"
-        assert fake.otps[u["id"]] != old
+        assert fake.docs[u["id"]]["invite_token_hash"] != old
 
     def test_resend_disabled_user_rejected(self, main_mod, monkeypatch):
         m, fake = main_mod
         u = self._pending(m, fake, monkeypatch)
         fake.docs[u["id"]]["active"] = False
         with pytest.raises(m.HTTPException) as ei:
-            m.resend_invite(u["id"])
+            m.resend_invite(u["id"], FakeReq(user={"id": "admin1"}))
         assert ei.value.status_code == 400
 
     def test_resend_unknown_user(self, main_mod):
         m, _ = main_mod
         with pytest.raises(m.HTTPException) as ei:
-            m.resend_invite("nope")
+            m.resend_invite("nope", FakeReq(user={"id": "admin1"}))
         assert ei.value.status_code == 404
 
     def test_cancel_pending_deletes(self, main_mod, monkeypatch):
@@ -164,7 +185,7 @@ class TestResendCancel:
         resp = m.cancel_invite(u["id"])
         assert resp == {"cancelled": u["id"]}
         assert fake.get_user(u["id"]) is None
-        assert fake.otps.get(u["id"]) is None
+        assert fake.docs.get(u["id"]) is None
 
     def test_cancel_active_user_rejected(self, main_mod, monkeypatch):
         m, fake = main_mod
@@ -179,10 +200,10 @@ class TestResendCancel:
 class TestAcceptOnLogin:
     def test_mark_invite_accepted_flips_pending(self, main_mod, monkeypatch):
         m, fake = main_mod
-        monkeypatch.setattr(m, "_deliver_otp", lambda e, c: ("sent", ""))
         u = m.invite_user(m.UserIn(email="join@e.com"), FakeReq(user={"id": "a"}))["user"]
         assert fake.docs[u["id"]]["invite_status"] == "pending"
         fake.mark_invite_accepted(u["id"])
         assert fake.docs[u["id"]]["invite_status"] == "active"
         fake.mark_invite_accepted(u["id"])   # idempotent
         assert fake.docs[u["id"]]["invite_status"] == "active"
+

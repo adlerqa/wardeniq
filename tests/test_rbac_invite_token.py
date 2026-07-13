@@ -69,9 +69,11 @@ def _make_store():
     """A real store.Store with only its users collection faked, so the actual
     invite-token methods run against it."""
     from store import Store
+    from bson import ObjectId
     st = Store.__new__(Store)
     object.__setattr__(st, "users", _FakeUsersCol())
-    st.users.docs["u1"] = {"_id": "u1", "email": "a@x.com", "invite_status": "pending"}
+    uid = ObjectId("64f000000000000000000001")
+    st.users.docs[uid] = {"_id": uid, "email": "a@x.com", "invite_status": "pending"}
     return st
 
 
@@ -79,25 +81,26 @@ class TestInviteTokenStore:
     def test_set_and_resolve(self):
         st = _make_store()
         t = auth.gen_invite_token()
-        st.set_invite_token("u1", auth.hash_token(t), time.time() + 3600)
+        st.set_invite_token("64f000000000000000000001", auth.hash_token(t), time.time() + 3600)
         u = st.get_user_by_invite_token(t)
-        assert u and u["id"] == "u1" and u["email"] == "a@x.com"
+        assert u and u["id"] == "64f000000000000000000001" and u["email"] == "a@x.com"
 
     def test_expired_token_not_resolved(self):
         st = _make_store()
         t = auth.gen_invite_token()
-        st.set_invite_token("u1", auth.hash_token(t), time.time() - 1)
+        st.set_invite_token("64f000000000000000000001", auth.hash_token(t), time.time() - 1)
         assert st.get_user_by_invite_token(t) is None
 
     def test_wrong_token_not_resolved(self):
         st = _make_store()
-        st.set_invite_token("u1", auth.hash_token(auth.gen_invite_token()), time.time() + 3600)
+        st.set_invite_token("64f000000000000000000001", auth.hash_token(auth.gen_invite_token()), time.time() + 3600)
         assert st.get_user_by_invite_token("some-other-token") is None
 
     def test_clear_consumes_token(self):
         st = _make_store()
         t = auth.gen_invite_token()
-        st.set_invite_token("u1", auth.hash_token(t), time.time() + 3600)
+        st.set_invite_token("64f000000000000000000001", auth.hash_token(t), time.time() + 3600)
         assert st.get_user_by_invite_token(t) is not None
-        st.clear_invite_token("u1")
+        st.clear_invite_token("64f000000000000000000001")
         assert st.get_user_by_invite_token(t) is None
+

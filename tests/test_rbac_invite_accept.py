@@ -29,6 +29,9 @@ class FakeUsers:
         self._n = 0
         self.otps = {}
 
+    def get_settings(self):
+        return {}
+
     def get_user(self, uid):
         return self.docs.get(uid)
 
@@ -79,6 +82,25 @@ class FakeUsers:
         u = self.docs.get(uid)
         inv = self.docs.get((u or {}).get("invited_by"))
         return {"email": inv["email"], "name": inv.get("name")} if inv else None
+
+    def set_invite_token(self, uid, token_hash, expires):
+        if uid in self.docs:
+            self.docs[uid]["invite_token_hash"] = token_hash
+            self.docs[uid]["invite_token_expires"] = expires
+
+    def clear_invite_token(self, uid):
+        if uid in self.docs:
+            self.docs[uid].pop("invite_token_hash", None)
+            self.docs[uid].pop("invite_token_expires", None)
+
+    def get_user_by_invite_token(self, token):
+        import auth as _auth
+        h = _auth.hash_token(token)
+        for u in self.docs.values():
+            if u.get("invite_token_hash") == h:
+                return u
+        return None
+
 
 
 class Req:

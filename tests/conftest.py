@@ -7,6 +7,11 @@ later phases assert grounded-matching accuracy against.
 """
 import pytest
 
+# Mock Store.get_settings to avoid trying to connect to MongoDB during test collection/imports.
+from store import Store
+Store.get_settings = lambda self: {}
+
+
 
 # --------------------------------------------------------------------------- fakes
 class FakeLLM:

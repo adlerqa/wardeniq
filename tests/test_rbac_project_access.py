@@ -105,6 +105,8 @@ class TestInviteProjectScope:
         n = {"i": 0}
 
         class FS:
+            def get_settings(self):
+                return {}
             def get_user_by_email(self, e):
                 return None
             def get_project(self, pid):
@@ -123,6 +125,22 @@ class TestInviteProjectScope:
                 return docs[uid]
             def set_otp(self, *a):
                 pass
+            def set_invite_token(self, uid, token_hash, expires):
+                if uid in docs:
+                    docs[uid]["invite_token_hash"] = token_hash
+                    docs[uid]["invite_token_expires"] = expires
+            def clear_invite_token(self, uid):
+                if uid in docs:
+                    docs[uid].pop("invite_token_hash", None)
+                    docs[uid].pop("invite_token_expires", None)
+            def get_user_by_invite_token(self, token):
+                import auth as _auth
+                h = _auth.hash_token(token)
+                for u in docs.values():
+                    if u.get("invite_token_hash") == h:
+                        return u
+                return None
+
 
         monkeypatch.setattr(M, "store", FS())
         monkeypatch.setattr(M, "_deliver_otp", lambda *a, **k: ("sent", ""))
