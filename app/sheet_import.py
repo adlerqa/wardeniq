@@ -54,7 +54,14 @@ HEADER_ALIASES: dict[str, list[str]] = {
     "method":           ["http method", "method", "verb"],
     "steps":            ["steps", "step", "procedure", "flow",
                          "test script step by step step",
-                         "test script (step-by-step) - step"],
+                         "test script (step-by-step) - step",
+                         # Jira/Zephyr/TestRail step-column variants:
+                         "test step", "step description", "step details",
+                         "step actions", "action", "test procedure"],
+    # Zephyr/Jira grouped exports carry a per-step "Test Data" column; captured
+    # here so it can be folded into the step text instead of being dropped.
+    "test_data":        ["test data", "input data",
+                         "test script (step-by-step) - test data"],
     "expected_result":  ["expected result", "expected outcome",
                          "expected result/behavior",
                          "expected result / behavior",
@@ -62,10 +69,12 @@ HEADER_ALIASES: dict[str, list[str]] = {
                          "edge cases", "ui validations",
                          "test script (step-by-step) - expected result"],
     "module":           ["feature name", "feature area", "feature",
-                         "module", "area", "domain", "component"],
+                         "module", "area", "domain", "component",
+                         "component/s", "components"],
     "tags":             ["labels", "tags", "tag", "label"],
-    "preconditions":    ["preconditions", "precondition",
-                         "preconditions/setup", "setup", "given"],
+    "preconditions":    ["preconditions", "precondition", "pre-conditions",
+                         "pre condition", "preconditions/setup", "setup",
+                         "test setup", "given"],
     "status":           ["status", "state"],
 }
 
@@ -304,6 +313,51 @@ def _looks_like_bug_sheet(sheet_name: str) -> bool:
     return "bug" in n or "defect" in n or "issue" in n
 
 
+# Bug-tracker *resolution* values — distinct from test-run statuses (pass/fail/
+# blocked/not-run), so seeing several of these is a strong "this is a bug log" signal.
+_BUG_STATUS_VALUES = {
+    "fixed", "rectified", "reopened", "re-opened", "won't fix", "wont fix",
+    "not a bug", "cannot reproduce", "can't reproduce", "cannot be reproduced",
+    "duplicate", "deferred", "by design", "works as designed", "invalid",
+}
+# Header tokens characteristic of bug/defect logs (not QA test-case sheets).
+_BUG_HEADER_TOKENS = (
+    "steps to reproduce", "repro steps", "actual result", "actual behaviour",
+    "actual behavior", "bug id", "defect id", "issue id", "reported by",
+    "suggestions", "observed result", "severity",
+)
+
+
+def is_bug_worksheet(sheet_name: str, rows: list[list[str]]) -> bool:
+    """Content-aware bug/defect-sheet detection (mirrors Node's isBugWorksheet):
+    catches bug logs even when the tab has an innocuous name, by inspecting the
+    header tokens and the resolution-status values in the first ~25 rows. Kept
+    conservative so a legitimate test sheet (expected-result + pass/fail) is not
+    dropped — it keys on bug-specific signals (actual-result + repro, or several
+    bug-resolution statuses, or a bug-tracker header combo)."""
+    if _looks_like_bug_sheet(sheet_name):
+        return True
+    if not rows:
+        return False
+    head = " ".join(" ".join((c or "").lower() for c in r) for r in rows[:3])
+    has_actual = any(t in head for t in ("actual result", "actual behaviour", "actual behavior"))
+    has_repro = ("steps to reproduce" in head) or ("repro steps" in head)
+    header_hits = sum(1 for t in _BUG_HEADER_TOKENS if t in head)
+    # "Figma vs staging/actual" comparison columns are a common UI-bug-log shape.
+    figma_cmp = ("figma" in head) and any(k in head for k in ("staging", "actual", "expected"))
+    if (has_actual and has_repro) or figma_cmp or header_hits >= 3:
+        return True
+    # Count bug-resolution statuses across the first 25 data rows.
+    status_hits, scanned = 0, 0
+    for r in rows[1:26]:
+        scanned += 1
+        for c in r:
+            if (c or "").strip().lower() in _BUG_STATUS_VALUES:
+                status_hits += 1
+                break  # at most one per row
+    return status_hits >= max(3, scanned // 3)
+
+
 def parse_sheet(file_bytes: bytes, filename: str) -> list[ParsedRow]:
     """Read CSV / TSV / XLSX from bytes and return ParsedRow list across all
     sheets. Skips sheets named like 'Bugs'/'Defects' (matches Node)."""
@@ -395,6 +449,9 @@ def _parse_csv(file_bytes: bytes, delimiter: str = ",") -> list[ParsedRow]:
         raise ValueError(
             f"Could not read this file as a spreadsheet ({e}). Please upload "
             "a valid CSV, TSV, or XLSX file.") from e
+    # A single-sheet CSV can still be a bug/defect export — skip it if so.
+    if is_bug_worksheet("Sheet1", [[(c or "") for c in r] for r in rows]):
+        return []
     return _process_table(rows, "Sheet1")
 
 
@@ -419,7 +476,7 @@ def _parse_xlsx(file_bytes: bytes) -> list[ParsedRow]:
     out: list[ParsedRow] = []
     for sheet in wb.worksheets:
         if _looks_like_bug_sheet(sheet.title):
-            continue
+            continue  # fast name-only skip before we bother reading cells
         # Build a (row, col) -> anchor-value map for every merged range.
         merge_lookup: dict[tuple[int, int], object] = {}
         for mr in list(sheet.merged_cells.ranges):
@@ -441,6 +498,9 @@ def _parse_xlsx(file_bytes: bytes) -> list[ParsedRow]:
             # Drop rows that are entirely whitespace after propagation.
             if any(c.strip() for c in cells):
                 rows.append(cells)
+        # Content-aware skip: catches bug logs on innocuously-named tabs.
+        if is_bug_worksheet(sheet.title or "", rows):
+            continue
         out.extend(_process_table(rows, sheet.title or "Sheet1"))
     return out
 
@@ -569,6 +629,17 @@ def derive_row_fields_loose(raw_row: list[str], header_map: dict[str, int],
             p = _clean_step_text(part)
             if p:
                 steps.append(p)
+
+    # Zephyr/Jira grouped exports separate the step's input into a "Test Data"
+    # column — fold it into the step text so it isn't lost (each step row usually
+    # carries its own data value alongside the step + expected-result triplet).
+    test_data = cell("test_data")
+    if test_data:
+        note = f"(Test data: {test_data})"
+        if steps:
+            steps[-1] = (steps[-1] + " " + note)[:600]
+        else:
+            steps.append(note)
 
     tags_raw = cell("tags")
     tags = [t.strip() for t in _TAG_SPLIT.split(tags_raw) if t.strip()]

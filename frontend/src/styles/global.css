@@ -1467,3 +1467,12 @@
   .app.sidebar-collapsed .sidebar nav button>svg{font-size:0;}
   .sidebar-toggle{border-radius:9px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.03);color:#94a3b8;}
   .sidebar-toggle:hover{color:#e2e8f0;border-color:rgba(255,255,255,.2);background:rgba(255,255,255,.06);}
+
+/* All clickable buttons should show the pointer cursor (some custom button
+   classes and legacy markup didn't set it, so they showed the default arrow). */
+button:not(:disabled), .go, .ghost, .sheet-primary, .sheet-danger-ghost { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+/* Confirmation dialogs must sit ABOVE content modals (e.g. the reuse-sheets modal),
+   otherwise a confirm triggered from inside a modal renders behind it. */
+#confirm-modal { z-index: 80; }

@@ -64,6 +64,11 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_API = os.getenv("GITHUB_API", "https://api.github.com")
 POLL_INTERVAL = int(os.getenv("POLL_INTERVAL_SECONDS", "120"))
 MAP_AUTO = float(os.getenv("MAP_AUTO_THRESHOLD", "0.86"))
+# GAP8 (opt-in): use embeddings to semantically match imported-pool rows to features
+# during the background re-scan, as an ADDITIONAL promotion path beyond the algorithmic
+# scorer. OFF by default (the token scorer already works and per-row embedding has cost).
+IMPORT_SEMANTIC_MATCH = os.getenv("IMPORT_SEMANTIC_MATCH", "false").lower() == "true"
+IMPORT_SEMANTIC_THRESHOLD = float(os.getenv("IMPORT_SEMANTIC_THRESHOLD", "0.78"))
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 MONGOT_METRICS = os.getenv("MONGOT_METRICS", "http://mongot.warden-net:9946")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
@@ -822,6 +827,8 @@ def _stale_job_sweeper():
 def _startup():
     threading.Thread(target=bootstrap, daemon=True).start()
     threading.Thread(target=_stale_job_sweeper, daemon=True).start()
+    # GAP2: periodic project-wide re-analysis of the imported-sheet pool.
+    threading.Thread(target=_import_reanalysis_scheduler, daemon=True).start()
 
 
 # --------------------------------------------------------------- generation pipeline
@@ -899,6 +906,16 @@ def _gen_worker(jid, params):
                         project_id=feature["project_id"], feature_id=fid)
         except Exception as auto_e:  # noqa: BLE001
             print(f"[auto-scan] skipped: {auto_e}", flush=True)
+        # GAP4: a freshly (re)generated feature may now match rows sitting in the
+        # imported pool — rescan and promote the evidence-backed ones.
+        try:
+            fid2 = params.get("feature_id")
+            feat2 = store.get_feature(fid2) if fid2 else None
+            if feat2:
+                _rescan_pool_for_feature(feat2)     # GAP4
+                _apply_import_overlays(feat2)         # GAP3
+        except Exception as re_e:  # noqa: BLE001
+            print(f"[import-recheck] skipped: {re_e}", flush=True)
     except Exception as e:
         store.update_job(jid, status="failed", stage="error", error=str(e))
         raise e
@@ -1482,6 +1499,24 @@ def _reuse_existing_import_rows(jid, feature_import_id: str, project_id: str,
                             import_batch_id=import_batch_id)
 
 
+def _import_evidence_ok(row, ctx) -> bool:
+    """GAP5 evidence gate: a matched row is only promoted when the feature's actual
+    API surface backs it. A row WITH an endpoint must hit an endpoint in the feature's
+    spec (and, for api_tests, its method must be in the spec too). Rows without an
+    endpoint, or features with no API spec to check against, are not gated (so UI/
+    business tests and spec-less features still promote on score alone)."""
+    ep = (getattr(row, "endpoint", "") or "").strip()
+    if not ep or not getattr(ctx, "endpoints", None):
+        return True
+    if sheet_mod._endpoint_match(ep, ctx.endpoints) <= 0:
+        return False
+    cat = (getattr(row, "category", "") or "").lower()
+    method = (getattr(row, "method", "") or "").upper().strip()
+    if cat in ("api_tests", "api") and method and ctx.methods and method not in ctx.methods:
+        return False
+    return True
+
+
 def _test_import_worker(jid, params):
     """Parse the uploaded sheet, score rows against the feature, store
     canonical rows in the project pool, promote matches into the feature."""
@@ -1605,12 +1640,17 @@ def _test_import_worker(jid, params):
         payload = row.to_dict()
         payload["identity_hash"] = ihash
         result = sheet_mod.score_row(row, ctx)
-        match_status = "matched_feature" if result.action == "matched" else "unmatched_pool"
+        # GAP5 evidence gate: downgrade a "matched" row to the pool when the feature's
+        # API surface doesn't actually back it (keeps unsupported endpoints out).
+        action = result.action
+        if action == "matched" and not _import_evidence_ok(row, ctx):
+            action = "stored_for_later"
+        match_status = "matched_feature" if action == "matched" else "unmatched_pool"
         prid = store.upsert_project_imported_row(
             project_id, ihash, payload,
             match_status=match_status, latest_score=result.score,
             latest_feature_id=feature_id,
-            needs_project_analysis=(result.action != "matched"))
+            needs_project_analysis=(action != "matched"))
         store.add_imported_row_source(
             prid, feature_import_id, import_batch_id, feature_id,
             fi.get("original_filename", ""), row.sheet, row.row_number)
@@ -1629,10 +1669,11 @@ def _test_import_worker(jid, params):
             "steps_preview": _sheet_steps_preview(row.steps),
             "expected_result": row.expected_result[:160],
             "score": result.score,
-            "action": result.action,
+            "action": action,
+            "scorer_action": result.action,   # pre-evidence-gate (for review UI)
             "breakdown": result.breakdown,
         }
-        if result.action == "matched":
+        if action == "matched":
             # Promote into the feature now.
             cid = _promote_imported_row_to_feature(
                 prid, feature, payload, origin="imported", score=result.score)
@@ -1642,6 +1683,14 @@ def _test_import_worker(jid, params):
         else:
             stored += 1
         items.append(item)
+
+    # GAP9: promoting imported rows changed this feature's test cases → its stored
+    # test-plan runs are now out of date; flag them for regeneration.
+    if promoted_case_ids:
+        try:
+            store.mark_feature_test_plans_stale(feature_id)
+        except Exception:  # noqa: BLE001
+            pass
 
     store.update_feature_import(feature_import_id, row_count=len(rows),
                                   accepted_count=matched, flagged_count=stored,
@@ -1757,6 +1806,92 @@ def get_import_analysis_result(fid: str, import_id: str):
     if not status:
         raise HTTPException(404, "import not found")
     return {"ok": True, "data": status.get("result_json") or {}}
+
+
+@app.get("/api/features/{fid}/tests/import/{import_id}/review")
+def get_import_review(fid: str, import_id: str):
+    """Return each imported row with its EFFECTIVE decision — the scorer's action
+    (matched/stored_for_later) overridden by any reviewer correction — so the UI can
+    render an editable Include / Keep-for-later toggle + note per row."""
+    status = store.get_import_analysis_status(import_id) or {}
+    if not status:
+        raise HTTPException(404, "import not found")
+    result = status.get("result_json") or {}
+    batch_id = result.get("import_batch_id") or import_id
+    corrections = store.import_corrections_for_batch(batch_id)
+    items = []
+    for it in (result.get("items") or []):
+        rid = it.get("project_imported_row_id")
+        ih = it.get("identity_hash")
+        corr = corrections.get(rid) or corrections.get(ih)
+        scorer_included = (it.get("action") == "matched")
+        if corr:
+            included = corr.get("action") == "include"
+        else:
+            included = scorer_included
+        items.append({**it,
+                      "included": included,
+                      "scorer_action": it.get("action"),
+                      "overridden": bool(corr),
+                      "review_note": (corr or {}).get("note", "")})
+    return {"ok": True, "data": {"items": items, "import_batch_id": batch_id}}
+
+
+class ImportReviewItem(BaseModel):
+    project_imported_row_id: str | None = None
+    identity_hash: str | None = None
+    action: str            # "include" | "exclude"
+    note: str | None = None
+
+
+class ImportReviewIn(BaseModel):
+    reviews: list[ImportReviewItem] = []
+
+
+@app.post("/api/features/{fid}/tests/import/{import_id}/review")
+def submit_import_review(fid: str, import_id: str, body: ImportReviewIn, request: Request):
+    """Apply reviewer decisions: 'include' promotes a stored row into this feature;
+    'exclude' removes a previously-promoted row. Every decision is recorded as a
+    correction so later re-checks respect it. Idempotent per row."""
+    feature = store.get_feature(fid)
+    if not feature:
+        raise HTTPException(404, "feature not found")
+    pid = feature["project_id"]
+    status = store.get_import_analysis_status(import_id) or {}
+    result = status.get("result_json") or {}
+    batch_id = result.get("import_batch_id") or import_id
+    included = excluded = 0
+    for rv in (body.reviews or []):
+        action = (rv.action or "").strip().lower()
+        if action not in ("include", "exclude"):
+            continue
+        row = None
+        if rv.project_imported_row_id:
+            row = store.get_project_imported_row(rv.project_imported_row_id)
+        if not row and rv.identity_hash:
+            row = store.get_project_imported_row_by_hash(pid, rv.identity_hash)
+        if not row or row.get("project_id") != pid:
+            continue
+        rid = row["id"]
+        promotion = store.get_row_promotion(rid, fid)
+        is_promoted = bool(promotion and _case_exists(promotion.get("promoted_testcase_id")))
+        if action == "include" and not is_promoted:
+            payload = sheet_mod.normalize_imported_payload_shape(
+                row.get("normalized_payload") or {})
+            if payload.get("title"):
+                payload = dict(payload)
+                payload["identity_hash"] = row.get("identity_hash")
+                _promote_imported_row_to_feature(
+                    rid, feature, payload, origin="reviewed",
+                    score=row.get("latest_relevance_score", 0) or 0)
+                included += 1
+        elif action == "exclude" and is_promoted:
+            store.unlink_imported_row_from_feature(rid, fid)
+            excluded += 1
+        store.record_import_correction(
+            pid, batch_id, fid, rid, row.get("identity_hash"),
+            action, rv.note or "", actor=(_current_user(request) or {}).get("email"))
+    return {"ok": True, "data": {"included": included, "excluded": excluded}}
 
 
 @app.get("/api/features/{fid}/tests/import/template")
@@ -1913,51 +2048,172 @@ def remove_imported_sheet_rows(fid: str, body: LibraryHashesIn):
                                    "affected_features": sorted(affected_features)}}
 
 
-@app.post("/api/features/{fid}/imported-sheets/refresh")
-def refresh_imported_sheet_library(fid: str):
-    """On-demand: re-score every `unmatched_pool` row in this project against
-    THIS feature's current context. Newly-matching rows are auto-promoted.
+def _cosine(a, b) -> float:
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na = sum(x * x for x in a) ** 0.5
+    nb = sum(y * y for y in b) ** 0.5
+    return dot / (na * nb) if na and nb else 0.0
 
-    This is the "easy worker" path — user-triggered rather than cron-driven."""
-    feature = store.get_feature(fid)
+
+def _feature_embedding(feature):
+    text = ((feature.get("name") or "") + " " +
+            (feature.get("description") or feature.get("summary") or ""))[:2000]
+    try:
+        return embedder.embed(text, task="query") if text.strip() else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _pool_row_embedding(row):
+    """GAP8: embedding for a pool row, cached on the row so we embed it once."""
+    emb = row.get("embedding")
+    if emb:
+        return emb
+    p = row.get("normalized_payload") or {}
+    steps_txt = " ".join((s.get("content") if isinstance(s, dict) else str(s))
+                         for s in (p.get("steps") or []))
+    text = f"{p.get('title', '')} {p.get('description', '')} {steps_txt}".strip()[:2000]
+    if not text:
+        return None
+    try:
+        emb = embedder.embed(text)
+        store.set_imported_row_embedding(row["id"], emb)
+        return emb
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _rescan_pool_for_feature(feature) -> tuple[int, list[str]]:
+    """Re-score this project's unlinked imported-pool rows against `feature` and
+    promote newly-matching, evidence-backed rows into it. Returns (rescored,
+    promoted_case_ids). Shared by: the on-demand refresh endpoint, the post-generation
+    recheck (GAP4), and the scheduled project-wide re-analysis (GAP2)."""
     if not feature:
-        raise HTTPException(404, "feature not found")
-    pid = feature["project_id"]
+        return 0, []
+    fid = str(feature.get("id") or feature.get("_id"))
+    pid = feature.get("project_id")
     ctx = sheet_mod.build_feature_context(_feature_doc_for_import_context(feature))
-    pool = store.list_project_imported_rows(pid, feature_id=fid,
-                                              unlinked_only=True)
-    promoted = []
-    rescored = 0
+    pool = store.list_project_imported_rows(pid, feature_id=fid, unlinked_only=True)
+    # GAP8 (opt-in): embed the feature once for the semantic-match path.
+    feat_emb = _feature_embedding(feature) if IMPORT_SEMANTIC_MATCH else None
+    promoted, rescored = [], 0
     for r in pool:
         payload = sheet_mod.normalize_imported_payload_shape(
             r.get("normalized_payload") or {})
         if not payload.get("title"):
             continue
-        row_obj = sheet_mod.ParsedRow(
-            sheet=payload.get("sheet", ""), row_number=payload.get("row_number", 0),
-            title=payload.get("title", ""), description=payload.get("description", ""),
-            intent=payload.get("intent", ""), category=payload.get("category"),
-            suite=payload.get("suite", ""), priority=payload.get("priority", "Mid"),
-            endpoint=payload.get("endpoint", ""), method=payload.get("method", ""),
-            steps=payload.get("steps") or [],
-            expected_result=payload.get("expected_result", ""),
-            module=payload.get("module", ""), tags=payload.get("tags") or [],
-            preconditions=payload.get("preconditions", ""),
-        )
+        row_obj = _parsed_row_from_payload(payload)
         res = sheet_mod.score_row(row_obj, ctx)
         rescored += 1
-        # Persist the new score
         store.update_imported_row_relevance(
             r["id"], relevance_score=res.score, relevance_feature_id=fid,
             needs_project_analysis=False)
-        if res.action == "matched":
+        # Promote if the algorithmic scorer matched (GAP5-gated) OR, when semantic
+        # matching is enabled, if the embedding similarity clears the threshold.
+        promote_it = (res.action == "matched")
+        if not promote_it and IMPORT_SEMANTIC_MATCH and feat_emb:
+            remb = _pool_row_embedding(r)
+            if remb and _cosine(feat_emb, remb) >= IMPORT_SEMANTIC_THRESHOLD:
+                promote_it = True
+        if promote_it and _import_evidence_ok(row_obj, ctx):
             payload = dict(payload)
             payload["identity_hash"] = r.get("identity_hash") or payload.get("identity_hash")
             cid = _promote_imported_row_to_feature(
-                r["id"], feature, payload, origin="inherited",
-                score=res.score,
+                r["id"], feature, payload, origin="inherited", score=res.score,
                 inherited_from={"feature_id": r.get("latest_relevance_feature_id")})
             promoted.append(cid)
+    if promoted:
+        try:
+            store.mark_feature_test_plans_stale(fid)
+        except Exception:  # noqa: BLE001
+            pass
+    return rescored, promoted
+
+
+def _apply_import_overlays(feature) -> int:
+    """GAP3: flag GENERATED test cases that are also backed by an imported QA-library
+    row (strong token overlap on title+steps), so the UI can badge "matches imported
+    QA library". Pure annotation — never changes the case content. Returns count."""
+    if not feature:
+        return 0
+    fid = str(feature.get("id") or feature.get("_id"))
+    pid = feature.get("project_id")
+    try:
+        cases = store.get_feature_cases(fid)
+        pool = store.list_project_imported_rows(pid)
+    except Exception:  # noqa: BLE001
+        return 0
+    if not cases or not pool:
+        return 0
+    pool_tok = []
+    for r in pool:
+        p = r.get("normalized_payload") or {}
+        steps_txt = " ".join((s.get("content") if isinstance(s, dict) else str(s))
+                             for s in (p.get("steps") or []))
+        toks = sheet_mod.tokenize(f"{p.get('title', '')} {steps_txt}")
+        if toks:
+            pool_tok.append((r, p, toks))
+    if not pool_tok:
+        return 0
+    stamped = 0
+    for case in cases:
+        # Overlay is for genuinely GENERATED cases, not ones already sourced from imports.
+        if (case.get("association") or {}).get("origin") in ("imported", "inherited", "reviewed"):
+            continue
+        steps_txt = " ".join(f"{s.get('action', '')} {s.get('expected', '')}"
+                             for s in (case.get("steps") or []) if isinstance(s, dict))
+        ctok = sheet_mod.tokenize(f"{case.get('title', '')} {steps_txt}")
+        if not ctok:
+            continue
+        best, best_p, best_score = None, None, 0.0
+        for r, p, toks in pool_tok:
+            j = sheet_mod._jaccard(ctok, toks)
+            if j > best_score:
+                best, best_p, best_score = r, p, j
+        if best and best_score >= 0.5:
+            store.set_case_import_overlay(case["id"], {
+                "confidence": round(best_score, 3),
+                "matched_pool_row_id": best["id"],
+                "matched_title": (best_p.get("title") or "")[:160],
+                "basis": "title+steps overlap",
+            })
+            stamped += 1
+    return stamped
+
+
+def _import_reanalysis_scheduler(interval_s: int = 300):
+    """GAP2: every few minutes, take projects with imported-pool rows still awaiting
+    project-wide analysis and re-scan them against every feature in the project,
+    auto-promoting new matches. `_rescan_pool_for_feature` clears the pending flag as
+    it goes, so each import batch is swept once."""
+    while True:
+        time.sleep(interval_s)
+        try:
+            pids = store.list_projects_with_pending_import_rows()
+        except Exception as e:  # noqa: BLE001
+            print(f"[import-scheduler] list failed: {e}", flush=True)
+            continue
+        for pid in pids:
+            try:
+                for feat in store.list_features(project_id=pid):
+                    try:
+                        _rescan_pool_for_feature(feat)
+                    except Exception:  # noqa: BLE001
+                        continue
+            except Exception as e:  # noqa: BLE001
+                print(f"[import-scheduler] project {pid}: {e}", flush=True)
+
+
+@app.post("/api/features/{fid}/imported-sheets/refresh")
+def refresh_imported_sheet_library(fid: str):
+    """On-demand: re-score every `unmatched_pool` row in this project against THIS
+    feature's current context; newly-matching rows are auto-promoted."""
+    feature = store.get_feature(fid)
+    if not feature:
+        raise HTTPException(404, "feature not found")
+    rescored, promoted = _rescan_pool_for_feature(feature)
     return {"ok": True, "data": {"rescored": rescored,
                                    "newly_promoted": len(promoted)}}
 

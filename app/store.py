@@ -117,6 +117,11 @@ class Store:
             ("project_imported_row_id", 1), ("feature_id", 1),
             ("feature_version_number", 1)
         ], unique=True)
+        # One correction row per (import batch, imported row) — latest decision wins.
+        self.project_imported_row_corrections.create_index([
+            ("import_batch_id", 1), ("project_imported_row_id", 1)
+        ])
+        self.project_imported_row_corrections.create_index([("import_batch_id", 1)])
         self._backfill_case_display_ids()
         self.cases.create_index([("display_id", 1)], unique=True, sparse=True)
         self._renumber_display_ids()   # one-time: per-feature numbering (1..N)
@@ -1636,6 +1641,12 @@ class Store:
                 "metadata": c.get("metadata", {}),
                 "execution_status": c.get("execution_status", "untested"),
                 "shared_with_features": self.feature_count_for_case(cid),
+                # GAP3: "this generated case is also backed by an imported QA row".
+                "import_backed": bool(c.get("import_backed")),
+                "import_overlay": (c.get("metadata") or {}).get("import_overlay"),
+                # True when the case itself came from an uploaded sheet.
+                "imported": bool(c.get("project_imported_row_id")
+                                  or (c.get("metadata") or {}).get("project_imported_row_id")),
                 "association": {"origin": origin[cid].get("origin"),
                                 "score": origin[cid].get("score")},
             })
@@ -1647,6 +1658,19 @@ class Store:
 
         # category first, then ascending by the numeric part of the display id (EC-LOG-1, 2, 3…)
         return sorted(out, key=lambda x: (order.get(x["type"], 9), _seq(x.get("display_id"))))
+
+    def set_case_import_overlay(self, case_id, overlay):
+        """GAP3: stamp (or clear) an import-backed overlay on a generated test case."""
+        if not ObjectId.is_valid(case_id):
+            return
+        if overlay:
+            self.cases.update_one({"_id": ObjectId(case_id)},
+                                  {"$set": {"import_backed": True,
+                                            "metadata.import_overlay": overlay}})
+        else:
+            self.cases.update_one({"_id": ObjectId(case_id)},
+                                  {"$set": {"import_backed": False},
+                                   "$unset": {"metadata.import_overlay": ""}})
 
     # ---- RAG retrieval via mongot -------------------------------------------
     def search_cases(self, query_embedding, limit=8, ctype=None):
@@ -1740,6 +1764,12 @@ class Store:
                 "execution_note": c.get("execution_note", ""),
                 "executed_at": c.get("executed_at"),
                 "source_feature_id": c.get("source_feature_id"),
+                # True when this case originated from an uploaded sheet (direct import
+                # OR reused across features) — drives the "Imported from sheet" label.
+                "imported": bool(c.get("project_imported_row_id")
+                                  or (c.get("metadata") or {}).get("project_imported_row_id")),
+                "import_backed": bool(c.get("import_backed")),
+                "import_overlay": (c.get("metadata") or {}).get("import_overlay"),
                 "created_at": c.get("created_at"), "updated_at": c.get("updated_at")}
 
     def list_test_cases(self, project_id=None, feature_id=None, ctype=None,
@@ -1854,6 +1884,11 @@ class Store:
                          "association_origin": (association or {}).get("origin"),
                          "inherited": (association or {}).get("origin") in inherited_origins,
                          "source_feature_name": source_feature_name,
+                         # True for ANY case sourced from an uploaded sheet (promoted
+                         # directly OR reused across features) — so the UI can say
+                         # "Imported from sheet" rather than "Inherited from <feature>".
+                         "imported": bool(c.get("project_imported_row_id")
+                                  or (c.get("metadata") or {}).get("project_imported_row_id")),
                          "deprecated": cid not in active})
         return {"total": total, "items": rows}
 
@@ -2294,6 +2329,51 @@ class Store:
     @property
     def import_analysis_status(self):
         return self.db["import_analysis_status"]
+
+    # ---- import review corrections -------------------------------------------
+    def record_import_correction(self, project_id, batch_id, feature_id, row_id,
+                                  identity_hash, action, note="", actor=None):
+        """Persist a reviewer's override of the scorer's decision for one imported
+        row within one import batch. Latest write wins (upsert on batch + row)."""
+        now = time.time()
+        key = {"import_batch_id": batch_id,
+               "project_imported_row_id": row_id or None}
+        self.project_imported_row_corrections.update_one(
+            key,
+            {"$set": {**key, "project_id": project_id, "feature_id": feature_id,
+                      "identity_hash": identity_hash or None,
+                      "action": action, "note": (note or "")[:2000],
+                      "actor": actor, "updated_at": now},
+             "$setOnInsert": {"created_at": now}},
+            upsert=True)
+
+    def import_corrections_for_batch(self, batch_id):
+        """Return the latest corrections for a batch, keyed by BOTH the imported
+        row id and its identity hash so callers can look up either way."""
+        out = {}
+        for c in self.project_imported_row_corrections.find(
+                {"import_batch_id": batch_id}):
+            c["id"] = str(c.pop("_id"))
+            if c.get("project_imported_row_id"):
+                out[c["project_imported_row_id"]] = c
+            if c.get("identity_hash"):
+                out[c["identity_hash"]] = c
+        return out
+
+    def list_projects_with_pending_import_rows(self):
+        """Project ids that still have imported-pool rows awaiting project-wide
+        re-analysis (needs_project_analysis=True). Consumed by the scheduler (GAP2)."""
+        return self.project_imported_rows.distinct(
+            "project_id", {"needs_project_analysis": True})
+
+    def set_imported_row_embedding(self, project_imported_row_id, embedding):
+        """GAP8: cache a pool row's embedding on the row so semantic matching doesn't
+        re-embed it every pass. No-op if the id is invalid."""
+        if not ObjectId.is_valid(project_imported_row_id):
+            return
+        self.project_imported_rows.update_one(
+            {"_id": ObjectId(project_imported_row_id)},
+            {"$set": {"embedding": embedding}})
 
     def create_feature_import(self, doc):
         doc = {**doc, "created_at": time.time(), "updated_at": time.time()}
@@ -3596,3 +3676,12 @@ class Store:
         if p:
             p["id"] = str(p.pop("_id"))
         return p
+
+    def mark_feature_test_plans_stale(self, feature_id):
+        """Flag a feature's test-plan runs as out of date (e.g. after an import
+        changed its test cases), so consumers know the plan should be regenerated.
+        Returns the number of runs flagged."""
+        res = self.test_plan_runs.update_many(
+            {"feature_id": feature_id},
+            {"$set": {"stale": True, "stale_at": time.time()}})
+        return getattr(res, "modified_count", 0)

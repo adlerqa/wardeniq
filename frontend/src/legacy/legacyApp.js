@@ -1727,11 +1727,18 @@ function caseCard(c){
   const context=orig?`${orig.replaceAll("_"," ")} · `:"";
   const inherited=["reused","carried","carried_repaired","inherited","adapted"].includes(orig);
   const title=caseTitle(c);
+  // "Imported from sheet" takes priority over the generic inherited badge, so a case
+  // that came from an uploaded sheet is never mislabelled as inherited from a feature.
+  // Fall back to the origin when the backend `imported` flag isn't present yet.
+  const isImported=c.imported||orig==="imported";
+  const originBadge=isImported
+    ?`<span class="badge reused" style="margin-left:7px" title="Came from an uploaded sheet">Imported from sheet</span>`
+    :(inherited?`<span class="badge reused" style="margin-left:7px">Inherited / reused</span>`:"");
   return `<div class="testcase-item" data-case-item="${c.id}">
     <div class="testcase-row" onclick="viewCase('${c.id}',this)">
       <input class="case-select" data-case-id="${esc(c.id)}" type="checkbox" aria-label="Select ${esc(title)}" onclick="event.stopPropagation()"/>
       <span class="testcase-chevron">›</span>
-      <div><div class="testcase-title">${c.display_id?`<span class="badge" style="margin-right:7px">${esc(c.display_id)}</span>`:""}${esc(title)}${inherited?`<span class="badge reused" style="margin-left:7px">Inherited / reused</span>`:""}</div><div class="testcase-sub">${esc(context+typeLabel(c.type))} · ${c.steps.length} step${c.steps.length===1?"":"s"}</div></div>
+      <div><div class="testcase-title">${c.display_id?`<span class="badge" style="margin-right:7px">${esc(c.display_id)}</span>`:""}${esc(title)}${originBadge}</div><div class="testcase-sub">${esc(context+typeLabel(c.type))} · ${c.steps.length} step${c.steps.length===1?"":"s"}</div></div>
       ${resultSelect(c)}
       <span class="testcase-priority">${prioBadge(c.priority)}</span>
       <button class="testcase-delete needs-editor" title="Delete testcase" onclick="event.stopPropagation();requestDeleteCase('${c.id}')"><span>Delete</span></button>
@@ -1794,7 +1801,10 @@ async function loadCases(){
 const RESULT_LABELS={untested:"Untested",passed:"Passed",failed:"Failed",blocked:"Blocked"};
 const resultSelect=(c)=>`<select class="result-select needs-editor ${esc(c.execution_status||"untested")}" aria-label="Latest execution result" onclick="event.stopPropagation()" onchange="setCaseResult('${c.id}',this.value,this)"><option value="untested" ${(c.execution_status||"untested")==="untested"?"selected":""}>Untested</option><option value="passed" ${c.execution_status==="passed"?"selected":""}>Passed</option><option value="failed" ${c.execution_status==="failed"?"selected":""}>Failed</option><option value="blocked" ${c.execution_status==="blocked"?"selected":""}>Blocked</option></select>`;
 function testcaseRow(c){
-  const lineageBadge=c.inherited?`<span class="badge reused" style="margin-left:7px">Inherited${c.source_feature_name?` from ${esc(c.source_feature_name)}`:""}</span>`:"";
+  const lineageImported=c.imported||c.association_origin==="imported";
+  const lineageBadge=lineageImported
+    ?`<span class="badge reused" style="margin-left:7px" title="This test case came from an uploaded sheet (imported / reused across features)">Imported from sheet</span>`
+    :(c.inherited?`<span class="badge reused" style="margin-left:7px">Inherited${c.source_feature_name?` from ${esc(c.source_feature_name)}`:""}</span>`:"");
   const title=caseTitle(c);
   return `<div class="testcase-item" data-case-item="${c.id}" style="${c.deprecated?"opacity:.6":""}">
     <div class="testcase-row" onclick="viewCase('${c.id}',this)">
@@ -1849,13 +1859,17 @@ function caseDetailHtml(c){
   const endpoint=[m.method,m.endpoint||m.path].filter(Boolean).join(" ");
   const expected=m.expected_result||m.expected_behavior||m.result;
   const lineage=(c.features||[]).map(f=>`${f.name}${f.version?` v${f.version}`:""}${f.origin?` · ${f.origin}`:""}`).join("\n");
+  // Imported when the backend flag says so, or any feature link's origin is an import.
+  const isImported=c.imported||(c.features||[]).some(f=>String(f.origin||"").toLowerCase().includes("import"));
+  const lineageText=(isImported?"Imported from sheet\n":"")+(lineage||"No feature lineage recorded");
+  const importedBadge=isImported?`<span class="badge reused" style="margin-left:6px" title="Came from an uploaded sheet">Imported from sheet</span>`:"";
   const steps=(c.steps||[]);
-  return `<div class="case-detail-head"><div><div style="font-size:15px;font-weight:700">${c.display_id?`<span class="badge" style="margin-right:8px">${esc(c.display_id)}</span>`:""}${esc(title)}</div><div style="margin-top:5px"><span class="badge ${c.type}">${esc(typeLabel(c.type))}</span> ${prioBadge(c.priority)} ${(c.tags||[]).map(t=>`<span class="badge">${esc(t)}</span>`).join(" ")}</div></div><div style="display:flex;gap:7px"><button class="ghost needs-editor" onclick="event.stopPropagation();editCase('${c.id}')">Edit testcase</button><button class="ghost" onclick="event.stopPropagation();viewCase('${c.id}',this)">Close</button></div></div>
+  return `<div class="case-detail-head"><div><div style="font-size:15px;font-weight:700">${c.display_id?`<span class="badge" style="margin-right:8px">${esc(c.display_id)}</span>`:""}${esc(title)}${importedBadge}</div><div style="margin-top:5px"><span class="badge ${c.type}">${esc(typeLabel(c.type))}</span> ${prioBadge(c.priority)} ${(c.tags||[]).map(t=>`<span class="badge">${esc(t)}</span>`).join(" ")}</div></div><div style="display:flex;gap:7px"><button class="ghost needs-editor" onclick="event.stopPropagation();editCase('${c.id}')">Edit testcase</button><button class="ghost" onclick="event.stopPropagation();viewCase('${c.id}',this)">Close</button></div></div>
     <div class="case-detail-grid">
       <div class="case-detail-panel"><div class="case-detail-label">Description</div><div class="case-detail-value">${esc(caseMetaText(description))}</div></div>
       <div class="case-detail-panel"><div class="case-detail-label">Endpoint</div><div class="case-detail-value">${esc(endpoint||"Not applicable or not specified")}</div></div>
       <div class="case-detail-panel"><div class="case-detail-label">Expected result</div>${expectedResultHtml(expected)}</div>
-      <div class="case-detail-panel"><div class="case-detail-label">Source lineage</div><div class="case-detail-value">${esc(lineage||"No feature lineage recorded")}</div></div>
+      <div class="case-detail-panel"><div class="case-detail-label">Source lineage</div><div class="case-detail-value">${esc(lineageText)}</div></div>
     </div>
     <div class="case-steps-table"><div class="case-step case-step-head"><span>#</span><span>Step</span><span>Expected result</span></div>${steps.length?steps.map((s,i)=>`<div class="case-step"><span class="case-step-num">${i+1}.</span><span>${esc(s.action)}</span><span class="case-step-expected">${esc(s.expected||"No separate expected result")}</span></div>`).join(""):`<div class="case-detail-loading">No detailed steps were saved for this testcase.</div>`}</div>`;
 }
@@ -4897,7 +4911,7 @@ async function runImpUpload () {
     $("#imp-status").innerHTML = `<span>${esc(d.details || d.status || "AI analyzing test cases...")}</span>`;
     if (d.completed) {
       $("#imp-progress").hidden = true;
-      renderImportSummary(d.result_json || {}, fid);
+      renderImportSummary(d.result_json || {}, fid, iid);
       $("#imp-upload").disabled = false;
       return;
     }
@@ -4907,8 +4921,20 @@ async function runImpUpload () {
   pollImport();
 }
 
-function renderImportSummary(data, fid) {
+// Post-import review state (GAP1): one entry per row with the reviewer's current
+// include/exclude decision + note. Seeded from the scorer's action.
+let IMP_REVIEW = [];
+let IMP_REVIEW_CTX = { fid: null, iid: null };
+
+function renderImportSummary(data, fid, iid) {
   const items = data.items || [];
+  IMP_REVIEW_CTX = { fid, iid };
+  IMP_REVIEW = items.map(it => ({
+    rid: it.project_imported_row_id || null,
+    hash: it.identity_hash || null,
+    included: it.action === "matched",
+    note: "",
+  }));
   if (!items.length) {
     $("#imp-heading").textContent = "Spreadsheet import finished";
     $("#imp-upload").style.display = "none";
@@ -4944,12 +4970,12 @@ function renderImportSummary(data, fid) {
     </div>
     <div class="sheet-section-head">
       <div>
-        <div class="typehdr">Test details</div>
-        <div class="muted">Imported tests are shown read-only for this upload flow.</div>
+        <div class="typehdr">Review imported tests</div>
+        <div class="muted">Include a row in this feature, or keep it in the project library for later. Then save.</div>
       </div>
-      <span class="badge">${items.length} rows loaded</span>
+      <button class="go" onclick="impSaveReview()" style="margin:0">Save review</button>
     </div>
-    <div class="sheet-list">${items.map(renderImportDetailCard).join("")}</div>
+    <div class="sheet-list" id="imp-review-list">${items.map((it, i) => renderImportDetailCard(it, i)).join("")}</div>
   `;
   if (matched > 0) {
     // Reload the feature list + workspace if open, so the new test cases appear.
@@ -4969,10 +4995,22 @@ function sheetKpis(defs) {
     </div>`).join("")}</div>`;
 }
 
-function renderImportDetailCard(it) {
-  const included = it.action === "matched";
+function renderImportDetailCard(it, idx) {
+  const rv = (typeof idx === "number" && IMP_REVIEW[idx]) ? IMP_REVIEW[idx]
+             : { included: it.action === "matched", note: "" };
+  const included = rv.included;
   const steps = (it.steps_preview || []).join(" · ") || `${it.steps_count || 0} steps`;
   const reason = breakdownReason(it.breakdown);
+  const controls = (typeof idx === "number") ? `
+    <div class="imp-review-controls" style="display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap">
+      <button class="${included ? "go" : "ghost"}" style="padding:4px 10px;font-size:11px;margin:0"
+        onclick="impSetRow(${idx}, true)">Include</button>
+      <button class="${included ? "ghost" : "go"}" style="padding:4px 10px;font-size:11px;margin:0"
+        onclick="impSetRow(${idx}, false)">Keep for later</button>
+      <input type="text" placeholder="note (optional)" value="${esc(rv.note || "")}"
+        oninput="impSetNote(${idx}, this.value)"
+        style="flex:1;min-width:140px;font-size:11.5px;padding:4px 8px"/>
+    </div>` : "";
   return `<div class="sheet-test-card ${included ? "included" : "pending"}">
     <div class="sheet-card-top">
       <div class="sheet-card-title">${esc(it.title || "(no title)")}</div>
@@ -4989,8 +5027,49 @@ function renderImportDetailCard(it) {
       <b>Expected:</b> ${esc(it.expected_result || "As described in the imported row.")}
     </div>
     ${reason ? `<div class="sheet-reason"><b>Reason:</b> ${esc(reason)}</div>` : ""}
+    ${controls}
   </div>`;
 }
+
+// Toggle one row's include/exclude decision and re-render just its pill/buttons.
+window.impSetRow = function (idx, included) {
+  if (!IMP_REVIEW[idx]) return;
+  IMP_REVIEW[idx].included = !!included;
+  const list = $("#imp-review-list");
+  if (!list) return;
+  const card = list.children[idx];
+  if (card) {
+    card.classList.toggle("included", included);
+    card.classList.toggle("pending", !included);
+    const pill = card.querySelector(".sheet-card-top .sheet-pill");
+    if (pill) { pill.className = `sheet-pill ${included ? "green" : "amber"}`; pill.textContent = included ? "Included" : "Stored"; }
+    const btns = card.querySelectorAll(".imp-review-controls button");
+    if (btns[0]) btns[0].className = included ? "go" : "ghost";
+    if (btns[1]) btns[1].className = included ? "ghost" : "go";
+  }
+};
+window.impSetNote = function (idx, val) { if (IMP_REVIEW[idx]) IMP_REVIEW[idx].note = val; };
+
+// Persist all decisions to the /review endpoint (idempotent per row).
+window.impSaveReview = async function () {
+  const { fid, iid } = IMP_REVIEW_CTX;
+  if (!fid || !iid) { toast("Nothing to save", true); return; }
+  const reviews = IMP_REVIEW.map(r => ({
+    project_imported_row_id: r.rid, identity_hash: r.hash,
+    action: r.included ? "include" : "exclude", note: r.note || "",
+  }));
+  try {
+    const r = await api(`/api/features/${fid}/tests/import/${iid}/review`,
+      { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviews }) });
+    const d = r.data || {};
+    toast(`Review saved · ${d.included || 0} included, ${d.excluded || 0} removed`);
+    if (typeof loadFeatures === "function") loadFeatures();
+    if (fid && currentFeature === fid && typeof openFeature === "function") {
+      setTimeout(() => openFeature(currentFeature), 300);
+    }
+  } catch (e) { toast(e.message, true); }
+};
 
 function breakdownReason(breakdown) {
   if (!breakdown || typeof breakdown !== "object") return "";
@@ -5092,8 +5171,10 @@ function renderImplibGroup(g, open) {
         </div>
       </div>
       <div class="sheet-group-actions">
-        <button class="sheet-danger-ghost" data-implib-action="remove-all" data-group="${attr(g.key)}" type="button">Remove all</button>
-        <button class="sheet-danger-ghost" data-implib-action="delete-sheet" data-feature-import-id="${attr(g.feature_import_id)}" data-filename="${attr(g.original_filename)}" data-sheet="${attr(g.sheet)}" type="button">Delete sheet</button>
+        <button class="sheet-danger-ghost" data-implib-action="remove-all" data-group="${attr(g.key)}" type="button"
+          title="Remove every row of this sheet from THIS feature. The rows stay in the project library.">Remove all from feature</button>
+        <button class="sheet-danger-ghost" data-implib-action="delete-sheet" data-feature-import-id="${attr(g.feature_import_id)}" data-filename="${attr(g.original_filename)}" data-sheet="${attr(g.sheet)}" type="button"
+          title="Delete this sheet's rows from the WHOLE project library (all features). Cannot be undone.">Delete sheet from project</button>
         <span class="sheet-collapse">^</span>
       </div>
     </summary>
@@ -5123,7 +5204,8 @@ function renderImplibRow(it) {
       <b>Expected:</b> ${esc(it.expected_result || "As described in the imported row.")}
     </div>
     <div class="sheet-action-row">
-      <button class="${desired ? "sheet-danger-ghost" : "sheet-primary"}" data-implib-action="${desired ? "toggle-remove" : "toggle-add"}" data-hash="${attr(it.identity_hash)}" type="button">${desired ? "Remove test" : "Add test"}</button>
+      <button class="${desired ? "sheet-danger-ghost" : "sheet-primary"}" data-implib-action="${desired ? "toggle-remove" : "toggle-add"}" data-hash="${attr(it.identity_hash)}" type="button"
+        title="${desired ? "Remove this test case from this feature (it stays in the project library)" : "Add this row to this feature as a test case"}">${desired ? "Remove from feature" : "Add to feature"}</button>
     </div>
   </div>`;
 }
