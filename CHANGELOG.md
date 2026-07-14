@@ -3,6 +3,18 @@
 ## Unreleased
 
 ### Added
+- **Multi-arch Docker Hub image (`linux/amd64` + `linux/arm64`).** The published
+  `adlerqa/wardeniq` image was initially built by `docker-publish.yml` on GitHub's
+  standard `ubuntu-latest` runner, which only produces `linux/amd64` — fine for most
+  cloud VMs, but not native on ARM hosts (Apple Silicon without emulation, AWS
+  Graviton, Raspberry Pi). Added a `docker/setup-qemu-action@v3` step and
+  `platforms: linux/amd64,linux/arm64` to the existing `docker/build-push-action@v6`
+  step, so both architectures are built and pushed under the same tag in one run;
+  Docker automatically pulls the right one for the host. No Dockerfile changes needed
+  — both base images (`node:20-slim`, `python:3.11-slim`) already publish official
+  `arm64` variants. First build under QEMU emulation will be noticeably slower than a
+  native `amd64`-only build; subsequent builds benefit from the existing `type=gha`
+  layer cache.
 - **README "Option B" rewritten as an explicit numbered walkthrough.** Previously the
   install-script command and the rationale were interleaved as prose; now it's a
   literal Step 1–5 sequence (pull → one-time `install.sh` setup → set `MONGO_URI` →
