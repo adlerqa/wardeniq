@@ -3456,9 +3456,32 @@ async function loadJobsList(){
 window.retryJob=async id=>{try{await api(`/api/jobs/${id}/retry`,{method:"POST"});toast("Retry started");loadJobsList();}catch(e){toast(e.message,true);}};
 
 // ---- auth / login ----
-function showLogin(){ME=null;$("#login").hidden=false;$("#usermenu").hidden=true;
-  $("#login-step1").hidden=false;$("#login-step2").hidden=true;$("#login-err").textContent="";$("#login-msg").textContent="";
-  clearLoginCode();setTimeout(()=>$("#login-email")?.focus(),50);}
+async function showLogin(){ME=null;$("#login").hidden=false;$("#usermenu").hidden=true;
+  $("#login-err").textContent="";$("#login-msg").textContent="";
+  clearLoginCode();
+  try {
+    const status = await api("/api/auth/smtp-status");
+    if (status && status.smtp_setup) {
+      $("#login-intro").textContent = "Sign in with a one-time code sent to your email. No password needed.";
+      $("#login-step1").hidden = false;
+      $("#login-step2").hidden = true;
+      $("#login-password").hidden = true;
+      setTimeout(() => $("#login-email")?.focus(), 50);
+    } else {
+      $("#login-intro").textContent = "Sign in with your admin credentials. (SMTP is not configured)";
+      $("#login-step1").hidden = true;
+      $("#login-step2").hidden = true;
+      $("#login-password").hidden = false;
+      setTimeout(() => $("#login-username")?.focus(), 50);
+    }
+  } catch (e) {
+    $("#login-intro").textContent = "Sign in with a one-time code sent to your email. No password needed.";
+    $("#login-step1").hidden = false;
+    $("#login-step2").hidden = true;
+    $("#login-password").hidden = true;
+    setTimeout(() => $("#login-email")?.focus(), 50);
+  }
+}
 function applyRole(){const role=(ME&&ME.role)||"viewer";
   $("#usermenu").hidden=false;$("#user-email").textContent=ME.email;
   const rb=$("#user-role");rb.textContent=role;rb.className="rolebadge "+role;
@@ -3602,6 +3625,21 @@ $("#login-verify").onclick=async()=>{const email=$("#login-to").textContent,code
   }catch(e){$("#login-err").textContent=e.message;}finally{$("#login-verify").disabled=false;setBusy("#login-verify",false);}};
 $("#login-email").onkeydown=e=>{if(e.key==="Enter")$("#login-send").click();};
 $("#login-back").onclick=()=>{$("#login-step1").hidden=false;$("#login-step2").hidden=true;$("#login-err").textContent="";$("#login-msg").textContent="";clearLoginCode();};
+$("#login-signin").onclick=async()=>{
+  const username=$("#login-username").value.trim();
+  const password=$("#login-pw").value;
+  if(!username){$("#login-err").textContent="Enter your username";return;}
+  if(!password){$("#login-err").textContent="Enter your password";return;}
+  $("#login-signin").disabled=true;setBusy("#login-signin",true);$("#login-err").textContent="";
+  try{
+    const r=await api("/api/auth/login-password",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
+    ME=r.user;$("#login").hidden=true;applyRole();
+    try{sessionStorage.removeItem("wq_invite_token");}catch(e){}
+    if(await maybeShowInvite())return;
+    startApp();
+  }catch(e){$("#login-err").textContent=e.message;}finally{$("#login-signin").disabled=false;setBusy("#login-signin",false);}};
+$("#login-username").onkeydown=e=>{if(e.key==="Enter")$("#login-pw").focus();};
+$("#login-pw").onkeydown=e=>{if(e.key==="Enter")$("#login-signin").click();};
 // ---- 6-box OTP entry: digits only, auto-advance, backspace, paste (spaces/letters stripped) ----
 function loginCodeBoxes(){return Array.from(document.querySelectorAll("#login-code .otp-box"));}
 function getLoginCode(){return loginCodeBoxes().map(b=>b.value).join("").replace(/\D/g,"");}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { api } from "../../lib/api";
 
 // Passwordless email-OTP login (idiomatic React + Tailwind). Backend flow:
@@ -19,6 +19,44 @@ export default function LoginPage({ onAuthenticated }) {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [smtpSetup, setSmtpSetup] = useState(true);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+
+  useEffect(() => {
+    api("/api/auth/smtp-status")
+      .then((res) => {
+        if (res) {
+          setSmtpSetup(res.smtp_setup);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const loginPassword = async () => {
+    setErr("");
+    setMsg("");
+    if (!username.trim()) {
+      setErr("Username is required.");
+      return;
+    }
+    if (!password) {
+      setErr("Password is required.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api("/api/auth/login-password", {
+        method: "POST",
+        body: { username: username.trim(), password },
+      });
+      onAuthenticated?.();
+    } catch (e) {
+      setErr(e.message || "Login failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const sendCode = async () => {
     setErr("");
@@ -105,10 +143,43 @@ export default function LoginPage({ onAuthenticated }) {
           </div>
         </div>
         <p className="mb-4 text-[12.5px] text-muted">
-          Sign in with a one-time code sent to your email.
+          {smtpSetup
+            ? "Sign in with a one-time code sent to your email."
+            : "Sign in with your admin credentials. (SMTP is not configured)"}
         </p>
 
-        {step === 1 && (
+        {!smtpSetup && (
+          <div>
+            <label className="mb-1 block text-xs text-muted">Username / Email</label>
+            <input
+              type="text"
+              placeholder="admin"
+              autoComplete="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full rounded-md border border-line bg-panel2 px-3 py-2.5 text-sm text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+            />
+            <label className="mt-3 mb-1 block text-xs text-muted">Password</label>
+            <input
+              type="password"
+              placeholder="••••••••"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && loginPassword()}
+              className="w-full rounded-md border border-line bg-panel2 px-3 py-2.5 text-sm text-text outline-none focus:border-accent focus:ring-2 focus:ring-accent/30"
+            />
+            <button
+              onClick={loginPassword}
+              disabled={busy}
+              className="mt-4 w-full rounded-md bg-accent px-4 py-2.5 text-sm font-semibold text-[#1a1205] transition hover:brightness-110 disabled:opacity-50"
+            >
+              {busy ? "Signing in…" : "Sign in"}
+            </button>
+          </div>
+        )}
+
+        {smtpSetup && step === 1 && (
           <div>
             <label className="mb-1 block text-xs text-muted">Email</label>
             <input
@@ -130,7 +201,7 @@ export default function LoginPage({ onAuthenticated }) {
           </div>
         )}
 
-        {step === 2 && (
+        {smtpSetup && step === 2 && (
           <div>
             <label className="mb-1 block text-xs text-muted">
               6-digit code sent to <b className="text-text">{email}</b>

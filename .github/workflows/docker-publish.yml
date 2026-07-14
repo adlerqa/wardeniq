@@ -1,0 +1,59 @@
+name: Publish Docker image
+
+# Builds app/Dockerfile (context = repo root, so it also compiles frontend/) and
+# pushes it to Docker Hub as adlerqa/wardeniq.
+#
+#   - Manual run  : pick any tag (defaults to "beta") -> adlerqa/wardeniq:<tag>
+#   - Version tag : pushing a git tag like v1.2.0      -> adlerqa/wardeniq:1.2.0
+#                                                       -> adlerqa/wardeniq:latest
+#
+# Requires two repo secrets (Settings -> Secrets and variables -> Actions):
+#   DOCKERHUB_USERNAME  - your Docker Hub username (e.g. adlerqa)
+#   DOCKERHUB_TOKEN     - a Docker Hub access token (Account Settings -> Security),
+#                         not your password
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish as adlerqa/wardeniq:<tag>"
+        required: true
+        default: beta
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Determine tags
+        id: meta
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tags=adlerqa/wardeniq:${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            version="${GITHUB_REF_NAME#v}"
+            echo "tags=adlerqa/wardeniq:${version},adlerqa/wardeniq:latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: app/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

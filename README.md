@@ -56,59 +56,170 @@ leaves your infrastructure unless you choose a hosted LLM.
 
 | You need | Why |
 |---|---|
-| **Docker + Docker Compose** (v2.20+) | Runs the whole stack with one command |
-| **~8–10 GB free RAM** | 3 MongoDB nodes + search + a small local model |
-| **A few GB of disk** | Images + model downloads |
+| **Docker** (Compose v2.20+ if using the bundled stack) | Runs the app; Compose only needed if you also want the bundled DB/models |
+| **~8–10 GB free RAM** — *only* if running the **full bundled stack** locally | 3 MongoDB nodes + search + a small local model, all on your machine |
+| **~2–4 GB free RAM** — if running **just the app** against a cloud database + hosted LLM | The app container itself is lightweight; the heavy pieces (DB, model) live elsewhere |
+| **A few GB of disk** | Images + (if bundled) model downloads |
 | *(optional)* **GitHub token (PAT)** | Needed to analyze private repos / open PRs |
 | *(optional)* **SMTP details** | To email sign-in codes (you can skip this at first — see below) |
 | *(optional)* **A hosted LLM API key** | Sharper results than the small local model |
 
-That's it. You do **not** need Node, Python, or a database installed — it's all in
-the containers.
+That's it. You do **not** need Node, Python, or a database installed locally — it's
+all in the container(s). Works the same on **macOS, Linux, and Windows** (Docker
+Desktop) — Windows users run `run.ps1` instead of `run.sh`; see Quick start below.
+
+The 8–10 GB figure is only for the all-local **demo** setup (3-node MongoDB replica
+set + search + Ollama bundled in); if you point wardenIQ at a **cloud MongoDB** (e.g.
+Atlas) and a **hosted LLM** (OpenAI/Anthropic/etc.) instead, the app itself needs only
+a couple GB of RAM — see [Cloud / lightweight
+deployment](#cloud--lightweight-deployment-recommended-for-real-use) below.
 
 ---
 
 ## Quick start (about 5 minutes)
 
+There are two ways to run wardenIQ — pick whichever fits:
+
+- **Have the source, or want to build it yourself?** Clone and build (below).
+- **Just want to run it — no source needed?** Skip straight to [Prefer a pre-built
+  image?](#prefer-a-pre-built-image-skip-the-local-build--recommended) — you only
+  need one small config file and `docker pull`, nothing to clone or compile.
+
+### Option A — Clone and build from source
+
 ```bash
 git clone https://github.com/adlerqa/wardeniq.git wardenIQ && cd wardenIQ
-cp .env.example .env        # open .env and change APP_SECRET to any long random string
+cp .env.example .env        # no further edits needed — see note below
 ./run.sh                    # builds + starts everything
 ```
 
+**On Windows**, use the PowerShell equivalent instead (no WSL or Git Bash
+required — just Docker Desktop):
+
+```powershell
+git clone https://github.com/adlerqa/wardeniq.git wardenIQ; cd wardenIQ
+Copy-Item .env.example .env
+.\run.ps1
+```
+
+If Windows blocks the script from running, either run it once via
+`powershell -ExecutionPolicy Bypass -File .\run.ps1`, or relax the policy for
+your user one time with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+
 Then open **http://localhost:8001**.
+
+> **You don't have to touch `.env` for this first run.** If you leave `APP_SECRET`
+> unset/default, wardenIQ generates a strong one automatically on first boot and
+> saves it back into `.env` for you (logged once to `docker logs -f warden-app`).
+> It never runs with a known/default secret — it either generates a real one or
+> refuses to start, so this is a genuine zero-edit first run, not a weaker one. Before
+> a real deployment, open `.env` and confirm `APP_SECRET` looks like a long random
+> string (it will, if it was auto-generated) — back that file up, since losing it
+> invalidates sessions and locks you out of any encrypted settings (API keys, SMTP
+> password) already saved.
 
 > **First launch takes a few minutes** — it initializes the MongoDB replica set and
 > downloads the local models. Grab a coffee; it's a one-time cost.
 
-*(No source code, just a Docker image? Skip the clone — set `APP_IMAGE` in `.env` to
-the published image. See the App image note in `.env.example`.)*
-
 ### Signing in the very first time
 
-wardenIQ always requires a login (passwordless — it emails you a 6-digit code). But
-you haven't set up email yet, so there's a built-in shortcut:
+wardenIQ always requires a login. When SMTP (email delivery) is not yet set up, the application displays a Username/Password screen.
 
-1. On the sign-in screen, enter your email. With no users yet, **you become the admin.**
-2. wardenIQ prints your code to the **server log** instead of emailing it. Read it with:
-
-   ```bash
-   docker logs -f warden-app
-   ```
-
-   Look for a box like:
-
-   ```
-   ================================================================
-   [wardenIQ] SMTP is not configured yet — one-time sign-in code
-   [wardenIQ]   you@company.com: 481920
-   ================================================================
-   ```
-
-3. Enter that code, and you're in. Now go to **Configuration → Email**, add your SMTP
-   details, and from then on codes are emailed normally (and never logged again).
+To sign in the very first time:
+1. On the login screen, enter the default administrator credentials:
+   - **Username**: `admin`
+   - **Password**: `admin123`
+2. Once you are signed in, navigate to **Configuration → Email**.
+3. Set up your SMTP details. Once email delivery is configured, wardenIQ will automatically disable password login and switch to the standard passwordless email OTP sign-in flow (emailing you a one-time 6-digit code for each login).
 
 Prefer to seed the admin ahead of time? Set `ADMIN_EMAIL=you@company.com` in `.env`.
+
+---
+
+## Prefer a pre-built image? (skip the local build — recommended)
+
+### Option B — Pull the pre-built image, no source needed
+
+Don't build from source. wardenIQ publishes a ready-to-run image straight to Docker
+Hub: **[`adlerqa/wardeniq`](https://hub.docker.com/r/adlerqa/wardeniq)**. Pulling it
+gets you the exact same app, already compiled — no Node/Python toolchain, no waiting
+on a build, no source code required at all.
+
+```bash
+docker pull adlerqa/wardeniq:beta
+```
+
+That single command always grabs the current published version. When a new one
+ships, running it again pulls the update — you never rebuild anything yourself.
+
+You do still need one small **recipe file** (Docker Compose file) that tells Docker
+how to run the image (ports, env vars, and — if you want it — the bundled database).
+That file is a few KB, separate from the app's source code, so "no repo" really means
+"no source files," not "zero files." Grab just what you need without cloning:
+
+```bash
+mkdir wardeniq && cd wardeniq
+curl -fsSLO https://raw.githubusercontent.com/adlerqa/wardeniq/main/docker-compose.app.yml
+curl -fsSLO https://raw.githubusercontent.com/adlerqa/wardeniq/main/.env.example
+cp .env.example .env
+```
+
+Then edit `.env` — this file is **yours**, it lives on your machine (or server), never
+inside the image. The only line you actually *must* fill in here is `MONGO_URI` (this
+flow has no bundled database to fall back to); `APP_SECRET` can be left as-is —
+wardenIQ generates and saves a strong one on first boot if you don't set one (see the
+note in Quick start above):
+
+```
+APP_IMAGE=adlerqa/wardeniq:beta
+MONGO_URI=<your MongoDB connection string — see Cloud deployment below>
+```
+
+Start it — **no `--build`**, Compose just pulls the image since `APP_IMAGE` is set:
+
+```bash
+docker compose -f docker-compose.app.yml up -d
+docker logs -f warden-app     # watch it come up / read the first sign-in code
+```
+
+Open **http://localhost:8001** (or your server's address). First sign-in works the
+same as the Quick start above.
+
+> Want the **bundled** MongoDB/Ollama too instead of your own? Also grab
+> `docker-compose.yml`, `docker-compose.mongodb.yml`, `docker-compose.ollama.yml`, and
+> the `config/` folder the same way, then run `docker compose up -d` (no `-f`,
+> no `--build`) from that folder instead. This is the heavier, all-local demo path —
+> see the RAM note in [Requirements](#requirements).
+
+> **Maintainers:** the image is built and pushed by
+> `.github/workflows/docker-publish.yml` — run it manually (any tag, defaults to
+> `beta`) or push a `vX.Y.Z` git tag to publish a version + `latest`. Requires the
+> `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets.
+
+---
+
+## Cloud / lightweight deployment (recommended for real use)
+
+The bundled 3-node MongoDB + local Ollama setup above is a **local demo/trial
+convenience** — it's not what you'd actually run for a team. For real use, don't run
+MongoDB or the model locally at all:
+
+- **Database:** point `MONGO_URI` at a cloud MongoDB (e.g. **MongoDB Atlas**) instead
+  of the bundled replica set. wardenIQ needs a *search-capable* database — Atlas has
+  this built in, but wardenIQ creates **6 search indexes**, and Atlas caps that by
+  cluster tier: the **free M0 tier only allows 3**, so it **won't work** — you need a
+  **dedicated M10+ tier** (or your own self-managed MongoDB with `mongot`).
+- **LLM/embeddings:** use a hosted provider (OpenAI, Anthropic, Gemini, Mistral, Groq,
+  AWS Bedrock, or any OpenAI-compatible endpoint) under **Configuration** after first
+  sign-in, instead of the bundled local Ollama model.
+
+With both of those pointed at the cloud, you only ever run **one container** — the
+app itself — which is why the RAM requirement drops to **~2–4 GB** instead of 8–10 GB:
+there's no local database or model competing for your machine's resources. This is
+also the natural setup for a **cloud deployment** (e.g. a single small VM/ECS/Cloud
+Run instance running `adlerqa/wardeniq:beta`, with `MONGO_URI` pointing at Atlas) —
+nobody running or connecting to the tool needs to provision a database or GPU/CPU
+budget for a local model.
 
 ---
 
@@ -240,9 +351,7 @@ credentials are **not** `.env` vars — set them under Configuration → LLM/Emb
 
 ## Troubleshooting
 
-- **I can't sign in / "email delivery isn't set up yet."** You haven't configured SMTP.
-  Read your one-time code from the log: `docker logs -f warden-app`. (Only admins get the
-  log shortcut; regular users need SMTP configured first.)
+- **I can't sign in / SMTP is not configured.** If email delivery is not yet configured, make sure you log in using the default credentials: username `admin` and password `admin123`. Once logged in, configure SMTP in **Configuration → Email**.
 - **First start is slow or the page won't load.** Give it a few minutes — the replica set
   and model downloads take time on first run. Check progress with
   `docker compose logs -f` or the captured logs in `./logs/`.
@@ -251,7 +360,8 @@ credentials are **not** `.env` vars — set them under Configuration → LLM/Emb
   exactly which files it read, so you can tell which.
 - **Test generation is slow or shallow.** The default local model is CPU-friendly, not
   powerful. Switch to a bigger local model or a hosted provider under Configuration → LLM.
-- **Fresh start / wipe everything:** `./run.sh --reset` (deletes the data volumes).
+- **Fresh start / wipe everything:** `./run.sh --reset` (deletes the data volumes) —
+  on Windows, `.\run.ps1 -Reset`.
 
 ---
 
@@ -309,8 +419,10 @@ config/         mongod.conf, mongot.conf, replica-set init, mongot password file
 docker-compose.yml        the app + Mongo replica set + mongot + Ollama
 docker-compose.app.yml    the app alone (the only service a client needs)
 docker-compose.mongodb.yml / docker-compose.ollama.yml   the bundled dependencies
-run.sh          one-command launch + log capture
-collect-logs.sh dump all container logs/health into ./logs/
+run.sh          one-command launch + log capture (macOS/Linux)
+collect-logs.sh dump all container logs/health into ./logs/ (macOS/Linux)
+run.ps1         same as run.sh, for Windows (PowerShell — no WSL/Git Bash needed)
+collect-logs.ps1 same as collect-logs.sh, for Windows
 ```
 
 ---

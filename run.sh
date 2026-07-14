@@ -2,6 +2,7 @@
 # wardenIQ launcher. Builds + starts the full stack, then captures logs.
 #   ./run.sh           build + start
 #   ./run.sh --reset   wipe data volumes first (fresh replica set + DB)
+# Windows (no WSL/Git Bash)?  Use run.ps1 instead — same steps, pure PowerShell.
 set -uo pipefail
 cd "$(dirname "$0")"
 

@@ -3,6 +3,7 @@ import hmac
 import json
 import os
 import re
+import secrets
 import threading
 import time
 
@@ -289,7 +290,7 @@ def _webhook_base_url(request: Request | None = None) -> str:
 # Paths reachable without a session. The SPA itself is public (it shows the login
 # screen); external webhooks carry their own secret/signature.
 PUBLIC_EXACT = {"/", "/invite", "/favicon.ico", "/logo2.png", "/api/auth/request-otp", "/api/auth/verify-otp",
-                "/api/auth/me", "/api/auth/logout",
+                "/api/auth/me", "/api/auth/logout", "/api/auth/smtp-status", "/api/auth/login-password",
                 # Self-service invite endpoints: they authenticate the caller via the
                 # session cookie themselves (_session_user), so they bypass the
                 # role-based gateway (any signed-in user, incl. viewers, may accept
@@ -668,6 +669,42 @@ def _project_public(p):
 BOOT = {"stage": "starting", "ready": False, "detail": ""}
 
 
+def _ensure_app_secret():
+    """Zero-config first run: if no real secret has been configured at all, generate a
+    strong one automatically and persist it into .env, so a first-time user never has
+    to hand-edit anything just to get past the weak-secret gate below.
+
+    This does NOT weaken `_check_app_secret()` — it only fires when the effective
+    secret is still unset/the shipped placeholder, and only when we can durably
+    persist the generated value to .env (bind-mounted per docker-compose.app.yml), so
+    the SAME secret survives a restart (sessions and encrypted-at-rest settings depend
+    on that). If persistence isn't possible, we deliberately do nothing and let
+    `_check_app_secret()` fail closed with its existing clear error, rather than run on
+    a secret that would silently change on every restart.
+
+    If an operator has already started customizing via SESSION_SECRET/ENCRYPTION_KEY,
+    we leave it alone entirely — auto-filling just one half of an intentional split
+    would be more confusing than helpful.
+    """
+    if not auth.secret_is_weak():
+        return
+    if os.getenv("SESSION_SECRET") or os.getenv("ENCRYPTION_KEY"):
+        return
+    if not _env_file_writable():
+        return
+    generated = secrets.token_urlsafe(32)
+    ok, err = _write_env_var(ENV_FILE_PATH, "APP_SECRET", generated)
+    if not ok:
+        print(f"[wardenIQ][WARNING] could not persist an auto-generated APP_SECRET: {err}",
+              flush=True)
+        return
+    os.environ["APP_SECRET"] = generated
+    print("[wardenIQ] No APP_SECRET was set — generated a strong one automatically and "
+          "saved it to .env. This key signs sessions and encrypts stored secrets: back "
+          "up your .env file, and set your own APP_SECRET explicitly before going to "
+          "production.", flush=True)
+
+
 def _check_app_secret():
     """Fail closed (or loudly warn) if APP_SECRET is weak.
 
@@ -748,6 +785,7 @@ _SEARCH_INDEX_LIMIT_MSG = (
 
 
 def bootstrap():
+    _ensure_app_secret()
     _check_app_secret()
     _check_production_posture()
     BOOT.update(stage="connecting")
@@ -4242,8 +4280,9 @@ def request_otp(body: OtpRequestIn):
     user = store.get_user_by_email(email)
     bootstrap = False
     if not user:
-        # First-run convenience: with no users yet, the first requester becomes admin.
-        if store.count_users() == 0:
+        # First-run convenience: with no users with valid emails yet, the first requester becomes admin.
+        has_real_users = any(auth.is_valid_email(u.get("email")) for u in store.list_users())
+        if not has_real_users:
             user = store.create_user(email, email.split("@")[0], "admin"); bootstrap = True
         else:
             # Don't reveal whether an account exists.
@@ -4282,6 +4321,15 @@ class OtpVerifyIn(BaseModel):
 def verify_otp(body: OtpVerifyIn, response: Response):
     email = (body.email or "").strip().lower()
     user = store.get_user_by_email(email)
+    migrating = False
+    if not user:
+        # Check if there are no users with a valid email yet
+        has_real_users = any(auth.is_valid_email(u.get("email")) for u in store.list_users())
+        if not has_real_users:
+            user = store.get_user_by_email("admin")
+            if user:
+                migrating = True
+
     if not user or not user.get("active"):
         raise HTTPException(401, "invalid email or code")
     if not user.get("otp_hash") or user.get("otp_expires", 0) < time.time():
@@ -4291,10 +4339,52 @@ def verify_otp(body: OtpVerifyIn, response: Response):
     if not auth.otp_matches(user["otp_hash"], body.code):
         store.inc_otp_attempts(user["id"])
         raise HTTPException(401, "invalid email or code")
-    store.clear_otp(user["id"]); store.touch_login(user["id"])
-    # NOTE: we intentionally do NOT auto-accept a pending invite here. The invited
-    # user sees an invite banner after login and explicitly Accepts or Declines
-    # (see /api/auth/my-invite and /api/auth/invite/{accept,decline}).
+        
+    store.clear_otp(user["id"])
+    if migrating:
+        store.update_user(user["id"], {"email": email, "name": email.split("@")[0]})
+        
+    store.touch_login(user["id"])
+    
+    fresh = store.get_user(user["id"]) or user
+    response.set_cookie(auth.SESSION_COOKIE,
+                        auth.sign_session(user["id"], fresh.get("session_version", 0)),
+                        max_age=auth.SESSION_TTL, httponly=True, samesite="lax",
+                        secure=auth.COOKIE_SECURE, path="/")
+    return {"user": _user_public(fresh)}
+
+
+@app.get("/api/auth/smtp-status")
+def smtp_status():
+    cfg = _smtp_cfg()
+    return {"smtp_setup": cfg is not None}
+
+
+class LoginPasswordIn(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/api/auth/login-password")
+def login_password(body: LoginPasswordIn, response: Response):
+    cfg = _smtp_cfg()
+    if cfg is not None:
+        raise HTTPException(400, "Password login is disabled because SMTP is configured. Please use email OTP.")
+    
+    username = (body.username or "").strip()
+    password = body.password
+    
+    if username != "admin" or password != "admin123":
+        raise HTTPException(401, "Invalid username or password")
+        
+    user = store.get_user_by_email("admin")
+    if not user:
+        user = store.create_user("admin", "Admin", "admin")
+        
+    if not user.get("active"):
+        raise HTTPException(401, "User account is deactivated")
+        
+    store.touch_login(user["id"])
     fresh = store.get_user(user["id"]) or user
     response.set_cookie(auth.SESSION_COOKIE,
                         auth.sign_session(user["id"], fresh.get("session_version", 0)),

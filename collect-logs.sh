@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Dump container logs + health into ./logs/ for troubleshooting.
+# Windows (no WSL/Git Bash)?  Use collect-logs.ps1 instead.
 cd "$(dirname "$0")"
 mkdir -p logs
 echo "collecting logs into ./logs/  ($(date '+%Y-%m-%d %H:%M:%S'))"

@@ -3,3 +3,7 @@
 pytest==8.3.4
 pytest-mock==3.14.0
 ruff==0.8.4
+# Used by the CI "typecheck" job (informational — see .github/workflows/ci.yml).
+mypy==1.13.0
+# Used by the CI "security-scan" job to flag known-vulnerable dependencies.
+pip-audit==2.7.3

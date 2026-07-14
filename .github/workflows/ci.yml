@@ -6,7 +6,11 @@ on:
   pull_request:
 
 jobs:
-  test:
+  # Fast, fully-mocked tests: unit tests + the API/RBAC suites that drive the
+  # real FastAPI app + auth_gateway middleware through TestClient, but never
+  # touch a real MongoDB (Store.get_settings / store.add_audit are stubbed —
+  # see tests/conftest.py and tests/test_api_routes.py).
+  unit-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,5 +32,88 @@ jobs:
         continue-on-error: true
         run: ruff check app tests
 
-      - name: Run tests
-        run: pytest
+      - name: Type check (informational)
+        # app/ isn't annotated consistently yet (~25 errors as of writing, in
+        # sheet_import.py / testgen/service.py / email_send.py / validator.py).
+        # Surfaced for visibility; not a merge gate until those are fixed.
+        continue-on-error: true
+        run: mypy app --ignore-missing-imports
+
+      - name: Run unit + API + RBAC tests
+        run: pytest -m "not dbintegration"
+
+  # Same store.py surface, but against a real MongoDB — catches things the
+  # mocked unit tests structurally can't (real unique-index violations, actual
+  # query/update behavior, ObjectId edge cases, encrypted-settings round trip).
+  #
+  # Uses a single standalone `mongo` container (no mongot / Atlas Search), so
+  # vectorSearch-backed store.py methods are out of scope here — Store.ensure_
+  # indexes() is expected to fail partway through on those, which
+  # tests/test_db_integration.py tolerates. Full vector-search coverage needs
+  # the real docker-compose stack (PSMDB + mongot) and is a manual/deployment
+  # verification step, not a CI one, per CLAUDE.md's architecture notes.
+  db-integration-tests:
+    runs-on: ubuntu-latest
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand({ping:1})' --quiet"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r app/requirements.txt -r app/requirements-dev.txt
+
+      - name: Run DB integration tests
+        env:
+          MONGO_TEST_URI: mongodb://localhost:27017
+        run: pytest -m dbintegration -v
+
+  # Flags dependencies with known CVEs. Informational: some transitive deps
+  # (e.g. boto3's own dependency tree) may carry advisories with no upstream
+  # fix yet, so this doesn't block merges — but it's visible in every run.
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install pip-audit
+        run: pip install pip-audit==2.7.3
+
+      - name: Audit dependencies (informational)
+        continue-on-error: true
+        run: pip-audit -r app/requirements.txt -r app/requirements-dev.txt
+
+  # Confirms the shipped image (frontend build + FastAPI app) still builds,
+  # and that the compose files are valid — independent of the app-level unit
+  # tests, since neither exercises the Dockerfile/compose config.
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate docker-compose configuration
+        run: docker compose config --quiet
+
+      - name: Build app image
+        run: docker build -f app/Dockerfile -t wardeniq-app:ci .

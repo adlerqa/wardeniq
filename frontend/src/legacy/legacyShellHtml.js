@@ -41,6 +41,13 @@ export const LEGACY_SHELL_HTML = `
       <button class="go" id="login-verify">Verify &amp; sign in</button>
       <button class="link" id="login-back">← use a different email</button>
     </div>
+    <div id="login-password" hidden>
+      <label>Username / Email</label>
+      <input id="login-username" type="text" placeholder="admin" autocomplete="username"/>
+      <label style="margin-top:10px">Password</label>
+      <input id="login-pw" type="password" placeholder="••••••••" autocomplete="current-password"/>
+      <button class="go" id="login-signin" style="margin-top:15px">Sign in</button>
+    </div>
     <div class="muted ok" id="login-msg" style="margin-top:10px"></div>
     <div class="err" id="login-err"></div>
   </div>

@@ -179,3 +179,180 @@ class TestMinRole:
         assert self.main._is_public("/api/auth/request-otp") is True
         assert self.main._is_public("/assets/index-abc123.js") is True
         assert self.main._is_public("/api/projects") is False
+        assert self.main._is_public("/api/auth/smtp-status") is True
+        assert self.main._is_public("/api/auth/login-password") is True
+
+
+# --------------------------------------------------------------------------- smtp & password login
+class TestSmtpAndPasswordLogin:
+    @classmethod
+    def setup_class(cls):
+        cls.main = _import_main()
+
+    def test_smtp_status_endpoint(self, monkeypatch):
+        # 1. When SMTP is configured:
+        monkeypatch.setattr(self.main, "_smtp_cfg", lambda: {"host": "smtp.gmail.com"})
+        r = self.main.smtp_status()
+        assert r == {"smtp_setup": True}
+
+        # 2. When SMTP is not configured:
+        monkeypatch.setattr(self.main, "_smtp_cfg", lambda: None)
+        r = self.main.smtp_status()
+        assert r == {"smtp_setup": False}
+
+    def test_login_password_endpoint_flow(self, monkeypatch):
+        # Mock store
+        class FakeStore:
+            def __init__(self):
+                self.users = {}
+            def get_user_by_email(self, email):
+                return self.users.get(email)
+            def create_user(self, email, name, role):
+                u = {"id": "admin-id-123", "email": email, "name": name, "role": role, "active": True}
+                self.users[email] = u
+                return u
+            def get_user(self, uid):
+                for u in self.users.values():
+                    if u["id"] == uid:
+                        return u
+                return None
+            def touch_login(self, uid):
+                pass
+
+        fs = FakeStore()
+        monkeypatch.setattr(self.main, "store", fs)
+
+        # Mock Response
+        class FakeResponse:
+            def __init__(self):
+                self.cookies = {}
+            def set_cookie(self, name, value, **kwargs):
+                self.cookies[name] = value
+
+        # 1. When SMTP is configured, password login must fail
+        monkeypatch.setattr(self.main, "_smtp_cfg", lambda: {"host": "smtp.gmail.com"})
+        body = self.main.LoginPasswordIn(username="admin", password="admin123")
+        with pytest.raises(self.main.HTTPException) as exc:
+            self.main.login_password(body, FakeResponse())
+        assert exc.value.status_code == 400
+        assert "Password login is disabled" in exc.value.detail
+
+        # 2. When SMTP is not configured:
+        monkeypatch.setattr(self.main, "_smtp_cfg", lambda: None)
+
+        # 2a. Wrong credentials must fail
+        body = self.main.LoginPasswordIn(username="admin", password="wrongpassword")
+        with pytest.raises(self.main.HTTPException) as exc:
+            self.main.login_password(body, FakeResponse())
+        assert exc.value.status_code == 401
+        assert "Invalid username or password" in exc.value.detail
+
+        # 2b. Correct credentials must succeed and bootstrap user
+        body = self.main.LoginPasswordIn(username="admin", password="admin123")
+        resp = FakeResponse()
+        r = self.main.login_password(body, resp)
+        assert r["user"]["email"] == "admin"
+        assert r["user"]["role"] == "admin"
+        assert self.main.auth.SESSION_COOKIE in resp.cookies
+
+    def test_request_otp_first_run_with_admin(self, monkeypatch):
+        class FakeStore:
+            def __init__(self):
+                self.users = {}
+            def get_user_by_email(self, email):
+                return self.users.get(email)
+            def create_user(self, email, name, role):
+                u = {"id": "uid-" + email, "email": email, "name": name, "role": role, "active": True}
+                self.users[email] = u
+                return u
+            def list_users(self):
+                return list(self.users.values())
+            def otp_recent_issue_count(self, uid, w):
+                return 0
+            def set_otp(self, uid, h, exp):
+                pass
+
+        fs = FakeStore()
+        monkeypatch.setattr(self.main, "store", fs)
+        monkeypatch.setattr(self.main, "_deliver_otp", lambda *a, **k: ("sent", ""))
+
+        # Create the local admin user (non-valid email)
+        fs.create_user("admin", "Admin", "admin")
+
+        # Request OTP for a new valid email
+        body = self.main.OtpRequestIn(email="samyak@adlerqa.in")
+        r = self.main.request_otp(body)
+
+        # It should bootstrap the user and return sent
+        assert r["sent"] is True
+        assert r["bootstrap"] is True
+        assert fs.get_user_by_email("samyak@adlerqa.in") is not None
+
+    def test_verify_otp_migrates_admin_placeholder(self, monkeypatch):
+        class FakeStore:
+            def __init__(self):
+                self.users = {}
+            def get_user_by_email(self, email):
+                return self.users.get(email)
+            def create_user(self, email, name, role):
+                u = {"id": "uid-" + email, "email": email, "name": name, "role": role, "active": True,
+                     "otp_hash": None, "otp_expires": 0, "otp_attempts": 0}
+                self.users[email] = u
+                return u
+            def list_users(self):
+                return list(self.users.values())
+            def get_user(self, uid):
+                for u in self.users.values():
+                    if u["id"] == uid:
+                        return u
+                return None
+            def update_user(self, uid, fields):
+                u = self.get_user(uid)
+                if u:
+                    self.users.pop(u["email"], None)
+                    u.update(fields)
+                    self.users[u["email"]] = u
+                return u
+            def set_otp(self, uid, h, exp):
+                u = self.get_user(uid)
+                if u:
+                    u["otp_hash"] = h
+                    u["otp_expires"] = exp
+            def clear_otp(self, uid):
+                u = self.get_user(uid)
+                if u:
+                    u["otp_hash"] = None
+                    u["otp_attempts"] = 0
+            def touch_login(self, uid):
+                pass
+            def inc_otp_attempts(self, uid):
+                pass
+
+        fs = FakeStore()
+        monkeypatch.setattr(self.main, "store", fs)
+
+        # Create admin user
+        admin = fs.create_user("admin", "Admin", "admin")
+
+        # Set fake OTP code on admin
+        import time
+        code = "123456"
+        h = self.main.auth.hash_otp(code)
+        fs.set_otp(admin["id"], h, time.time() + 600)
+
+        # Mock Response
+        class FakeResponse:
+            def __init__(self):
+                self.cookies = {}
+            def set_cookie(self, name, value, **kwargs):
+                self.cookies[name] = value
+
+        # Call verify_otp with real email
+        body = self.main.OtpVerifyIn(email="samyak@adlerqa.in", code=code)
+        resp = FakeResponse()
+        r = self.main.verify_otp(body, resp)
+
+        # Check that it migrated admin to samyak@adlerqa.in
+        assert r["user"]["email"] == "samyak@adlerqa.in"
+        assert fs.get_user_by_email("samyak@adlerqa.in") is not None
+        assert fs.get_user_by_email("admin") is None
