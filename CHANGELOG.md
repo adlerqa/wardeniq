@@ -3,6 +3,29 @@
 ## Unreleased
 
 ### Added
+- **README "Option B" rewritten as an explicit numbered walkthrough.** Previously the
+  install-script command and the rationale were interleaved as prose; now it's a
+  literal Step 1–5 sequence (pull → one-time `install.sh` setup → set `MONGO_URI` →
+  start → watch logs and sign in), plus a separate "day to day" block (`up -d` /
+  `down` / `pull`) making clear Steps 1–3 are one-time only. The `--bundled` zero-cloud
+  variant and the fully-manual fallback (now shown as exactly what `install.sh` does,
+  for transparency) are both kept, just reorganized under the same step numbering.
+  No code changes — README only.
+- **`install.sh` / `install.ps1` — one-command installer for the pre-built image.**
+  The previous "no source needed" flow required 3-5 manual `curl`/`cp` steps, which
+  felt heavy for what's supposed to be the easy path. Added `install.sh` (bash) and
+  `install.ps1` (PowerShell) at the repo root: `curl ... | bash` downloads
+  `docker-compose.app.yml` + `.env.example`, creates `.env`, sets `APP_IMAGE`, and
+  prints the one remaining manual step (`MONGO_URI`, since this flow brings your own
+  database). A `--bundled` / `-Bundled` flag also grabs the demo stack's compose
+  files + `config/` folder and starts it immediately, for a true zero-cloud-accounts
+  trial. Verified both modes end-to-end against the real repo files (network calls
+  stubbed to local copies since the script isn't published yet) — correct file sets,
+  `.env` created with `APP_IMAGE` set exactly once (no duplicate lines on re-run
+  logic), and `config/pwfile`/`setup-replica-set.sh`/`mongot-entrypoint.sh`
+  permissions matching what `run.sh` already sets. README's "Option B" now leads with
+  the one-liner, with the previous manual steps kept in a collapsible `<details>` for
+  anyone who wants to see exactly what it does before piping to `bash`.
 - **README repositioned around cloud deployment, not the bundled local stack.**
   Previous wording led with the bundled 3-node MongoDB + local Ollama setup as if it
   were the default, with the cloud/lightweight path mentioned as an aside — several

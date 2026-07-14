@@ -1,0 +1,78 @@
+#!/usr/bin/env pwsh
+<#
+  Windows port of install.sh — no repo, no build. Pulls the published Docker Hub
+  image and downloads only the handful of small config files needed to run it.
+  Requires Docker Desktop with the `docker compose` CLI on PATH.
+
+    iwr https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 -OutFile install.ps1
+    .\install.ps1                # bring your own MongoDB (recommended)
+    .\install.ps1 -Bundled       # also grab the all-local demo stack (bundled MongoDB + Ollama)
+
+  If Windows blocks script execution, either run once via:
+    powershell -ExecutionPolicy Bypass -File .\install.ps1
+  or (as an admin, one-time) relax the policy for your user:
+    Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+#>
+param(
+    [switch]$Bundled,
+    [string]$Dest = "wardeniq",
+    [string]$Tag = "beta"
+)
+
+$ErrorActionPreference = "Stop"
+$RepoRaw = "https://raw.githubusercontent.com/adlerqa/wardeniq/main"
+
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    Write-Error "Docker is required — install Docker Desktop first."
+    exit 1
+}
+
+Write-Host "==> setting up wardenIQ in .\$Dest (pulling adlerqa/wardeniq:$Tag — no source needed)"
+New-Item -ItemType Directory -Force -Path $Dest | Out-Null
+Set-Location -Path $Dest
+
+function Fetch($relPath) {
+    Invoke-WebRequest -Uri "$RepoRaw/$relPath" -OutFile $relPath
+}
+
+Fetch "docker-compose.app.yml"
+Fetch ".env.example"
+
+if ($Bundled) {
+    Write-Host "==> also grabbing the bundled MongoDB/Ollama demo stack (config/ + compose files)"
+    Fetch "docker-compose.yml"
+    Fetch "docker-compose.mongodb.yml"
+    Fetch "docker-compose.ollama.yml"
+    New-Item -ItemType Directory -Force -Path "config" | Out-Null
+    foreach ($f in @("mongod.conf", "mongot.conf", "pwfile", "mongot-entrypoint.sh", "setup-replica-set.sh")) {
+        Invoke-WebRequest -Uri "$RepoRaw/config/$f" -OutFile "config/$f"
+    }
+}
+
+if (-not (Test-Path ".env")) {
+    Copy-Item ".env.example" ".env"
+    if (-not (Select-String -Path ".env" -Pattern '^APP_IMAGE=' -Quiet)) {
+        Add-Content -Path ".env" -Value "APP_IMAGE=adlerqa/wardeniq:$Tag"
+    }
+    Write-Host "==> created .env — APP_SECRET is generated automatically on first boot, nothing to edit there"
+} else {
+    Write-Host "==> .env already exists, leaving it as-is"
+}
+
+if ($Bundled) {
+    Write-Host "==> starting the full bundled demo stack (app + MongoDB + Ollama) — pulling images, not building"
+    docker compose up -d
+    Write-Host ""
+    Write-Host "wardenIQ -> http://localhost:8001"
+    Write-Host "First launch takes a few minutes (replica set init + model download)."
+    Write-Host "Watch it come up: docker logs -f warden-app"
+} else {
+    Write-Host ""
+    Write-Host "One thing left - this flow brings your own MongoDB (no bundled DB was downloaded)."
+    Write-Host "Open $Dest\.env and set MONGO_URI to your database (e.g. a MongoDB Atlas connection string)."
+    Write-Host "Then start it:"
+    Write-Host ""
+    Write-Host "    cd $Dest; docker compose -f docker-compose.app.yml up -d"
+    Write-Host ""
+    Write-Host "(Prefer the zero-cloud-accounts local demo instead? Re-run this installer with -Bundled.)"
+}

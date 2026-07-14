@@ -182,58 +182,122 @@ Prefer to seed the admin ahead of time? Set `ADMIN_EMAIL=you@company.com` in `.e
 Don't build from source. wardenIQ publishes a ready-to-run image straight to Docker
 Hub: **[`adlerqa/wardeniq`](https://hub.docker.com/r/adlerqa/wardeniq)**. Pulling it
 gets you the exact same app, already compiled — no Node/Python toolchain, no waiting
-on a build, no source code required at all.
+on a build, no source code required at all. Here's the full process:
+
+**Step 1 — Pull the image.**
 
 ```bash
 docker pull adlerqa/wardeniq:beta
 ```
 
-That single command always grabs the current published version. When a new one
-ships, running it again pulls the update — you never rebuild anything yourself.
+This downloads the app itself. It can't run on its own yet — Docker also needs a
+small **recipe file** (a Docker Compose file) telling it which ports to open and
+what settings to pass in. That's next.
 
-You do still need one small **recipe file** (Docker Compose file) that tells Docker
-how to run the image (ports, env vars, and — if you want it — the bundled database).
-That file is a few KB, separate from the app's source code, so "no repo" really means
-"no source files," not "zero files." Grab just what you need without cloning:
+**Step 2 — One-time setup: grab the recipe file and create your `.env`.** One command
+does this for you — no manual `mkdir`/`curl`/`cp`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.sh | bash
+```
+
+This creates a `wardeniq` folder, downloads `docker-compose.app.yml` (a few KB —
+config, not source code) into it, and creates your own `.env` file there. `APP_SECRET`
+needs no attention — it's generated automatically the first time the app boots.
+
+**Step 3 — Point it at your database.** Open `wardeniq/.env` and set one line:
+
+```
+MONGO_URI=<your MongoDB connection string — see Cloud deployment below>
+```
+
+This is the only manual edit needed. `MONGO_URI` isn't optional here since this flow
+brings your own database rather than using a bundled one (see [Cloud / lightweight
+deployment](#cloud--lightweight-deployment-recommended-for-real-use)) — e.g. a
+**MongoDB Atlas** connection string.
+
+**Step 4 — Start it.** `.env` already has `APP_IMAGE=adlerqa/wardeniq:beta` set (the
+install script did that), so Compose pulls and runs the image from Step 1 — it never
+tries to build anything:
+
+```bash
+cd wardeniq
+docker compose -f docker-compose.app.yml up -d
+```
+
+**Step 5 — Watch it come up, then sign in.**
+
+```bash
+docker logs -f warden-app
+```
+
+Once it's ready, open **http://localhost:8001** (or your server's address) and sign
+in — you become the admin automatically, since there are no other users yet.
+
+**Day to day, after this first setup:** you never repeat Steps 1–3 again — just start
+and stop it from that same `wardeniq` folder:
+
+```bash
+docker compose -f docker-compose.app.yml up -d      # start
+docker compose -f docker-compose.app.yml down       # stop (keeps your data)
+docker compose -f docker-compose.app.yml pull       # grab a newer image, then `up -d` again to apply it
+```
+
+**On Windows**, use the PowerShell equivalent for Steps 2–4:
+
+```powershell
+iwr https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 -OutFile install.ps1
+.\install.ps1
+```
+
+---
+
+**Prefer zero cloud accounts — a fully local trial (bundled MongoDB + a small model)?**
+Replace Step 2 with the `--bundled` flag, and skip Steps 3–4 entirely — it sets
+`MONGO_URI` for you and starts everything immediately:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.sh | bash -s -- --bundled
+```
+
+```powershell
+.\install.ps1 -Bundled
+```
+
+Wait a few minutes on first launch (it's initializing the database and downloading
+the local model), then open **http://localhost:8001**. This is the heavier, all-local
+demo path — see [Cloud / lightweight
+deployment](#cloud--lightweight-deployment-recommended-for-real-use) for why it's not
+the recommended one for real use.
+
+<details>
+<summary>Prefer to see exactly what <code>install.sh</code> does, or don't want to pipe a script to <code>bash</code>? Expand for the fully manual version of Step 2.</summary>
 
 ```bash
 mkdir wardeniq && cd wardeniq
 curl -fsSLO https://raw.githubusercontent.com/adlerqa/wardeniq/main/docker-compose.app.yml
 curl -fsSLO https://raw.githubusercontent.com/adlerqa/wardeniq/main/.env.example
 cp .env.example .env
+echo "APP_IMAGE=adlerqa/wardeniq:beta" >> .env
 ```
 
-Then edit `.env` — this file is **yours**, it lives on your machine (or server), never
-inside the image. The only line you actually *must* fill in here is `MONGO_URI` (this
-flow has no bundled database to fall back to); `APP_SECRET` can be left as-is —
-wardenIQ generates and saves a strong one on first boot if you don't set one (see the
-note in Quick start above):
+That's exactly what the script does: create a folder, download the recipe file and
+the `.env` template, copy the template to a real `.env`, and set `APP_IMAGE` so
+Compose knows to pull instead of build. Continue from Step 3 above.
 
-```
-APP_IMAGE=adlerqa/wardeniq:beta
-MONGO_URI=<your MongoDB connection string — see Cloud deployment below>
-```
+For the bundled variant instead, also grab `docker-compose.yml`,
+`docker-compose.mongodb.yml`, `docker-compose.ollama.yml`, and the `config/` folder
+the same way, then run `docker compose up -d` (no `-f`, no `--build`) from that
+folder.
 
-Start it — **no `--build`**, Compose just pulls the image since `APP_IMAGE` is set:
-
-```bash
-docker compose -f docker-compose.app.yml up -d
-docker logs -f warden-app     # watch it come up / read the first sign-in code
-```
-
-Open **http://localhost:8001** (or your server's address). First sign-in works the
-same as the Quick start above.
-
-> Want the **bundled** MongoDB/Ollama too instead of your own? Also grab
-> `docker-compose.yml`, `docker-compose.mongodb.yml`, `docker-compose.ollama.yml`, and
-> the `config/` folder the same way, then run `docker compose up -d` (no `-f`,
-> no `--build`) from that folder instead. This is the heavier, all-local demo path —
-> see the RAM note in [Requirements](#requirements).
+</details>
 
 > **Maintainers:** the image is built and pushed by
 > `.github/workflows/docker-publish.yml` — run it manually (any tag, defaults to
 > `beta`) or push a `vX.Y.Z` git tag to publish a version + `latest`. Requires the
-> `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets.
+> `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets. `install.sh` / `install.ps1`
+> live at the repo root and need no maintenance beyond staying in sync with
+> `docker-compose.app.yml`'s file list.
 
 ---
 
@@ -360,6 +424,10 @@ SMTP (for sign-in emails) is set under **Configuration → Email** (stored encry
 precedence) or via `SMTP_*` vars in `.env`. Until SMTP exists, the first admin's code is
 printed to the server log (see [Signing in](#signing-in-the-very-first-time)). AWS Bedrock
 credentials are **not** `.env` vars — set them under Configuration → LLM/Embeddings.
+
+`MONGO_URI` can also be changed from **Configuration → Database** in the UI, which
+writes it back into `.env` for you (restart applies it) and offers a **"Move my data
+to another database"** option to copy your data over safely before switching.
 
 ---
 
