@@ -3,6 +3,18 @@
 ## Unreleased
 
 ### Added
+- **README repositioned around cloud deployment, not the bundled local stack.**
+  Previous wording led with the bundled 3-node MongoDB + local Ollama setup as if it
+  were the default, with the cloud/lightweight path mentioned as an aside — several
+  rounds of review feedback flagged this as misleading, since MongoDB/the LLM are
+  upstream dependencies wardenIQ connects to, not part of the product, and aren't
+  expected to run locally for real use. Reworked: the top pitch, the Requirements
+  table (cloud row now first and labeled "recommended", bundled row now explicitly
+  "optional"), and section order (moved "Cloud / lightweight deployment" up to
+  directly follow Requirements, ahead of "Quick start", which is now titled "local
+  trial / all-in-one demo" to make clear it's a trial convenience, not the
+  recommended shape). Added a similar framing note to "High availability &
+  production". No functional/code changes — README only.
 - **Zero-config `APP_SECRET` on first boot.** New `app/main.py::_ensure_app_secret()`,
   called at the top of `bootstrap()` (before the existing `_check_app_secret()` hard
   gate). If the effective secret is still unset/the shipped placeholder and no split

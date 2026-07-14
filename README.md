@@ -24,8 +24,12 @@ actually do what the requirements asked?** wardenIQ answers that:
              a live map of coverage, risk, and gaps you can act on
 ```
 
-Everything runs **on your machine** by default (local LLM + database). Nothing
-leaves your infrastructure unless you choose a hosted LLM.
+wardenIQ is a single lightweight app container — it doesn't bundle MongoDB into the
+product itself. Point it at a **cloud MongoDB** (e.g. Atlas) and a hosted LLM and
+that's the whole footprint (recommended — see [Cloud / lightweight
+deployment](#cloud--lightweight-deployment-recommended-for-real-use) below). A fully
+local, all-in-one demo mode (bundled MongoDB + local model, no cloud accounts needed)
+is also available if you just want to try it out first — see [Requirements](#requirements).
 
 ---
 
@@ -56,10 +60,9 @@ leaves your infrastructure unless you choose a hosted LLM.
 
 | You need | Why |
 |---|---|
-| **Docker** (Compose v2.20+ if using the bundled stack) | Runs the app; Compose only needed if you also want the bundled DB/models |
-| **~8–10 GB free RAM** — *only* if running the **full bundled stack** locally | 3 MongoDB nodes + search + a small local model, all on your machine |
-| **~2–4 GB free RAM** — if running **just the app** against a cloud database + hosted LLM | The app container itself is lightweight; the heavy pieces (DB, model) live elsewhere |
-| **A few GB of disk** | Images + (if bundled) model downloads |
+| **Docker** (Compose v2.20+ only needed for the optional local-trial stack) | Runs the app container itself |
+| **~2–4 GB free RAM** | The app container is lightweight; MongoDB and the LLM are **not** part of the product, they're external services you point it at |
+| **A few GB of disk** | Images (plus local model downloads only if you use the optional local-trial stack) |
 | *(optional)* **GitHub token (PAT)** | Needed to analyze private repos / open PRs |
 | *(optional)* **SMTP details** | To email sign-in codes (you can skip this at first — see below) |
 | *(optional)* **A hosted LLM API key** | Sharper results than the small local model |
@@ -68,17 +71,53 @@ That's it. You do **not** need Node, Python, or a database installed locally —
 all in the container(s). Works the same on **macOS, Linux, and Windows** (Docker
 Desktop) — Windows users run `run.ps1` instead of `run.sh`; see Quick start below.
 
-The 8–10 GB figure is only for the all-local **demo** setup (3-node MongoDB replica
-set + search + Ollama bundled in); if you point wardenIQ at a **cloud MongoDB** (e.g.
-Atlas) and a **hosted LLM** (OpenAI/Anthropic/etc.) instead, the app itself needs only
-a couple GB of RAM — see [Cloud / lightweight
-deployment](#cloud--lightweight-deployment-recommended-for-real-use) below.
+**MongoDB and the LLM are upstream dependencies wardenIQ talks to over a connection
+string/API key — they are not shipped inside the app and don't need to run locally.**
+The recommended, real-world setup is a **cloud MongoDB** (e.g. Atlas) and a **hosted
+LLM** (OpenAI/Anthropic/etc.), in which case the only thing you ever run is the app
+container itself — see [Cloud / lightweight
+deployment](#cloud--lightweight-deployment-recommended-for-real-use) right below. An
+all-local bundled stack (further down in [Quick start — local trial / all-in-one
+demo](#quick-start--local-trial--all-in-one-demo-about-5-minutes)) is offered only as a
+zero-signup way to try wardenIQ before deciding on a real database/LLM — it's not what
+you'd run for actual use, and it naturally needs more resources since it runs
+MongoDB and a model on your own machine too.
 
 ---
 
-## Quick start (about 5 minutes)
+## Cloud / lightweight deployment (recommended for real use)
 
-There are two ways to run wardenIQ — pick whichever fits:
+wardenIQ doesn't bundle MongoDB or an LLM into the product — they're upstream
+services it connects to over `MONGO_URI` and an API key/endpoint. For real use
+(a team, or any non-trial deployment), don't run either one locally:
+
+- **Database:** point `MONGO_URI` at a cloud MongoDB (e.g. **MongoDB Atlas**) — no
+  local MongoDB required. wardenIQ needs a *search-capable* database — Atlas has this
+  built in, but wardenIQ creates **6 search indexes**, and Atlas caps that by cluster
+  tier: the **free M0 tier only allows 3**, so it **won't work** — you need a
+  **dedicated M10+ tier** (or your own self-managed MongoDB with `mongot`).
+- **LLM/embeddings:** use a hosted provider (OpenAI, Anthropic, Gemini, Mistral, Groq,
+  AWS Bedrock, or any OpenAI-compatible endpoint) under **Configuration** after first
+  sign-in, instead of a local model.
+
+With both of those pointed at the cloud, you only ever run **one container** — the
+app itself — so there's no local database or model competing for your machine's (or
+server's) resources. This is the natural shape for a **cloud deployment** too (e.g. a
+single small VM/ECS/Cloud Run instance running `adlerqa/wardeniq:beta`, with
+`MONGO_URI` pointing at Atlas) — nobody running or connecting to the tool needs to
+provision a database or a GPU/CPU budget for a local model. See [Prefer a pre-built
+image?](#prefer-a-pre-built-image-skip-the-local-build--recommended) below for the
+exact commands (no clone needed) — just set `MONGO_URI` and skip the bundled-stack
+compose files entirely.
+
+---
+
+## Quick start — local trial / all-in-one demo (about 5 minutes)
+
+This path bundles MongoDB and a small local model into your own machine purely so you
+can try wardenIQ with zero cloud accounts. It's **not** the recommended deployment —
+see [Cloud / lightweight deployment](#cloud--lightweight-deployment-recommended-for-real-use)
+above for that. Two ways to run this local trial:
 
 - **Have the source, or want to build it yourself?** Clone and build (below).
 - **Just want to run it — no source needed?** Skip straight to [Prefer a pre-built
@@ -195,31 +234,6 @@ same as the Quick start above.
 > `.github/workflows/docker-publish.yml` — run it manually (any tag, defaults to
 > `beta`) or push a `vX.Y.Z` git tag to publish a version + `latest`. Requires the
 > `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets.
-
----
-
-## Cloud / lightweight deployment (recommended for real use)
-
-The bundled 3-node MongoDB + local Ollama setup above is a **local demo/trial
-convenience** — it's not what you'd actually run for a team. For real use, don't run
-MongoDB or the model locally at all:
-
-- **Database:** point `MONGO_URI` at a cloud MongoDB (e.g. **MongoDB Atlas**) instead
-  of the bundled replica set. wardenIQ needs a *search-capable* database — Atlas has
-  this built in, but wardenIQ creates **6 search indexes**, and Atlas caps that by
-  cluster tier: the **free M0 tier only allows 3**, so it **won't work** — you need a
-  **dedicated M10+ tier** (or your own self-managed MongoDB with `mongot`).
-- **LLM/embeddings:** use a hosted provider (OpenAI, Anthropic, Gemini, Mistral, Groq,
-  AWS Bedrock, or any OpenAI-compatible endpoint) under **Configuration** after first
-  sign-in, instead of the bundled local Ollama model.
-
-With both of those pointed at the cloud, you only ever run **one container** — the
-app itself — which is why the RAM requirement drops to **~2–4 GB** instead of 8–10 GB:
-there's no local database or model competing for your machine's resources. This is
-also the natural setup for a **cloud deployment** (e.g. a single small VM/ECS/Cloud
-Run instance running `adlerqa/wardeniq:beta`, with `MONGO_URI` pointing at Atlas) —
-nobody running or connecting to the tool needs to provision a database or GPU/CPU
-budget for a local model.
 
 ---
 
@@ -384,6 +398,13 @@ are wardenIQ's code. MongoDB, mongot, and Ollama are mature projects maintained 
 ---
 
 ## High availability & production
+
+For production, the recommended path is [Cloud / lightweight
+deployment](#cloud--lightweight-deployment-recommended-for-real-use) — a managed
+MongoDB (e.g. Atlas, which already gives you HA/backups/failover) plus a hosted LLM,
+with just the app container to operate. The notes below are specifically for the
+*optional* bundled demo stack, if you choose to self-host MongoDB instead of using a
+managed one:
 
 Ships as a **3-node replica set** (`rs0`): one primary, two secondaries — failover plus
 backup/read from a secondary. For light dev, scale to one node (comment out

@@ -57,6 +57,12 @@ from store import Store  # noqa: E402
 def store():
     db_name = f"wardeniq_test_{uuid.uuid4().hex[:10]}"
     s = Store(MONGO_TEST_URI, db_name, dim=8)
+    # tests/conftest.py replaces Store.get_settings at the CLASS level (so the
+    # mocked unit tests never dial a real DB at import time) — that patch
+    # applies for the whole pytest session, including here, so without this
+    # override s.get_settings() would always return {} regardless of what's
+    # actually in Mongo. Restore the real behavior on this one instance only.
+    s.get_settings = lambda: s.db["settings"].find_one({"_id": "app"}) or {}
     try:
         s.ensure_indexes()
     except Exception:  # noqa: BLE001
