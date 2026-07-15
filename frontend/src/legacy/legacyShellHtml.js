@@ -116,6 +116,10 @@ export const LEGACY_SHELL_HTML = `
             <span id="user-email" class="user-email"></span>
             <span id="user-role" class="rolebadge viewer"></span>
           </div>
+          <button class="ghost" id="change-pw-btn" title="Change your local admin password" hidden>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+            <span>Change password</span>
+          </button>
           <button class="ghost signout-btn" id="logout-btn" title="Sign out">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>
             <span>Sign out</span>
@@ -912,6 +916,28 @@ export const LEGACY_SHELL_HTML = `
   <h2 id="confirm-title" style="margin:0;font-size:17px">Please confirm</h2>
   <div id="confirm-body" class="muted" style="margin-top:8px;line-height:1.5;white-space:pre-wrap"></div>
   <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px"><button class="ghost" id="confirm-cancel">Cancel</button><button class="go" id="confirm-ok">Continue</button></div>
+</div></div>
+
+<!-- CHANGE PASSWORD MODAL (local admin account only). In mandatory mode (first
+     sign-in on the default password) the Cancel/close controls are hidden by JS
+     and the modal can't be dismissed until a new password is saved. -->
+<div class="modal" id="pwd-modal"><div class="box" style="max-width:420px">
+  <div class="editor-head"><h2 id="pwd-title" style="margin:0;font-size:17px">Change password</h2><button class="ghost" id="pwd-x">close</button></div>
+  <div style="padding:16px 0 4px">
+    <p class="muted" id="pwd-intro" style="margin:0 0 12px;font-size:12.5px">Update the local admin password.</p>
+    <label>Current password</label>
+    <input id="pwd-current" type="password" autocomplete="current-password"/>
+    <label style="margin-top:10px">New password</label>
+    <input id="pwd-new" type="password" autocomplete="new-password"/>
+    <label style="margin-top:10px">Confirm new password</label>
+    <input id="pwd-confirm" type="password" autocomplete="new-password"/>
+    <div class="muted" style="font-size:11px;margin-top:6px">At least 8 characters, with a letter and a number.</div>
+    <div class="err" id="pwd-err" style="margin-top:8px"></div>
+  </div>
+  <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
+    <button class="ghost" id="pwd-cancel">Cancel</button>
+    <button class="go" id="pwd-save">Save password</button>
+  </div>
 </div></div>
 
 <!-- NEW VERSION MODAL -->

@@ -142,6 +142,51 @@ def token_matches(stored_hash: str, token: str) -> bool:
     return bool(stored_hash) and hmac.compare_digest(stored_hash, hash_token(token))
 
 
+# ---- local admin password ----------------------------------------------------
+# The bootstrap "admin" account (username admin / password admin123) ships with a
+# well-known default so the very first login works out of the box. Unlike OTPs/
+# invite tokens (single global secret + sha256, since they're short-lived and
+# high-entropy), a real password is long-lived and low-entropy, so it gets a
+# per-password random salt and a deliberately slow KDF (PBKDF2-HMAC-SHA256,
+# stdlib-only — no new dependency). Format: "<salt-hex>$<derived-key-hex>".
+DEFAULT_LOCAL_PASSWORD = "admin123"
+PASSWORD_KDF_ITERATIONS = 200_000
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", (password or "").encode(), salt, PASSWORD_KDF_ITERATIONS)
+    return f"{salt.hex()}${dk.hex()}"
+
+
+def password_matches(stored_hash: str, password: str) -> bool:
+    if not stored_hash or "$" not in stored_hash:
+        return False
+    try:
+        salt_hex, dk_hex = stored_hash.split("$", 1)
+        dk = hashlib.pbkdf2_hmac("sha256", (password or "").encode(),
+                                 bytes.fromhex(salt_hex), PASSWORD_KDF_ITERATIONS)
+        return hmac.compare_digest(dk.hex(), dk_hex)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def password_policy_errors(password: str) -> list:
+    """Minimum bar for the local admin password. Returns a list of unmet
+    requirements (human-readable); empty means the password is acceptable."""
+    p = password or ""
+    errs = []
+    if len(p) < 8:
+        errs.append("at least 8 characters")
+    if not re.search(r"[A-Za-z]", p):
+        errs.append("at least one letter")
+    if not re.search(r"\d", p):
+        errs.append("at least one number")
+    if p.lower() == DEFAULT_LOCAL_PASSWORD:
+        errs.append("must not be the default password")
+    return errs
+
+
 # ---- role checks ------------------------------------------------------------
 def has_role(user_role: str, minimum: str) -> bool:
     return ROLE_RANK.get(user_role, 0) >= ROLE_RANK.get(minimum, 99)

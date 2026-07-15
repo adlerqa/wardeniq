@@ -2886,7 +2886,11 @@ class Store:
                 "all_projects": u.get("all_projects", True),
                 "project_ids": u.get("project_ids", []),
                 "otp_hash": u.get("otp_hash"), "otp_expires": u.get("otp_expires", 0),
-                "otp_attempts": u.get("otp_attempts", 0)}
+                "otp_attempts": u.get("otp_attempts", 0),
+                # Local admin password (bootstrap "admin" account only). Never
+                # surfaced over the API — main.py's _user_public() doesn't whitelist
+                # it; this is just the internal store-level representation.
+                "password_hash": u.get("password_hash")}
 
     def get_user(self, uid):
         try:
@@ -2968,6 +2972,16 @@ class Store:
         sessions. Called on role change / disable / forced logout so authorization
         changes take effect immediately (the user must re-authenticate)."""
         self.users.update_one({"_id": ObjectId(uid)}, {"$inc": {"session_version": 1}})
+        return self.get_user(uid)
+
+    def set_user_password(self, uid, password_hash):
+        """Set (or change) the local admin's password hash. Bumps session_version so
+        every OTHER session this user already holds is forced to re-authenticate —
+        the caller (main.py) re-issues a fresh cookie for the session making the
+        change, so that one isn't logged out."""
+        self.users.update_one({"_id": ObjectId(uid)},
+                              {"$set": {"password_hash": password_hash},
+                               "$inc": {"session_version": 1}})
         return self.get_user(uid)
 
     def update_user(self, uid, fields):

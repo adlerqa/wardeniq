@@ -4370,20 +4370,32 @@ def login_password(body: LoginPasswordIn, response: Response):
     cfg = _smtp_cfg()
     if cfg is not None:
         raise HTTPException(400, "Password login is disabled because SMTP is configured. Please use email OTP.")
-    
+
     username = (body.username or "").strip()
-    password = body.password
-    
-    if username != "admin" or password != "admin123":
+    password = body.password or ""
+
+    if username != "admin":
         raise HTTPException(401, "Invalid username or password")
-        
+
     user = store.get_user_by_email("admin")
     if not user:
+        # First boot: no local admin row yet, so only the shipped default works.
+        if password != auth.DEFAULT_LOCAL_PASSWORD:
+            raise HTTPException(401, "Invalid username or password")
         user = store.create_user("admin", "Admin", "admin")
-        
+    else:
+        stored_hash = user.get("password_hash")
+        # Once a real password has been set via /api/auth/change-password, it's the
+        # only one accepted — the shipped default stops working so a changed
+        # password can't be bypassed with the old admin123.
+        ok = (auth.password_matches(stored_hash, password) if stored_hash
+              else password == auth.DEFAULT_LOCAL_PASSWORD)
+        if not ok:
+            raise HTTPException(401, "Invalid username or password")
+
     if not user.get("active"):
         raise HTTPException(401, "User account is deactivated")
-        
+
     store.touch_login(user["id"])
     fresh = store.get_user(user["id"]) or user
     response.set_cookie(auth.SESSION_COOKIE,
@@ -4391,6 +4403,51 @@ def login_password(body: LoginPasswordIn, response: Response):
                         max_age=auth.SESSION_TTL, httponly=True, samesite="lax",
                         secure=auth.COOKIE_SECURE, path="/")
     return {"user": _user_public(fresh)}
+
+
+class ChangePasswordIn(BaseModel):
+    current_password: str = ""
+    new_password: str
+
+
+@app.post("/api/auth/change-password")
+def change_password(body: ChangePasswordIn, request: Request, response: Response):
+    """Self-service password change for the local admin account. Only meaningful for
+    the bootstrap `admin` / admin123 account — email-based accounts sign in with a
+    one-time code and have no password to change. Requires an authenticated session
+    (this route is NOT public — the auth_gateway already resolved request.state.user)."""
+    user = _current_user(request)
+    if not user:
+        raise HTTPException(401, "not authenticated")
+    if user.get("email") != "admin":
+        raise HTTPException(400, "password sign-in is only available for the local admin "
+                                 "account — email accounts sign in with a one-time code and "
+                                 "have no password to change")
+    full = store.get_user_by_email("admin") or user
+    stored_hash = full.get("password_hash")
+    current = body.current_password or ""
+    current_ok = (auth.password_matches(stored_hash, current) if stored_hash
+                  else current == auth.DEFAULT_LOCAL_PASSWORD)
+    if not current_ok:
+        raise HTTPException(400, "current password is incorrect")
+
+    errs = auth.password_policy_errors(body.new_password)
+    if errs:
+        raise HTTPException(400, "Password must have " + ", ".join(errs) + ".")
+    if body.new_password == current:
+        raise HTTPException(400, "new password must be different from the current one")
+
+    updated = store.set_user_password(full["id"], auth.hash_password(body.new_password))
+    _audit(request, "user.password_changed", target="admin", actor=user)
+    # set_user_password() bumps session_version, invalidating every session this
+    # user holds — including the one making this request — so re-issue a fresh
+    # cookie for THIS session immediately, or the caller would be logged out by
+    # their own password change.
+    response.set_cookie(auth.SESSION_COOKIE,
+                        auth.sign_session(full["id"], updated.get("session_version", 0)),
+                        max_age=auth.SESSION_TTL, httponly=True, samesite="lax",
+                        secure=auth.COOKIE_SECURE, path="/")
+    return {"changed": True, "user": _user_public(updated)}
 
 
 @app.get("/api/auth/me")
@@ -4480,7 +4537,12 @@ def _user_public(u):
             "invite_status": u.get("invite_status", "active"),
             "invited_at": u.get("invited_at"),
             "all_projects": u.get("all_projects", True),
-            "project_ids": u.get("project_ids", [])}
+            "project_ids": u.get("project_ids", []),
+            # True only for the local "admin" bootstrap account while it's still on
+            # the shipped default password — drives the mandatory change-password
+            # prompt on first login. Always False for email-based accounts (they
+            # sign in with a one-time code and have no password at all).
+            "must_change_password": u.get("email") == "admin" and not bool(u.get("password_hash"))}
 
 
 @app.get("/api/users")

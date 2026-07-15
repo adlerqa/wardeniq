@@ -3502,7 +3502,56 @@ function applyRole(){const role=(ME&&ME.role)||"viewer";
   document.querySelectorAll('nav button[data-admin]').forEach(b=>b.hidden=!admin);
   const rob=$("#ro-banner");if(rob)rob.hidden=(role!=="viewer");
   applyRoleTooltips(role);
+  // "Change password" only makes sense for the local admin account (email===
+  // "admin"). Email-based accounts sign in with a one-time code and have no
+  // password at all.
+  const pwBtn=$("#change-pw-btn");if(pwBtn)pwBtn.hidden=!(ME&&ME.email==="admin");
 }
+
+// ---- change password (local admin account only) ----
+// Reused for both the voluntary "Change password" profile-menu action and the
+// mandatory first-login prompt. In mandatory mode the Cancel/close controls are
+// hidden and the returned promise only resolves once a new password is saved —
+// there is no way to click past it, matching the shipped default being a known,
+// public credential (admin123) that shouldn't stay active silently.
+function openChangePasswordModal(mandatory){
+  return new Promise(resolve=>{
+    const m=$("#pwd-modal");
+    $("#pwd-current").value="";$("#pwd-new").value="";$("#pwd-confirm").value="";$("#pwd-err").textContent="";
+    $("#pwd-title").textContent=mandatory?"Set a new password":"Change password";
+    $("#pwd-intro").textContent=mandatory
+      ?"You're signed in with the default admin123 password. For security, set a new one before continuing."
+      :"Update the local admin password.";
+    $("#pwd-x").style.display=mandatory?"none":"";
+    $("#pwd-cancel").style.display=mandatory?"none":"";
+    m.classList.add("show");
+    setTimeout(()=>$("#pwd-current")?.focus(),50);
+    const cleanup=()=>{$("#pwd-save").onclick=null;$("#pwd-cancel").onclick=null;$("#pwd-x").onclick=null;
+      $("#pwd-current").onkeydown=$("#pwd-new").onkeydown=$("#pwd-confirm").onkeydown=null;};
+    const done=(ok)=>{m.classList.remove("show");cleanup();resolve(ok);};
+    $("#pwd-cancel").onclick=()=>{if(!mandatory)done(false);};
+    $("#pwd-x").onclick=()=>{if(!mandatory)done(false);};
+    const save=async()=>{
+      const current=$("#pwd-current").value,next=$("#pwd-new").value,confirm=$("#pwd-confirm").value;
+      $("#pwd-err").textContent="";
+      if(!current){$("#pwd-err").textContent="Enter your current password.";return;}
+      if(!next){$("#pwd-err").textContent="Enter a new password.";return;}
+      if(next!==confirm){$("#pwd-err").textContent="New passwords don't match.";return;}
+      $("#pwd-save").disabled=true;setBusy("#pwd-save",true);
+      try{
+        const r=await api("/api/auth/change-password",{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({current_password:current,new_password:next})});
+        if(r&&r.user)ME=r.user;
+        toast("Password changed.");
+        done(true);
+      }catch(e){$("#pwd-err").textContent=e.message;}
+      finally{$("#pwd-save").disabled=false;setBusy("#pwd-save",false);}
+    };
+    $("#pwd-save").onclick=save;
+    $("#pwd-current").onkeydown=$("#pwd-new").onkeydown=$("#pwd-confirm").onkeydown=e=>{if(e.key==="Enter")save();};
+  });
+}
+if($("#change-pw-btn"))$("#change-pw-btn").onclick=()=>openChangePasswordModal(false);
 // Auto read-only enforcement for viewers: many write buttons aren't tagged
 // .needs-editor, so we identify them by their label/action and disable+dim+tooltip
 // them, instead of letting a viewer click and hit a 403. Idempotent; safe to call
@@ -3716,6 +3765,11 @@ function renderUsers(){
   const all=window._USERS_CACHE||[];
   const rows=all.filter(_userMatchesFilters);
   const c=$("#u-count");if(c)c.textContent=`${rows.length} of ${all.length}`;
+  // Counted over ALL users (not the filtered/visible rows) — this is the same
+  // "how many active admins exist" question the backend guard answers, just
+  // computed client-side so the UI can proactively hide/redirect instead of
+  // showing a button that only fails with a raw error on click.
+  const activeAdmins=all.filter(x=>x.role==="admin"&&x.active).length;
   if(!rows.length){
     $("#u-list").innerHTML=all.length
       ? '<div class="muted" style="padding:16px 0">No users match these filters.</div>'
@@ -3734,11 +3788,19 @@ function renderUsers(){
         cancel:'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
         disable:'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M5 5l14 14"/></svg>',
         enable:'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+        lock:'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
         del:'<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>'};
       const manageAccess=u.role==="admin"?'':`<button class="u-action" onclick="manageAccess('${u.id}')" title="Manage project access">${ICON.access}Access</button>`;
+      // The only active admin can't disable themselves — the backend already
+      // refuses this (it would lock everyone out), so don't even show a button
+      // that can only ever fail. Offer the actual way out instead: add another
+      // admin first.
+      const isSoleAdminSelf=self&&u.role==="admin"&&u.active&&activeAdmins<=1;
       const actions=pending
         ?`${manageAccess}<button class="u-action" onclick="resendInvite('${u.id}','${esc(u.email)}')" title="Resend invite email">${ICON.resend}Resend</button>
            <button class="u-action danger" onclick="cancelInvite('${u.id}','${esc(u.email)}')" title="Cancel this invite">${ICON.cancel}Cancel</button>`
+        :isSoleAdminSelf
+        ?`${manageAccess}<button class="u-action" onclick="promptAdminHandoff()" title="You're the only admin — add another admin first to unlock this">${ICON.lock}Add admin to unlock</button>`
         :`${manageAccess}<button class="u-action" onclick="toggleUser('${u.id}',${u.active?'false':'true'})" title="${u.active?'Disable this user':'Enable this user'}">${u.active?ICON.disable+'Disable':ICON.enable+'Enable'}</button>
            ${self?'':`<button class="u-action danger" onclick="delUser('${u.id}','${esc(u.email)}')" title="Delete this user">${ICON.del}Delete</button>`}`;
       return `<tr><td>${esc(u.email)}${self?' <span class="muted">(you)</span>':''}</td><td>${esc(u.name||"")}</td>
@@ -3748,6 +3810,25 @@ function renderUsers(){
         <td class="muted">${u.last_login?new Date(u.last_login*1000).toLocaleString():(pending?"awaiting first sign-in":"never")}</td>
         <td><div class="u-actions">${actions}</div></td></tr>`;}).join("")+`</table>`;
 }
+// Guided hand-off: shown instead of "Disable" when you're the only active admin.
+// Cancel = "keep using this local admin" (just closes, nothing changes). Confirm
+// jumps to the existing invite form above, preset to the Admin role, so the next
+// admin can be added through the normal invite flow (works with or without SMTP —
+// without it, the invite still creates the account and the link can be shared
+// manually; see the "Resend" flow once email is configured).
+window.promptAdminHandoff=async()=>{
+  const html=`<p style="margin:0 0 10px">You're the <b>only admin</b> for this workspace, so disabling your own
+    access isn't allowed — that would lock everyone out.</p>
+  <p class="muted" style="font-size:12.5px;margin:0">Assign another email address as admin first. Once they accept
+    the invite and sign in, you'll be able to disable (or hand off) this local admin account.</p>`;
+  const ok=await uiModalHTML("Add another admin first", html, "Assign an admin email");
+  if(!ok)return;   // "keep using this local admin" — no change
+  const roleSel=$("#u-role");
+  if(roleSel){roleSel.value="admin";roleSel.dispatchEvent(new Event("change"));}
+  $("#u-email")?.scrollIntoView({behavior:"smooth",block:"center"});
+  setTimeout(()=>$("#u-email")?.focus(),300);
+  toast("Role preset to Admin — enter their email above and click Invite.");
+};
 // Re-render on filter changes (client-side, no refetch).
 ["u-search","u-filter-status","u-filter-role"].forEach(id=>{
   const el=document.getElementById(id);
@@ -5379,6 +5460,10 @@ async function needsConfig(){
   try{const s=await api("/api/settings");return !s.configured;}catch(e){return false;}
 }
 async function startApp(){
+  // Block on a mandatory password change before anything else renders — only
+  // ever true for the local admin account, and only while it's still on the
+  // shipped default password.
+  if(ME&&ME.must_change_password)await openChangePasswordModal(true);
   refreshStatus();
   let nav={};try{nav=JSON.parse(localStorage.getItem("wq_nav")||"{}");}catch(e){}
   if(nav.project)currentProject=nav.project;

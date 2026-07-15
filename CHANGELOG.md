@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Changed
+- **README "Option B" simplified.** Had grown to ~125 lines across a 5-step numbered
+  walkthrough, three separate Windows command blocks, a "day to day" aside, a
+  collapsible manual-steps fallback, and a maintainers note — too much for what's a
+  one-command flow. Condensed to: one command per OS, the `MONGO_URI` edit, the start
+  command, a single callout for the `--bundled`/`$env:WARDENIQ_BUNDLED` local-demo
+  variant, and a one-line day-to-day/maintainers note. All the same facts (image
+  name, `MONGO_URI` requirement, auto-generated `APP_SECRET`, multi-arch build,
+  required secrets) still present, just stated once. The collapsible "what does
+  install.sh do" walkthrough was replaced with direct links to the script source
+  instead of duplicating its contents in prose. No functional changes.
+
 ### Fixed
 - **`install.ps1` failed to parse on real Windows machines** with `Missing closing
   ')' in expression` / `Missing closing '}' in statement block`, even though the
@@ -17,6 +29,27 @@
   entirely rather than depending on a BOM surviving every possible transfer path.
 
 ### Added
+- **Real password change for the local admin account, and safer admin hand-off.**
+  The local `admin` / `admin123` bootstrap login previously had no way to actually
+  change its password — `login-password` compared against the literal string
+  `"admin123"` forever, so a "changed" password never persisted. Added a
+  `password_hash` field on the user doc (PBKDF2-HMAC-SHA256, stdlib-only, per-user
+  salt; see `auth.hash_password`/`password_matches`) plus a new
+  `POST /api/auth/change-password` endpoint; `login-password` now checks the stored
+  hash once one exists, falling back to the shipped default only until it's set.
+  The UI now shows a mandatory "change your password" prompt on first local-admin
+  login (only relevant while SMTP isn't configured, i.e. while password login is
+  active), and a "Change password" action in the profile menu afterwards.
+  Separately, the Users page no longer shows "Disable" on your own row when you're
+  the only active admin (backend already refused this via
+  `count_active_admins() <= 1`, but the button was still shown, so clicking it just
+  produced a raw error) — it's replaced with an "Add another admin to unlock"
+  action that explains why and jumps to the existing invite form (preset to the
+  Admin role). Once a second admin accepts and signs in, the Disable option
+  reappears normally. No new collections; existing users are unaffected (no
+  `password_hash` field = OTP-only / still on the default local password).
+  Documented in the README under "Signing in the very first time" and
+  Troubleshooting.
 - **Shorter Windows one-liner using `irm | iex`.** The documented Windows command was
   a two-step download-then-run (`iwr ... -OutFile install.ps1; .\install.ps1`).
   Switched to PowerShell's `irm <url> | iex` idiom — the direct equivalent of

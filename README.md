@@ -161,145 +161,94 @@ Then open **http://localhost:8001**.
 
 ### Signing in the very first time
 
-wardenIQ always requires a login. When SMTP (email delivery) is not yet set up, the application displays a Username/Password screen.
+wardenIQ always requires a login. When SMTP (email delivery) is not yet set up, there's
+no email to send a sign-in code to, so the application displays a Username/Password
+screen for a single **local admin** account instead of the emailed-code screen.
 
 To sign in the very first time:
 1. On the login screen, enter the default administrator credentials:
    - **Username**: `admin`
    - **Password**: `admin123`
-2. Once you are signed in, navigate to **Configuration → Email**.
-3. Set up your SMTP details. Once email delivery is configured, wardenIQ will automatically disable password login and switch to the standard passwordless email OTP sign-in flow (emailing you a one-time 6-digit code for each login).
+2. You'll immediately be asked to **set a new password**. This step is mandatory and
+   can't be skipped or closed — `admin123` is a public, well-known default (it's in
+   this very README), so wardenIQ won't let it stay active silently. Pick one (8+
+   characters, with a letter and a number) and save it; that's what you'll use for
+   local sign-in from then on.
+3. Once you're in, navigate to **Configuration → Email** and set up your SMTP
+   details. Once email delivery is configured, wardenIQ automatically disables
+   password login entirely and switches every sign-in (including yours) to the
+   standard passwordless email OTP flow — a one-time 6-digit code per login.
 
 Prefer to seed the admin ahead of time? Set `ADMIN_EMAIL=you@company.com` in `.env`.
+
+> **Changed your mind about your password later?** Use **Change password** in the
+> profile menu (top-right, next to Sign out) — only shown for the local `admin`
+> account; email-based users sign in with a code and have no password to change.
+
+> **Only one admin, and want to disable/hand off that local account?** The Users
+> page won't let the sole active admin disable themselves — that would lock
+> everyone out of the app. Instead it shows **"Add admin to unlock"**: invite a real
+> email address with the Admin role, have them accept the invite and sign in, and
+> the local admin's Disable/Delete options unlock automatically once a second
+> active admin exists.
 
 ---
 
 ## Prefer a pre-built image? (skip the local build — recommended)
 
-### Option B — Pull the pre-built image, no source needed
+### Option B — Run the published image, no source needed
 
-Don't build from source. wardenIQ publishes a ready-to-run image straight to Docker
-Hub: **[`adlerqa/wardeniq`](https://hub.docker.com/r/adlerqa/wardeniq)**. Pulling it
-gets you the exact same app, already compiled — no Node/Python toolchain, no waiting
-on a build, no source code required at all. Here's the full process:
-
-**Step 1 — Pull the image.**
+wardenIQ publishes a ready-to-run image to Docker Hub:
+**[`adlerqa/wardeniq`](https://hub.docker.com/r/adlerqa/wardeniq)**.
 
 ```bash
 docker pull adlerqa/wardeniq:beta
 ```
 
-This downloads the app itself. It can't run on its own yet — Docker also needs a
-small **recipe file** (a Docker Compose file) telling it which ports to open and
-what settings to pass in. That's next.
+The installer below pulls this same image automatically, plus the small Compose
+file and `.env` it needs to run — no clone, no build.
 
-**Step 2 — One-time setup: grab the recipe file and create your `.env`.** One command
-does this for you — no manual `mkdir`/`curl`/`cp`:
-
+**macOS/Linux:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.sh | bash
 ```
 
-This creates a `wardeniq` folder, downloads `docker-compose.app.yml` (a few KB —
-config, not source code) into it, and creates your own `.env` file there. `APP_SECRET`
-needs no attention — it's generated automatically the first time the app boots.
-
-**Step 3 — Point it at your database.** Open `wardeniq/.env` and set one line:
-
-```
-MONGO_URI=<your MongoDB connection string — see Cloud deployment below>
+**Windows** (Command Prompt or PowerShell — same command either way):
+```bat
+powershell -c "irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
 ```
 
-This is the only manual edit needed. `MONGO_URI` isn't optional here since this flow
-brings your own database rather than using a bundled one (see [Cloud / lightweight
-deployment](#cloud--lightweight-deployment-recommended-for-real-use)) — e.g. a
-**MongoDB Atlas** connection string.
+Set your database in `wardeniq/.env`:
+```
+MONGO_URI=<your MongoDB connection string>
+```
+`.env` is a plain text file that stays on your machine (or server), not inside the
+image — edit it any time. Changes only take effect after a restart (see
+[Configuration](#configuration-env) for the full list of settings).
 
-**Step 4 — Start it.** `.env` already has `APP_IMAGE=adlerqa/wardeniq:beta` set (the
-install script did that), so Compose pulls and runs the image from Step 1 — it never
-tries to build anything:
-
+Start it:
 ```bash
 cd wardeniq
 docker compose -f docker-compose.app.yml up -d
 ```
 
-**Step 5 — Watch it come up, then sign in.**
+Open **http://localhost:8001** and sign in. `APP_SECRET` is generated automatically —
+nothing else to configure.
 
-```bash
-docker logs -f warden-app
-```
+> **No cloud database yet?** Add `--bundled` to the macOS/Linux command, or set
+> `$env:WARDENIQ_BUNDLED=1` before the Windows one, to run a fully local demo
+> (bundled MongoDB + a small model) instead — no `MONGO_URI` needed, starts
+> immediately. See [Cloud / lightweight
+> deployment](#cloud--lightweight-deployment-recommended-for-real-use) for why this
+> isn't the recommended setup for real use.
 
-Once it's ready, open **http://localhost:8001** (or your server's address) and sign
-in — you become the admin automatically, since there are no other users yet.
+**Day to day:** `docker compose -f docker-compose.app.yml up -d` / `down` / `pull` to
+start, stop, or update — from that same `wardeniq` folder.
 
-**Day to day, after this first setup:** you never repeat Steps 1–3 again — just start
-and stop it from that same `wardeniq` folder:
-
-```bash
-docker compose -f docker-compose.app.yml up -d      # start
-docker compose -f docker-compose.app.yml down       # stop (keeps your data)
-docker compose -f docker-compose.app.yml pull       # grab a newer image, then `up -d` again to apply it
-```
-
-**On Windows**, run this one line for Steps 2–4 — works the same in **Command Prompt
-or PowerShell** (it invokes `powershell.exe` explicitly, so it doesn't matter which
-shell you're in):
-
-```bat
-powershell -c "irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
-```
-
----
-
-**Prefer zero cloud accounts — a fully local trial (bundled MongoDB + a small model)?**
-Replace Step 2 with the `--bundled` flag, and skip Steps 3–4 entirely — it sets
-`MONGO_URI` for you and starts everything immediately:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.sh | bash -s -- --bundled
-```
-
-**On Windows** (same one-line pattern, works in Command Prompt or PowerShell):
-
-```bat
-powershell -c "$env:WARDENIQ_BUNDLED=1; irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
-```
-
-Wait a few minutes on first launch (it's initializing the database and downloading
-the local model), then open **http://localhost:8001**. This is the heavier, all-local
-demo path — see [Cloud / lightweight
-deployment](#cloud--lightweight-deployment-recommended-for-real-use) for why it's not
-the recommended one for real use.
-
-<details>
-<summary>Prefer to see exactly what <code>install.sh</code> does, or don't want to pipe a script to <code>bash</code>? Expand for the fully manual version of Step 2.</summary>
-
-```bash
-mkdir wardeniq && cd wardeniq
-curl -fsSLO https://raw.githubusercontent.com/adlerqa/wardeniq/main/docker-compose.app.yml
-curl -fsSLO https://raw.githubusercontent.com/adlerqa/wardeniq/main/.env.example
-cp .env.example .env
-echo "APP_IMAGE=adlerqa/wardeniq:beta" >> .env
-```
-
-That's exactly what the script does: create a folder, download the recipe file and
-the `.env` template, copy the template to a real `.env`, and set `APP_IMAGE` so
-Compose knows to pull instead of build. Continue from Step 3 above.
-
-For the bundled variant instead, also grab `docker-compose.yml`,
-`docker-compose.mongodb.yml`, `docker-compose.ollama.yml`, and the `config/` folder
-the same way, then run `docker compose up -d` (no `-f`, no `--build`) from that
-folder.
-
-</details>
-
-> **Maintainers:** the image is built and pushed by
-> `.github/workflows/docker-publish.yml` for both `linux/amd64` and `linux/arm64` —
-> run it manually (any tag, defaults to `beta`) or push a `vX.Y.Z` git tag to publish
-> a version + `latest`. Requires the `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo
-> secrets. `install.sh` / `install.ps1` live at the repo root and need no maintenance
-> beyond staying in sync with `docker-compose.app.yml`'s file list.
+> **Maintainers:** built and pushed by `.github/workflows/docker-publish.yml`
+> (`linux/amd64` + `linux/arm64`) — trigger manually or push a `vX.Y.Z` tag. Needs
+> `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets. Script source:
+> [`install.sh`](install.sh) / [`install.ps1`](install.ps1).
 
 ---
 
@@ -435,7 +384,11 @@ to another database"** option to copy your data over safely before switching.
 
 ## Troubleshooting
 
-- **I can't sign in / SMTP is not configured.** If email delivery is not yet configured, make sure you log in using the default credentials: username `admin` and password `admin123`. Once logged in, configure SMTP in **Configuration → Email**.
+- **I can't sign in / SMTP is not configured.** If email delivery is not yet configured, make sure you log in using the default credentials: username `admin` and password `admin123` — unless you've already changed it (see [Signing in](#signing-in-the-very-first-time)), in which case use your new password. Once logged in, configure SMTP in **Configuration → Email**.
+- **I'm the only admin and "Disable" doesn't show up on my own account.** That's by
+  design — the sole active admin can't disable themselves (see
+  [Signing in](#signing-in-the-very-first-time)). Use "Add admin to unlock" to invite
+  a second admin first.
 - **First start is slow or the page won't load.** Give it a few minutes — the replica set
   and model downloads take time on first run. Check progress with
   `docker compose logs -f` or the captured logs in `./logs/`.
