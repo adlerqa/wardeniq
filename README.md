@@ -69,7 +69,8 @@ is also available if you just want to try it out first — see [Requirements](#r
 
 That's it. You do **not** need Node, Python, or a database installed locally — it's
 all in the container(s). Works the same on **macOS, Linux, and Windows** (Docker
-Desktop) — Windows users run `run.ps1` instead of `run.sh`; see Quick start below.
+Desktop) — Windows users run `run.ps1` instead of `run.sh` (one line works from
+either Command Prompt or PowerShell; see Quick start below).
 
 **MongoDB and the LLM are upstream dependencies wardenIQ talks to over a connection
 string/API key — they are not shipped inside the app and don't need to run locally.**
@@ -132,18 +133,16 @@ cp .env.example .env        # no further edits needed — see note below
 ./run.sh                    # builds + starts everything
 ```
 
-**On Windows**, use the PowerShell equivalent instead (no WSL or Git Bash
-required — just Docker Desktop):
+**On Windows**, no WSL or Git Bash needed — just Docker Desktop. Clone the repo, then
+run this one line — it works the same whether typed into **Command Prompt or
+PowerShell** (it explicitly invokes `powershell.exe`, so it doesn't matter which
+shell you're already in, and the execution policy is bypassed for this one run only):
 
-```powershell
-git clone https://github.com/adlerqa/wardeniq.git wardenIQ; cd wardenIQ
-Copy-Item .env.example .env
-.\run.ps1
+```bat
+git clone https://github.com/adlerqa/wardeniq.git wardenIQ && cd wardenIQ
+copy .env.example .env
+powershell -ExecutionPolicy Bypass -File run.ps1
 ```
-
-If Windows blocks the script from running, either run it once via
-`powershell -ExecutionPolicy Bypass -File .\run.ps1`, or relax the policy for
-your user one time with `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
 
 Then open **http://localhost:8001**.
 
@@ -243,11 +242,12 @@ docker compose -f docker-compose.app.yml down       # stop (keeps your data)
 docker compose -f docker-compose.app.yml pull       # grab a newer image, then `up -d` again to apply it
 ```
 
-**On Windows**, use the PowerShell equivalent for Steps 2–4:
+**On Windows**, run this one line for Steps 2–4 — works the same in **Command Prompt
+or PowerShell** (it invokes `powershell.exe` explicitly, so it doesn't matter which
+shell you're in):
 
-```powershell
-iwr https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 -OutFile install.ps1
-.\install.ps1
+```bat
+powershell -c "irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
 ```
 
 ---
@@ -260,8 +260,10 @@ Replace Step 2 with the `--bundled` flag, and skip Steps 3–4 entirely — it s
 curl -fsSL https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.sh | bash -s -- --bundled
 ```
 
-```powershell
-.\install.ps1 -Bundled
+**On Windows** (same one-line pattern, works in Command Prompt or PowerShell):
+
+```bat
+powershell -c "$env:WARDENIQ_BUNDLED=1; irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
 ```
 
 Wait a few minutes on first launch (it's initializing the database and downloading
@@ -293,11 +295,11 @@ folder.
 </details>
 
 > **Maintainers:** the image is built and pushed by
-> `.github/workflows/docker-publish.yml` — run it manually (any tag, defaults to
-> `beta`) or push a `vX.Y.Z` git tag to publish a version + `latest`. Requires the
-> `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets. `install.sh` / `install.ps1`
-> live at the repo root and need no maintenance beyond staying in sync with
-> `docker-compose.app.yml`'s file list.
+> `.github/workflows/docker-publish.yml` for both `linux/amd64` and `linux/arm64` —
+> run it manually (any tag, defaults to `beta`) or push a `vX.Y.Z` git tag to publish
+> a version + `latest`. Requires the `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo
+> secrets. `install.sh` / `install.ps1` live at the repo root and need no maintenance
+> beyond staying in sync with `docker-compose.app.yml`'s file list.
 
 ---
 
@@ -443,7 +445,7 @@ to another database"** option to copy your data over safely before switching.
 - **Test generation is slow or shallow.** The default local model is CPU-friendly, not
   powerful. Switch to a bigger local model or a hosted provider under Configuration → LLM.
 - **Fresh start / wipe everything:** `./run.sh --reset` (deletes the data volumes) —
-  on Windows, `.\run.ps1 -Reset`.
+  on Windows, `powershell -ExecutionPolicy Bypass -File run.ps1 -Reset`.
 
 ---
 
@@ -508,9 +510,10 @@ config/         mongod.conf, mongot.conf, replica-set init, mongot password file
 docker-compose.yml        the app + Mongo replica set + mongot + Ollama
 docker-compose.app.yml    the app alone (the only service a client needs)
 docker-compose.mongodb.yml / docker-compose.ollama.yml   the bundled dependencies
+install.sh / install.ps1  one-command setup for the published image (macOS/Linux / Windows)
 run.sh          one-command launch + log capture (macOS/Linux)
 collect-logs.sh dump all container logs/health into ./logs/ (macOS/Linux)
-run.ps1         same as run.sh, for Windows (PowerShell — no WSL/Git Bash needed)
+run.ps1         same as run.sh, for Windows
 collect-logs.ps1 same as collect-logs.sh, for Windows
 ```
 

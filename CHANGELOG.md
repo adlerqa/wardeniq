@@ -2,7 +2,44 @@
 
 ## Unreleased
 
+### Fixed
+- **`install.ps1` failed to parse on real Windows machines** with `Missing closing
+  ')' in expression` / `Missing closing '}' in statement block`, even though the
+  script was syntactically valid. Cause: the file contained em dashes (`—`) with no
+  byte-order mark, and Windows PowerShell 5.1 (the default `powershell.exe` on most
+  Windows installs) doesn't reliably auto-detect UTF-8 in a BOM-less `.ps1` file —
+  it falls back to the system codepage, misreading the UTF-8 em-dash bytes and
+  corrupting the string literals around them enough to break the tokenizer. A
+  download via `curl`/`Invoke-WebRequest` doesn't add a BOM either, so this hit every
+  real user, not just an edge case. Fixed by stripping all non-ASCII characters from
+  `install.ps1`, `run.ps1`, and `collect-logs.ps1` (em dashes to `-`, documented at
+  the top of each file so it isn't reintroduced) — sidesteps the encoding question
+  entirely rather than depending on a BOM surviving every possible transfer path.
+
 ### Added
+- **Shorter Windows one-liner using `irm | iex`.** The documented Windows command was
+  a two-step download-then-run (`iwr ... -OutFile install.ps1; .\install.ps1`).
+  Switched to PowerShell's `irm <url> | iex` idiom — the direct equivalent of
+  `curl | bash` — which downloads and executes in one step, no intermediate file.
+  Since a piped `iex` can't bind a `-Bundled` switch parameter the way running a
+  saved `.ps1` file can, `install.ps1`'s `param()` block now also reads
+  `$env:WARDENIQ_BUNDLED` as a fallback default, so the bundled variant is
+  `$env:WARDENIQ_BUNDLED=1; irm ... | iex` instead. The old
+  download-then-run-as-a-file form still works unchanged for anyone who'd rather
+  inspect the script before running it, or re-run it with different flags.
+- **Windows install commands now work from Command Prompt without a separate `.bat`
+  file.** `install.ps1`/`run.ps1` need PowerShell; a Command Prompt user typing
+  `iwr ...` or `.\install.ps1` gets "not recognized" errors, and many Windows users
+  default to `cmd.exe` without knowing PowerShell exists or how to switch. First
+  attempt added `install.bat`/`run.bat` wrapper files, but that meant three installer
+  scripts to keep in sync (`.sh`/`.ps1`/`.bat`) for what's really only two platforms.
+  Replaced with a single documented command per Windows path:
+  `powershell -ExecutionPolicy Bypass -File run.ps1` (build from source) and
+  `powershell -Command "iwr .../install.ps1 -OutFile install.ps1; .\install.ps1"`
+  (published image) — both work unchanged whether typed into Command Prompt or
+  PowerShell, since they explicitly invoke `powershell.exe` rather than relying on
+  the calling shell to understand PowerShell syntax. No extra files to maintain.
+  `install.bat`/`run.bat` removed.
 - **Multi-arch Docker Hub image (`linux/amd64` + `linux/arm64`).** The published
   `adlerqa/wardeniq` image was initially built by `docker-publish.yml` on GitHub's
   standard `ubuntu-latest` runner, which only produces `linux/amd64` — fine for most

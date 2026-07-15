@@ -1,6 +1,6 @@
 #!/usr/bin/env pwsh
 <#
-  Windows port of run.sh — builds + starts the full stack, then captures logs.
+  Windows port of run.sh - builds + starts the full stack, then captures logs.
   Functionally identical to the bash version (see run.sh's comments); this
   exists so Windows users don't need WSL2 or Git Bash. Requires Docker
   Desktop with the `docker compose` CLI on PATH.
@@ -12,6 +12,9 @@
     powershell -ExecutionPolicy Bypass -File .\run.ps1
   or (as an admin, one-time) relax the policy for your user:
     Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+  NOTE: this file must stay plain ASCII - see install.ps1's header comment for why
+  (Windows PowerShell 5.1 mis-parses non-ASCII characters in a BOM-less .ps1 file).
 #>
 param(
     [switch]$Reset
@@ -28,7 +31,7 @@ if (-not (Test-Path ".env")) {
 # No chmod step here (unlike run.sh): mongot's password file needs 0400 perms,
 # but Windows bind mounts can't express that anyway. config/mongot-entrypoint.sh
 # already copies the secret to a private, owner-only path INSIDE the container
-# and re-secures it there — see that file's comments — so this is a non-issue
+# and re-secures it there - see that file's comments - so this is a non-issue
 # on Windows (and macOS) regardless of host-side permissions.
 
 if ($Reset) {

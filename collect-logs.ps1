@@ -1,6 +1,6 @@
 #!/usr/bin/env pwsh
 <#
-  Windows port of collect-logs.sh — dumps container logs + health into ./logs/
+  Windows port of collect-logs.sh - dumps container logs + health into ./logs/
   for troubleshooting. Functionally identical to the bash version; see that
   file's comments for the "why". Run from PowerShell (Windows PowerShell 5.1+
   or PowerShell 7+):
@@ -19,7 +19,7 @@ $containers = @(
 )
 
 foreach ($c in $containers) {
-    # ${c} (not $c) before a literal ".log" — PowerShell string interpolation
+    # ${c} (not $c) before a literal ".log" - PowerShell string interpolation
     # would otherwise parse "$c.log" as member-access ($c.log) instead of
     # concatenation, and strings have no .log property.
     docker inspect $c *> $null
