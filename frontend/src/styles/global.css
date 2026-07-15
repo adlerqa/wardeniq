@@ -1155,6 +1155,7 @@
   .sk-line{height:12px;margin:8px 0;border-radius:6px;}
   .sk-line.sm{height:10px;width:55%;}
   .sk-line.lg{height:16px;width:70%;}
+  .sk-state{width:100%;grid-column:1/-1;}
   .sk-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;}
   .sk-card{min-height:154px;border:1px solid rgba(116,139,166,.16);border-radius:16px;padding:22px;
     background:linear-gradient(145deg,rgba(24,34,48,.6),rgba(13,20,30,.7));}

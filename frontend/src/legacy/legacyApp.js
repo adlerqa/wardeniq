@@ -67,18 +67,29 @@ function confirmModal(opts){
 }
 
 // ---- skeleton placeholders (returned as HTML strings) ----
+function skeletonState(body,label="Loading content"){
+  return `<div class="sk-state" role="status" aria-label="${esc(label)}">${body}</div>`;
+}
 const skeleton={
   line(w){return `<div class="sk sk-line"${w?` style="width:${w}"`:""}></div>`;},
-  cards(n=6){let c="";for(let i=0;i<n;i++)c+=`<div class="sk-card"><div class="sk sk-line lg"></div><div class="sk sk-line sm"></div><div class="sk sk-line" style="width:40%;margin-top:22px"></div></div>`;return `<div class="sk-grid">${c}</div>`;},
+  cards(n=6,label="Loading cards"){let c="";for(let i=0;i<n;i++)c+=`<div class="sk-card"><div class="sk sk-line lg"></div><div class="sk sk-line sm"></div><div class="sk sk-line" style="width:40%;margin-top:22px"></div></div>`;return skeletonState(`<div class="sk-grid">${c}</div>`,label);},
   kpis(n=7){let c="";for(let i=0;i<n;i++)c+=`<div class="sk-kpi"><div class="sk sk-line" style="width:50%;height:24px"></div><div class="sk sk-line sm" style="margin-top:10px"></div></div>`;return c;},
-  rows(n=5){let c="";for(let i=0;i<n;i++)c+=`<div class="sk-row"><div class="sk sk-dot"></div><div style="flex:1"><div class="sk sk-line lg" style="margin:0 0 8px"></div><div class="sk sk-line sm" style="margin:0"></div></div><div class="sk sk-badge"></div></div>`;return `<div class="sk-row-wrap">${c}</div>`;},
-  table(cols=5,n=5){const head=`<tr>${Array(cols).fill('<th><div class="sk sk-line sm" style="margin:0;width:70%"></div></th>').join("")}</tr>`;let body="";for(let i=0;i<n;i++)body+=`<tr>${Array(cols).fill('<td><div class="sk sk-line" style="margin:0"></div></td>').join("")}</tr>`;return `<table>${head}${body}</table>`;},
-  block(){return `<div class="sk sk-line lg"></div><div class="sk sk-line"></div><div class="sk sk-line sm"></div>`;}
+  rows(n=5,label="Loading rows"){let c="";for(let i=0;i<n;i++)c+=`<div class="sk-row"><div class="sk sk-dot"></div><div style="flex:1"><div class="sk sk-line lg" style="margin:0 0 8px"></div><div class="sk sk-line sm" style="margin:0"></div></div><div class="sk sk-badge"></div></div>`;return skeletonState(`<div class="sk-row-wrap">${c}</div>`,label);},
+  table(cols=5,n=5,label="Loading table"){const head=`<tr>${Array(cols).fill('<th><div class="sk sk-line sm" style="margin:0;width:70%"></div></th>').join("")}</tr>`;let body="";for(let i=0;i<n;i++)body+=`<tr>${Array(cols).fill('<td><div class="sk sk-line" style="margin:0"></div></td>').join("")}</tr>`;return skeletonState(`<div style="overflow:auto"><table>${head}${body}</table></div>`,label);},
+  block(label="Loading details"){return skeletonState(`<div class="sk sk-line lg"></div><div class="sk sk-line"></div><div class="sk sk-line sm"></div>`,label);},
+  dashboard(){return skeletonState(
+    `<div class="sk sk-line lg" style="width:180px;height:24px;margin-bottom:20px"></div>`+
+    `<div class="dash-metrics">${this.kpis(7)}</div>`+
+    `<div class="dash-row c2"><div class="sk-card">${this.kpis(2)}</div><div class="sk-card">${this.blockLines(5)}</div></div>`+
+    `<div class="sk-card" style="margin-top:16px">${this.blockLines(6)}</div>`,
+    "Loading dashboard"
+  );},
+  blockLines(n=4){let c="";for(let i=0;i<n;i++)c+=`<div class="sk sk-line${i===0?" lg":i===n-1?" sm":""}"></div>`;return c;}
 };
 // paint a skeleton into a container if it exists
 function skIn(sel,html){const el=$(sel);if(el)el.innerHTML=html;}
-// a simple inline "loading…" row
-function loadingRow(text){return `<div class="loading-row"><span class="spin-inline"></span>${esc(text||"Loading…")}</div>`;}
+// Compact detail-pane placeholder.
+function loadingRow(text){return skeleton.block(text||"Loading details");}
 
 // ---- button busy state ----
 function setBusy(elOrSel,on){const el=typeof elOrSel==="string"?$(elOrSel):elOrSel;if(!el)return;
@@ -497,7 +508,7 @@ const dot=ok=>`<span class="dot ${ok?"ok":"bad"}"></span>`;
 // ---- dashboard ----
 async function loadDashboard(){
   const root=$("#dash-root");if(!root)return;
-  brandLoaderIn("#dash-root","analyze",{compact:true,messages:["Loading dashboard…","Crunching coverage…","Tallying test cases…"]});
+  skIn("#dash-root",skeleton.dashboard());
   try{const d=await api("/api/dashboard");const c=d.counts;const g=d.coverage;const bt=d.by_type||{};
     // ── Overview KPI tiles (exact same fields/labels as before) ──
     const tiles=[["projects","Projects"],["features","Features"],["test_cases","Test cases"],
@@ -530,7 +541,7 @@ const gauge=(label,pct,cls)=>`<div class="gauge"><div class="top"><span>${label}
 
 // ---- projects + repos ----
 async function loadProjects(){
-  if($("#project-cards-container")&&!$("#project-cards-container").dataset.loaded)brandLoaderIn("#project-cards-container","analyze",{compact:true,messages:["Loading projects…","Gathering repositories…","Almost ready…"]});
+  if($("#project-cards-container")&&!$("#project-cards-container").dataset.loaded)skIn("#project-cards-container",skeleton.cards(6,"Loading projects"));
   try{let r=await api("/api/projects");
     if($("#project-cards-container"))$("#project-cards-container").dataset.loaded="1";
     if(r.projects.length){
@@ -1435,7 +1446,7 @@ async function attachRunningGenWatcher(fid){
   }catch(e){}
 }
 async function loadFeatures(){if(!$("#feat-list"))return;
-  brandLoaderIn("#feat-list","analyze",{compact:true,messages:["Loading features…","Fetching test cases…","Almost there…"]});
+  skIn("#feat-list",skeleton.cards(6,"Loading features"));
   try{const r=await api("/api/features"+(currentProject?`?project_id=${currentProject}`:""));
   if($("#feature-new-btn"))$("#feature-new-btn").style.display=r.features.length?"":"none";
   $("#feat-list").innerHTML=r.features.map(f=>`<div class="entity-card" onclick="openFeature('${f.id}')">
@@ -1774,7 +1785,7 @@ $("#tc-reset").onclick=async()=>{
 async function loadCases(){
   const qp=new URLSearchParams();const m={project_id:$("#tc-proj").value,feature_id:$("#tc-feat").value,type:$("#tc-type").value,tag:$("#tc-tag").value,q:$("#tc-q").value.trim(),status:$("#tc-status").value,execution_status:$("#tc-result").value,lineage:$("#tc-lineage").value};
   Object.entries(m).forEach(([k,v])=>{if(v)qp.set(k,v);});qp.set("limit",25);qp.set("skip",tcPage*25);
-  brandLoaderIn("#tc-list","analyze",{compact:true,messages:["Loading test cases…","Applying filters…","Fetching results…"]});
+  skIn("#tc-list",skeleton.rows(8,"Loading test cases"));
   try{const r=await api("/api/test-cases?"+qp.toString());
     $("#tc-list").innerHTML=r.items.length?`<div class="testcase-list">`+caseListHeader("cases")+
       r.items.map(testcaseRow).join("")+`</div>`:`<span class="muted">No test cases match the selected filters.</span>`;
@@ -1881,7 +1892,7 @@ window.viewCase=async(cid,source)=>{
   document.querySelectorAll(".testcase-item.open").forEach(x=>x.classList.remove("open"));
   item.classList.add("open");
   if(detail.dataset.loaded)return;
-  detail.innerHTML=`<div class="case-detail-loading">Loading testcase details…</div>`;
+  detail.innerHTML=skeleton.block("Loading test case details");
   try{const c=await api("/api/test-cases/"+cid);detail.innerHTML=caseDetailHtml(c);detail.dataset.loaded="1";}
   catch(e){detail.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
 };
@@ -2010,7 +2021,7 @@ let SELECTED_STEP_ID=null;
 
 async function loadSteps(){
   if(!document.getElementById("s-list-body"))return;
-  $("#s-list-body").innerHTML=`<div style="padding:0">${brandLoader("analyze",{compact:true,messages:["Loading step library…","Indexing steps…"]})}</div>`;
+  skIn("#s-list-body",skeleton.rows(8,"Loading step library"));
   try{
     const r=await api("/api/steps?limit=1000");
     ALL_STEPS=r.steps||[];
@@ -2232,7 +2243,7 @@ async function loadConfig(){try{const s=await api("/api/settings");
 // ---- read-only Database status panel ----
 async function loadDbStatus(){
   const box=$("#cfg-db-body");if(!box)return;
-  box.innerHTML=`<span class="muted"><span class="spin-inline"></span> Loading database status…</span>`;
+  box.innerHTML=skeleton.block("Loading database status");
   try{
     const d=await api("/api/db-status");
     const boot=d.boot||{};
@@ -2978,7 +2989,7 @@ window.deleteCycleTemplate=async(tid)=>{
   try{await api(`/api/cycle-templates/${tid}`,{method:"DELETE"});toast("Template deleted");loadCycleTemplates();}
   catch(e){toast(e.message,true);}};
 async function loadCycles(){const pid=$("#cyc-proj").value||currentProject;if(!pid)return;
-  brandLoaderIn("#cyc-list","analyze",{compact:true,messages:["Loading test cycles…","Tallying results…"]});
+  skIn("#cyc-list",skeleton.rows(5,"Loading test cycles"));
   try{const r=await api(`/api/projects/${pid}/test-cycles`);
     $("#cyc-list").innerHTML=r.cycles.map(c=>{const cc=c.counts||{};const done=(cc.passed||0)+(cc.failed||0)+(cc.skipped||0)+(cc.blocked||0),pct=c.total?Math.round(done/c.total*100):0;
       return `<div class="feat" onclick="openCycle('${c.id}')"><div class="n">${esc(c.name)} <span class="badge">${esc(c.status||"draft")}</span></div>
@@ -3315,7 +3326,7 @@ $("#mm-analyze").onclick=async()=>{
   if(!ids.length){toast("Select at least one repo",true);return;}
   const pid=$("#mm-proj").value||currentProject;const branches=collectBranches("mm-repo");
   $("#mm-status").textContent=`Starting implementation coverage review for ${ids.length} repo${ids.length===1?"":"s"}…`;$("#mm-analyze").disabled=true;setBusy("#mm-analyze",true);$("#mm-diag").innerHTML="";
-  brandLoaderIn("#mm-map","analyze",{compact:false,inline:true,messages:["Downloading repository code…","Indexing implementation files…","Reviewing coverage with AI…","Mapping cases to code…"]});
+  skIn("#mm-map",skeleton.rows(5,"Analyzing code coverage"));
   try{const r=await api("/api/code-analysis",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({project_id:pid,repo_ids:ids,branches})});watchMindmap(r.job_id);}
   catch(e){$("#mm-status").innerHTML=`<span class="err">${esc(e.message)}</span>`;$("#mm-analyze").disabled=false;setBusy("#mm-analyze",false);}};
 function formatMindmapStage(stage){
@@ -3357,7 +3368,7 @@ async function loadMindmap(){const pid=$("#mm-proj").value||currentProject;
   // the Analyze click stays on screen forever.
   const mmEl=$("#mm-map");
   if(!pid){if(mmEl)mmEl.innerHTML=`<div class="card"><span class="muted">Pick a project to see its coverage map.</span></div>`;return;}
-  brandLoaderIn("#mm-map","analyze",{compact:false,inline:true,messages:["Loading coverage map…","Reading code analysis…","Mapping cases to code…"]});
+  skIn("#mm-map",skeleton.rows(5,"Loading coverage map"));
   try{const r=await api(`/api/projects/${pid}/mindmap`);
     if(!r.features.length){$("#mm-map").innerHTML=`<div class="card"><span class="muted">No features in this project yet.</span></div>`;return;}
     const tot={covered:0,partial:0,uncovered:0};r.features.forEach(f=>{tot.covered+=f.counts.covered;tot.partial+=f.counts.partial;tot.uncovered+=f.counts.uncovered;});
@@ -3694,7 +3705,7 @@ function _userMatchesFilters(u){
   return true;
 }
 async function loadUsers(){
-  brandLoaderIn("#u-list","analyze",{compact:true,messages:["Loading users…","Checking access…"]});
+  skIn("#u-list",skeleton.table(7,6,"Loading users"));
   try{
   if(!ALL_PROJECTS_CACHE.length){try{const pr=await api("/api/projects");ALL_PROJECTS_CACHE=pr.projects||[];}catch(e){}}
   const r=await api("/api/users");
@@ -3822,7 +3833,7 @@ window.resendInvite=async(id,email)=>{try{const r=await api(`/api/users/${id}/re
 window.cancelInvite=async(id,email)=>{if(!await uiConfirm(`Cancel the pending invite for ${email}?`, "Cancel Invite", "Cancel invite", true))return;
   try{await api(`/api/users/${id}/cancel-invite`,{method:"POST"});toast("Invite cancelled");loadUsers();}catch(e){toast(e.message,true);}};
 async function loadAudit(){const box=$("#audit-list");if(!box)return;
-  brandLoaderIn("#audit-list","analyze",{compact:true,messages:["Loading audit log…","Fetching recent activity…"]});
+  skIn("#audit-list",skeleton.table(5,6,"Loading audit log"));
   try{const r=await api("/api/audit-logs?limit=100");const logs=r.logs||[];
     if(!logs.length){box.innerHTML='<span class="muted">No audit entries yet.</span>';return;}
     const fmt=ts=>{try{return new Date(ts*1000).toLocaleString();}catch(e){return "";}};
@@ -3850,7 +3861,7 @@ async function initValidator() {
   $("#val-workspace").style.display = "block";
   $("#val-feat-title").textContent = `${$("#d-name").textContent || "Feature"} — MCQ Validator`;
   $("#val-results").style.display = "none";
-  $("#val-qa-container").innerHTML = "";
+  skIn("#val-qa-container",skeleton.cards(3,"Loading validator"));
   $("#val-progress").style.display = "none";
   $("#val-log").style.display = "none";
   $("#val-generate-btn").style.display = "none";
@@ -3860,6 +3871,7 @@ async function initValidator() {
   try {
     const res = await api(`/api/features/${currentFeature}/validator/latest`);
     if (!res || res.mode === "none") {
+      $("#val-qa-container").innerHTML = "";
       $("#val-status").textContent = "No validator generated yet.";
       $("#val-generate-btn").style.display = "inline-block";
       $("#val-generate-btn").disabled = false;
@@ -3870,6 +3882,7 @@ async function initValidator() {
       watchValidatorJob(res.run && res.run.job_id);
       return;
     }
+    $("#val-qa-container").innerHTML = "";
     $("#val-status").textContent = "";
     $("#val-retake-btn").style.display = "inline-block";
     $("#val-retake-btn").disabled = false;
@@ -3901,7 +3914,7 @@ async function runValidator(forceNew=false) {
   $("#val-results").style.display = "none";
   $("#val-generate-btn").style.display = "none";
   $("#val-retake-btn").disabled = true;
-  brandLoaderIn("#val-qa-container","quiz",{compact:true,steps:["Loading questions","AI processing","Scoring clarity"]});
+  skIn("#val-qa-container",skeleton.cards(3,"Generating validator questions"));
   $("#val-progress").style.display = "block";
   $("#val-bar").style.width = "40%";
   $("#val-status").textContent = "Loading validator...";
@@ -4118,7 +4131,7 @@ function _scheduleGapPrPoll(anyActive) {
 async function loadGapPrRuns(opts) {
   const silent = !!(opts && opts.silent === true);
   if (!currentFeature) return;
-  if (!silent) $("#gap-pr-list").innerHTML = `<span class="muted">Loading…</span>`;
+  if (!silent) skIn("#gap-pr-list",skeleton.rows(4,"Loading pull request coverage runs"));
   try {
     const r = await api(`/api/features/${currentFeature}/code-coverage/runs?limit=50`);
     const runs = r.runs || [];
@@ -4207,7 +4220,7 @@ window.toggleCovMode = (btn, section, mode) => {
 
 window.openGapPrRun = async (rid) => {
   $("#gap-pr-detail").style.display = "block";
-  $("#gap-pr-detail-body").innerHTML = `<span class="muted">Loading…</span>`;
+  $("#gap-pr-detail-body").innerHTML = skeleton.block("Loading coverage run details");
   try {
     const r = await api(`/api/code-coverage/runs/${rid}`);
     $("#gap-pr-detail-title").textContent = `Run · PR #${r.pr_number} · ${r.repo_full_name||""}`;
@@ -4464,7 +4477,7 @@ if($("#gap-pr-manual")) $("#gap-pr-manual").onclick = async () => {
 async function loadGapAuto() {
   if (!currentFeature) return;
   $("#gap-auto-stats").style.display = "none";
-  $("#gap-auto-repos").innerHTML = `<span class="muted">Loading…</span>`;
+  skIn("#gap-auto-repos",skeleton.rows(4,"Loading automation repositories"));
   try {
     const r = await api(`/api/features/${currentFeature}/automation-coverage`);
     const repos = r.test_repos || [];
@@ -4670,7 +4683,8 @@ async function initTestPlan() {
   $("#tp-no-feature").style.display = "none";
   $("#tp-workspace").style.display = "block";
   $("#tp-feat-title").textContent = `${$("#d-name").textContent || "Feature"} — Test Plan`;
-  $("#tp-content").style.display = "none";
+  $("#tp-content").innerHTML = skeletonState(`<div style="display:grid;gap:18px">${skeleton.blockLines(5)}${skeleton.blockLines(4)}</div>`,"Loading test plan");
+  $("#tp-content").style.display = "block";
   $("#tp-progress").style.display = "block";
   $("#tp-bar").style.width = "30%";
   $("#tp-status").textContent = "Loading test plan status...";
@@ -4683,6 +4697,8 @@ async function initTestPlan() {
     const run = res.run;
     if (!run) {
       $("#tp-progress").style.display = "none";
+      $("#tp-content").innerHTML = "";
+      $("#tp-content").style.display = "none";
       $("#tp-status").textContent = "No test plan generated yet.";
       $("#tp-generate-btn").style.display = "inline-block";
       $("#tp-generate-btn").disabled = false;
@@ -4699,12 +4715,16 @@ async function initTestPlan() {
       watchTestPlanStream(run.id);
     } else {
       $("#tp-progress").style.display = "none";
+      $("#tp-content").innerHTML = "";
+      $("#tp-content").style.display = "none";
       $("#tp-status").innerHTML = `<span class="err">Previous generation failed.</span>`;
       $("#tp-generate-btn").style.display = "inline-block";
       $("#tp-generate-btn").disabled = false;
     }
   } catch (e) {
     $("#tp-progress").style.display = "none";
+    $("#tp-content").innerHTML = "";
+    $("#tp-content").style.display = "none";
     $("#tp-status").innerHTML = `<span class="err">${esc(e.message)}</span>`;
   }
 }
@@ -4731,7 +4751,7 @@ function watchTestPlanStream(runId) {
   $("#tp-bar").style.width="30%";
   $("#tp-status").textContent="Synthesizing test plan via LLM...";
   $("#tp-content").style.fontFamily="inherit";
-  $("#tp-content").innerHTML=brandLoader("analyze",{compact:true,messages:["Synthesizing test plan…","Analyzing requirements…","Structuring strategy…","Finalizing plan…"]});
+  $("#tp-content").innerHTML=skeletonState(`<div style="display:grid;gap:18px">${skeleton.blockLines(5)}${skeleton.blockLines(4)}${skeleton.blockLines(6)}</div>`,"Generating test plan");
   $("#tp-content").style.display="block";
   $("#tp-generate-btn").style.display="none";
   $("#tp-export-csv").style.display="none";
@@ -5124,7 +5144,7 @@ window.openImportLibraryModal = async (fid) => {
   IMP_FID = fid || currentFeature || null;
   if (!IMP_FID) { toast("Open a feature first", true); return; }
   $("#implib-modal").classList.add("show");
-  $("#implib-list").innerHTML = `<div class="sheet-empty">Loading imported sheets...</div>`;
+  skIn("#implib-list",skeleton.rows(4,"Loading imported sheets"));
   $("#implib-stats").innerHTML = "";
   $("#implib-save").disabled = true;
   await loadImportLibrary();
