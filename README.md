@@ -282,8 +282,14 @@ image — edit it any time. Changes take effect after a restart (see
 Start it:
 ```bash
 cd wardeniq
-docker compose -f docker-compose.app.yml up -d
+docker compose -f docker-compose.app.yml up -d --no-build
 ```
+
+The installer already pulled `adlerqa/wardeniq:beta`, so this starts from the
+published image. The `--no-build` flag is a safety net: `docker-compose.app.yml`
+also carries a `build:` section for contributors who have the source checked out,
+and `--no-build` guarantees a no-source install never tries to build from a `./app`
+directory that isn't there (it would fail with a clear error instead).
 
 Open **http://localhost:8001** and sign in. `APP_SECRET` is generated automatically.
 
@@ -301,8 +307,9 @@ Open **http://localhost:8001** and sign in. `APP_SECRET` is generated automatica
 > bring-your-own setup above. See [Cloud / lightweight
 > deployment](#cloud--lightweight-deployment-recommended-for-real-use) for the rationale.
 
-**Day to day:** `docker compose -f docker-compose.app.yml up -d` / `down` / `pull` to
-start, stop, or update — from that same `wardeniq` folder.
+**Day to day:** `docker compose -f docker-compose.app.yml up -d --no-build` / `down` /
+`pull` to start, stop, or update — from that same `wardeniq` folder. (`pull` refreshes
+the published image; keep `--no-build` on `up` since this folder has no source to build.)
 
 > **Maintainers:** built and pushed by `.github/workflows/docker-publish.yml`
 > (`linux/amd64` + `linux/arm64`) — trigger manually or push a `vX.Y.Z` tag. Needs

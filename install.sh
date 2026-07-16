@@ -29,7 +29,7 @@ done
 command -v docker >/dev/null 2>&1 || { echo "Docker is required — install Docker Desktop first."; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "Docker Compose v2 is required (comes with Docker Desktop)."; exit 1; }
 
-echo "==> setting up wardenIQ in ./$DEST (pulling adlerqa/wardeniq:$TAG — no source needed)"
+echo "==> setting up wardenIQ in ./$DEST (published image adlerqa/wardeniq:$TAG — no source needed)"
 mkdir -p "$DEST"
 cd "$DEST"
 
@@ -76,9 +76,19 @@ else
   echo "OLLAMA_URL_BUNDLED=${OLLAMA_BUNDLED_URL}" >> .env
 fi
 
+# Pull the published app image up front so the "no source needed" promise holds.
+# docker-compose.app.yml carries a build: section for open-source contributors who
+# have ./app checked out. In this installer there is NO source, so if the image is
+# not cached locally `docker compose up` would fall back to BUILDING from ./app and
+# fail on a missing app/Dockerfile. Caching the image here keeps build: dormant, and
+# --no-build below turns any remaining fallback into a clear error instead of a
+# confusing source build.
+echo "==> pulling adlerqa/wardeniq:${TAG}"
+docker pull "adlerqa/wardeniq:${TAG}"
+
 if [ "$BUNDLED" = true ]; then
   echo "==> starting the full bundled demo stack (app + MongoDB + Ollama) — pulling images, not building"
-  docker compose up -d
+  docker compose up -d --no-build
   echo
   echo "wardenIQ → http://localhost:8001"
   echo "First launch takes a few minutes (replica set init + model download)."
@@ -89,7 +99,7 @@ else
   echo "Open $DEST/.env and set MONGO_URI to your database (e.g. a MongoDB Atlas connection string)."
   echo "Then start it:"
   echo
-  echo "    cd $DEST && docker compose -f docker-compose.app.yml up -d"
+  echo "    cd $DEST && docker compose -f docker-compose.app.yml up -d --no-build"
   echo
   echo "(Prefer the zero-cloud-accounts local demo instead? Re-run this installer with --bundled.)"
 fi
