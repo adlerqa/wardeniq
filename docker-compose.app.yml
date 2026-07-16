@@ -25,6 +25,12 @@ services:
     image: ${APP_IMAGE:-wardeniq:0.1.0-beta}
     container_name: warden-app
     ports: ["8001:8001"]
+    # Lets the container reach services on the host (e.g. a natively-run Ollama at
+    # http://host.docker.internal:11434 in the app-only flow). Docker Desktop
+    # (Windows/macOS) provides this name automatically; this alias adds it on native
+    # Linux too. Harmless when the bundled Ollama container is used instead.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       # ── Database & AI endpoints (the "bring your own" knobs) ──
       # An explicit value in .env WINS and locks the field in the UI. Left unset,
@@ -33,7 +39,13 @@ services:
       - MONGO_URI=${MONGO_URI:-}
       - MONGO_URI_BUNDLED=mongodb://mongod1.warden-net:27017,mongod2.warden-net:27017,mongod3.warden-net:27017/?replicaSet=rs0
       - OLLAMA_URL=${OLLAMA_URL:-}
-      - OLLAMA_URL_BUNDLED=http://ollama:11434
+      # Fallback Ollama endpoint used when OLLAMA_URL is unset and nothing is saved
+      # in-app. Default targets the bundled `ollama` container (full-stack demo). In
+      # the app-only ("bring your own AI") flow there is NO such container, so the
+      # installer writes OLLAMA_URL_BUNDLED=http://host.docker.internal:11434 into
+      # .env to point at Ollama running natively on the host instead. Override in .env
+      # for any standalone `-f docker-compose.app.yml` deployment.
+      - OLLAMA_URL_BUNDLED=${OLLAMA_URL_BUNDLED:-http://ollama:11434}
       - ENV_FILE_PATH=/app/.env
       - EMBED_MODEL=${EMBED_MODEL:-nomic-embed-text}
       - EMBED_DIM=${EMBED_DIM:-768}

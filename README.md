@@ -159,6 +159,33 @@ Then open **http://localhost:8001**.
 > **First launch takes a few minutes** — it initializes the MongoDB replica set and
 > downloads the local models. Grab a coffee; it's a one-time cost.
 
+### Using the bundled Ollama (local models)
+
+In the bundled stack there's **nothing to configure for AI**. An Ollama container runs
+alongside the app, and a one-shot `ollama-pull` service downloads the two default models
+on first boot — `qwen2.5:3b` (generation) and `nomic-embed-text` (embeddings). The app
+is already pointed at it (`OLLAMA_URL_BUNDLED=http://ollama:11434`), so once the pull
+finishes, generation and embeddings just work.
+
+- **Check it's ready.** From the same folder as your Compose files:
+  ```bash
+  docker compose exec ollama ollama list        # lists installed models
+  docker logs -f warden-ollama-pull             # watch the first-boot download
+  ```
+  Generation will error until that first pull completes.
+- **Use a bigger or different model.** Pull it into the same container, then tell
+  wardenIQ to use it:
+  ```bash
+  docker compose exec ollama ollama pull qwen2.5:7b
+  ```
+  Then either pick it under **Configuration → LLM** (or **Embeddings**) in the app, or
+  set `GEN_MODEL=qwen2.5:7b` (/ `EMBED_MODEL=...`) in `.env` and `docker compose up -d`.
+  The bundled Ollama is **CPU-only** inside Docker, so larger models are noticeably
+  slower — for higher quality use a hosted provider, or a natively-installed Ollama with
+  a GPU.
+- **Prefer a hosted provider instead?** Set it under **Configuration → LLM** and
+  **Configuration → Embeddings**; the bundled Ollama is then simply left unused.
+
 ### Signing in the very first time
 
 wardenIQ always requires a login. When SMTP (email delivery) is not yet set up, there's
@@ -218,12 +245,38 @@ curl -fsSL https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.sh | 
 powershell -c "irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
 ```
 
-Set your database in `wardeniq/.env`:
+This is the setup we recommend for client / production use: **you bring the database
+and the AI backend**, and wardenIQ runs as a single lightweight container (no bundled
+MongoDB or Ollama). There are **two** things to configure before the first start —
+a database and an AI backend.
+
+**1 — Database.** In `wardeniq/.env`, point it at your MongoDB (Atlas, or self-managed
+with mongot):
 ```
 MONGO_URI=<your MongoDB connection string>
 ```
+
+**2 — AI backend (generation *and* embeddings).** This flow does **not** bundle Ollama,
+so you must give wardenIQ a model backend. wardenIQ needs **both** a generation model
+and an embedding model — embeddings power the RAG store, semantic dedup, and PR→feature
+mapping, so the app is not usable until one of the options below is in place. Pick one:
+
+- **Hosted provider — recommended for clients.** Nothing to install. Start the app,
+  sign in, and under **Configuration → LLM** *and* **Configuration → Embeddings** choose
+  a provider (OpenAI, Anthropic, Google Gemini, Mistral, Groq, AWS Bedrock, Voyage, or
+  any OpenAI-compatible endpoint) and paste an API key (encrypted at rest). Leave the
+  Ollama fields alone.
+- **Your own Ollama — fully local, no accounts.** Install [Ollama](https://ollama.com)
+  on the host machine and pull both models:
+  ```bash
+  ollama pull qwen2.5:3b        # generation
+  ollama pull nomic-embed-text  # embeddings
+  ```
+  The container reaches it automatically at `http://host.docker.internal:11434` (the
+  installer sets this for you). Verify with `ollama list`.
+
 `.env` is a plain text file that stays on your machine (or server), not inside the
-image — edit it any time. Changes only take effect after a restart (see
+image — edit it any time. Changes take effect after a restart (see
 [Configuration](#configuration-env) for the full list of settings).
 
 Start it:
@@ -232,15 +285,21 @@ cd wardeniq
 docker compose -f docker-compose.app.yml up -d
 ```
 
-Open **http://localhost:8001** and sign in. `APP_SECRET` is generated automatically —
-nothing else to configure.
+Open **http://localhost:8001** and sign in. `APP_SECRET` is generated automatically.
 
-> **No cloud database yet?** Add `--bundled` to the macOS/Linux command, or set
-> `$env:WARDENIQ_BUNDLED=1` before the Windows one, to run a fully local demo
-> (bundled MongoDB + a small model) instead — no `MONGO_URI` needed, starts
-> immediately. See [Cloud / lightweight
-> deployment](#cloud--lightweight-deployment-recommended-for-real-use) for why this
-> isn't the recommended setup for real use.
+> **Just evaluating, or have no cloud accounts at all?** Use the **all-in-one bundled
+> stack** instead — it ships MongoDB *and* Ollama with the models pulled for you, so
+> there is nothing to configure (see [Using the bundled
+> Ollama](#using-the-bundled-ollama-local-models) for checking status and swapping
+> models). Add `--bundled` to the macOS/Linux command, or on
+> Windows run:
+> ```bat
+> powershell -c "$env:WARDENIQ_BUNDLED=1; irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
+> ```
+> First launch pulls a few GB (image + models) and takes a few minutes. It's the
+> fastest way to see wardenIQ working; for real/client deployments prefer the
+> bring-your-own setup above. See [Cloud / lightweight
+> deployment](#cloud--lightweight-deployment-recommended-for-real-use) for the rationale.
 
 **Day to day:** `docker compose -f docker-compose.app.yml up -d` / `down` / `pull` to
 start, stop, or update — from that same `wardeniq` folder.
@@ -322,8 +381,11 @@ that satisfies a feature's requirements, push it to a feature-named branch, and 
 
 ## Bring your own LLM
 
-The default is fully local via **Ollama** (`qwen2.5:3b` for generation,
-`nomic-embed-text` for embeddings). Under **Configuration → LLM** you can switch
+The default provider is **Ollama** (`qwen2.5:3b` for generation, `nomic-embed-text`
+for embeddings). Ollama is included and pre-pulled only in the **bundled** stack; in
+the published-image (bring-your-own) flow it points at an Ollama you run yourself on
+the host — or switch to a hosted provider, below. Either way, remember to set **both**
+generation and embeddings. Under **Configuration → LLM** you can switch
 generation/analysis to a hosted provider — **OpenAI, Anthropic (Claude), Google Gemini,
 Mistral, Groq, AWS Bedrock, or any OpenAI-compatible endpoint** — by picking the provider,
 entering a model name, and pasting an API key (encrypted at rest). A **test** button does a

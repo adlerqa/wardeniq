@@ -78,6 +78,24 @@ if (-not (Test-Path ".env")) {
     Write-Host "==> .env already exists, leaving it as-is"
 }
 
+# Point the Ollama fallback at the right place for the chosen mode so an out-of-the-box
+# run never targets a non-existent container:
+#   bundled  -> the in-stack Ollama container
+#   app-only -> the user's own Ollama on the host (Docker Desktop resolves
+#               host.docker.internal). Switch to a hosted provider in-app anytime.
+if ($Bundled) {
+    $OllamaBundled = "http://ollama:11434"
+} else {
+    $OllamaBundled = "http://host.docker.internal:11434"
+}
+$envLines = @(Get-Content ".env")
+if ($envLines -match '^OLLAMA_URL_BUNDLED=') {
+    $envLines = $envLines -replace '^OLLAMA_URL_BUNDLED=.*', "OLLAMA_URL_BUNDLED=$OllamaBundled"
+    Set-Content -Path ".env" -Value $envLines
+} else {
+    Add-Content -Path ".env" -Value "OLLAMA_URL_BUNDLED=$OllamaBundled"
+}
+
 if ($Bundled) {
     Write-Host "==> starting the full bundled demo stack (app + MongoDB + Ollama) - pulling images, not building"
     docker compose up -d

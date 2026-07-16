@@ -2,7 +2,38 @@
 
 ## Unreleased
 
+### Fixed
+- **App-only install no longer points at a non-existent Ollama container.** The
+  plain installer (`irm ... | iex` / `curl ... | bash`, no `-Bundled`/`--bundled`)
+  downloads only `docker-compose.app.yml` — there is no bundled `ollama` service —
+  yet the app still fell back to `OLLAMA_URL_BUNDLED=http://ollama:11434`, so an
+  out-of-the-box run failed with a connection error until the user manually changed
+  the endpoint or picked a hosted provider. Now:
+  - `docker-compose.app.yml` makes `OLLAMA_URL_BUNDLED` interpolable
+    (`${OLLAMA_URL_BUNDLED:-http://ollama:11434}`, default unchanged for the bundled
+    full stack) and adds a `host.docker.internal:host-gateway` alias so the container
+    can reach a natively-run Ollama on Linux too (Docker Desktop already provides it).
+  - `install.sh` / `install.ps1` write `OLLAMA_URL_BUNDLED` into `.env` per mode:
+    app-only -> `http://host.docker.internal:11434` (your own Ollama); bundled ->
+    `http://ollama:11434` (the in-stack container). Re-running the installer re-points
+    this line for the selected mode, avoiding stale cross-mode values.
+  - `.env.example` notes that `OLLAMA_URL` pins/locks the endpoint and that the
+    fallback is installer-managed per mode.
+  The bundled Ollama option is unchanged and still pulls models via `ollama-pull`;
+  only the app-only default was broken.
+
 ### Changed
+- **README install made client-ready.** The published-image ("Option B") flow now
+  spells out that it bundles neither MongoDB nor Ollama, and adds an explicit
+  two-step setup: (1) database via `MONGO_URI`, (2) an AI backend — a hosted provider
+  (recommended for clients) *or* your own host Ollama with the exact `ollama pull`
+  commands — stressing that **both** a generation and an embedding model are required
+  (embeddings drive the RAG store / dedup / PR mapping). The bundled stack is reframed
+  as the zero-config evaluation path. The "Bring your own LLM" section now clarifies
+  that the pre-pulled Ollama exists only in the bundled stack. Added a **"Using the
+  bundled Ollama"** section covering how to confirm the models finished pulling
+  (`ollama list` / `warden-ollama-pull` logs), pull and switch to a bigger model, and
+  the CPU-only performance caveat.
 - **README "Option B" simplified.** Had grown to ~125 lines across a 5-step numbered
   walkthrough, three separate Windows command blocks, a "day to day" aside, a
   collapsible manual-steps fallback, and a maintainers note — too much for what's a

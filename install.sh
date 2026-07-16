@@ -59,6 +59,23 @@ else
   echo "==> .env already exists, leaving it as-is"
 fi
 
+# Point the Ollama fallback at the right place for the chosen mode so an out-of-the-box
+# run never targets a non-existent container:
+#   bundled  -> the in-stack Ollama container
+#   app-only -> the user's own Ollama on the host (Docker Desktop resolves
+#               host.docker.internal; native Linux uses the host-gateway alias in
+#               docker-compose.app.yml). Switch to a hosted provider in-app anytime.
+if [ "$BUNDLED" = true ]; then
+  OLLAMA_BUNDLED_URL="http://ollama:11434"
+else
+  OLLAMA_BUNDLED_URL="http://host.docker.internal:11434"
+fi
+if grep -q '^OLLAMA_URL_BUNDLED=' .env; then
+  sed -i.bak "s#^OLLAMA_URL_BUNDLED=.*#OLLAMA_URL_BUNDLED=${OLLAMA_BUNDLED_URL}#" .env && rm -f .env.bak
+else
+  echo "OLLAMA_URL_BUNDLED=${OLLAMA_BUNDLED_URL}" >> .env
+fi
+
 if [ "$BUNDLED" = true ]; then
   echo "==> starting the full bundled demo stack (app + MongoDB + Ollama) — pulling images, not building"
   docker compose up -d
