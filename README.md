@@ -233,16 +233,32 @@ docker pull adlerqa/wardeniq:beta
 ```
 
 The installer below pulls this same image automatically, plus the small Compose
-file and `.env` it needs to run — no clone, no build.
+file and `.env` it needs to run — no clone, no build. It has two variants:
+
+- **Bring-your-own MongoDB (default, recommended for real use)** — pulls only the app
+  image. You point it at your own MongoDB (Atlas or self-managed) and either a
+  hosted LLM or a host-installed Ollama.
+- **`--bundled` (macOS/Linux) / `WARDENIQ_BUNDLED=1` (Windows) — zero-cloud-accounts
+  local demo** — additionally ships a 3-node MongoDB replica set + mongot + Ollama
+  in the same Compose stack, with the two default models auto-pulled on first boot
+  (~2 GB). Slower generation on CPU but nothing to sign up for.
 
 **macOS/Linux:**
 ```bash
+# Bring your own MongoDB (recommended)
 curl -fsSL https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.sh | bash
+
+# All-in-one bundled demo (adds MongoDB + Ollama)
+curl -fsSL https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.sh | bash -s -- --bundled
 ```
 
 **Windows** (Command Prompt or PowerShell — same command either way):
 ```bat
+:: Bring your own MongoDB (recommended)
 powershell -c "irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
+
+:: All-in-one bundled demo (adds MongoDB + Ollama)
+powershell -c "$env:WARDENIQ_BUNDLED=1; irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
 ```
 
 This is the setup we recommend for client / production use: **you bring the database
@@ -279,6 +295,133 @@ mapping, so the app is not usable until one of the options below is in place. Pi
 image — edit it any time. Changes take effect after a restart (see
 [Configuration](#configuration-env) for the full list of settings).
 
+### Setting your `.env` values — the ways to do it
+
+`.env` is a plain-text `KEY=value` file the app reads at startup. You have several
+options for getting your own values into it; **pre-seeding it before the installer
+runs is recommended** because everything is correct on first boot with no restart.
+
+#### 1) Pre-seed `.env` before the installer runs (recommended)
+
+The installer only copies `.env.example → .env` when `.env` doesn't already exist —
+so if you drop your own `.env` into the target folder first, the installer leaves it
+alone and starts the stack with your values. You only need to include the variables
+you want to override from defaults; everything else falls back to `.env.example` /
+Compose defaults. `APP_SECRET` is auto-generated on first boot, so don't set it
+by hand.
+
+**macOS/Linux (bundled — zero cloud accounts):**
+```bash
+mkdir wardeniq
+cat > wardeniq/.env <<'EOF'
+ADMIN_EMAIL=you@company.com
+GEN_MODEL=qwen2.5:7b
+EMBED_MODEL=nomic-embed-text
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+EOF
+curl -fsSL https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.sh | bash -s -- --bundled
+```
+
+**macOS/Linux (bring your own MongoDB):**
+```bash
+mkdir wardeniq
+cat > wardeniq/.env <<'EOF'
+MONGO_URI=mongodb+srv://USER:PASS@your-cluster.mongodb.net/?retryWrites=true&w=majority
+ADMIN_EMAIL=you@company.com
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+EOF
+curl -fsSL https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.sh | bash
+```
+
+The single-quoted heredoc (`<<'EOF'`) is important — it stops the shell from expanding
+`$` inside your values, which matters if a token or connection string contains `$` or
+other shell metacharacters.
+
+**Windows (bundled):**
+```powershell
+New-Item -ItemType Directory -Force wardeniq | Out-Null
+@'
+ADMIN_EMAIL=you@company.com
+GEN_MODEL=qwen2.5:7b
+EMBED_MODEL=nomic-embed-text
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+'@ | Set-Content -Path wardeniq\.env -Encoding ASCII
+powershell -c "$env:WARDENIQ_BUNDLED=1; irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
+```
+
+**Windows (bring your own MongoDB):**
+```powershell
+New-Item -ItemType Directory -Force wardeniq | Out-Null
+@'
+MONGO_URI=mongodb+srv://USER:PASS@your-cluster.mongodb.net/?retryWrites=true&w=majority
+ADMIN_EMAIL=you@company.com
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+'@ | Set-Content -Path wardeniq\.env -Encoding ASCII
+powershell -c "irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
+```
+
+The single-quoted here-string (`@'…'@`) is important — it stops PowerShell from
+expanding `$env:` or other `$` references inside your values. `-Encoding ASCII`
+avoids the UTF-8 BOM that some tools mis-parse.
+
+> **Watch out — don't pre-seed inside a `cd`'d folder.** The installer itself does
+> `mkdir wardeniq && cd wardeniq`, so if you `cd wardeniq` first and then write
+> `.env` there, the installer will create a nested `wardeniq/wardeniq/` and ignore
+> your file. Either pre-seed into the subdir *from outside* (as shown above), or
+> `cd wardeniq && cat > .env <<'EOF' ... EOF` and add `WARDENIQ_DIR=.` (macOS/Linux)
+> before `bash` in the pipe.
+
+#### 2) Edit `.env` after install, then restart
+
+Skip pre-seeding, run the installer, then open `wardeniq/.env` in your editor and
+apply with:
+
+```bash
+cd wardeniq
+docker compose up -d --no-build                            # bundled
+# or:
+docker compose -f docker-compose.app.yml up -d --no-build  # bring-your-own-Mongo
+```
+
+Best when you already ran the installer and now want to change one or two values.
+
+#### 3) Multi-environment file (`--env-file`)
+
+Keep `.env.dev`, `.env.staging`, `.env.prod` side-by-side and select per deploy:
+
+```bash
+docker compose --env-file .env.prod up -d
+```
+
+Same file format — Compose uses whichever file you point it at.
+
+#### 4) Shell environment variables
+
+For CI or one-off overrides, export variables in your shell first. Compose expands
+`${VAR}` from the shell before falling back to `.env`:
+
+```bash
+export GEN_MODEL=qwen2.5:7b
+docker compose up -d
+```
+
+On Windows PowerShell: `$env:GEN_MODEL = "qwen2.5:7b"; docker compose up -d`.
+
+#### 5) Compose override file
+
+Create `docker-compose.override.yml` next to the shipped Compose files with a
+per-service `environment:` block — Compose auto-merges it on every `docker compose
+up -d`, so you can layer per-environment settings without editing the shipped files
+or `.env`.
+
+#### 6) Docker/Kubernetes secrets
+
+For production, don't put sensitive values (`APP_SECRET`, `GITHUB_TOKEN`, SMTP
+credentials, API keys) in `.env` at all — mount them as Docker/K8s secrets, or
+fetch them from a secret manager (Vault, AWS Secrets Manager, GCP Secret Manager)
+at container start. `.env` is unencrypted plaintext on disk; secret managers give
+you rotation and audit.
+
 Start it:
 ```bash
 cd wardeniq
@@ -293,19 +436,14 @@ directory that isn't there (it would fail with a clear error instead).
 
 Open **http://localhost:8001** and sign in. `APP_SECRET` is generated automatically.
 
-> **Just evaluating, or have no cloud accounts at all?** Use the **all-in-one bundled
-> stack** instead — it ships MongoDB *and* Ollama with the models pulled for you, so
-> there is nothing to configure (see [Using the bundled
+> **Using the bundled variant.** With `--bundled` (macOS/Linux) or
+> `WARDENIQ_BUNDLED=1` (Windows) the installer starts the full stack for you — no
+> separate `docker compose up -d` needed. First launch pulls a few GB (image +
+> models) and takes a few minutes. See [Using the bundled
 > Ollama](#using-the-bundled-ollama-local-models) for checking status and swapping
-> models). Add `--bundled` to the macOS/Linux command, or on
-> Windows run:
-> ```bat
-> powershell -c "$env:WARDENIQ_BUNDLED=1; irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
-> ```
-> First launch pulls a few GB (image + models) and takes a few minutes. It's the
-> fastest way to see wardenIQ working; for real/client deployments prefer the
-> bring-your-own setup above. See [Cloud / lightweight
-> deployment](#cloud--lightweight-deployment-recommended-for-real-use) for the rationale.
+> models; see [Cloud / lightweight
+> deployment](#cloud--lightweight-deployment-recommended-for-real-use) for why the
+> bring-your-own path is preferred for real deployments.
 
 **Day to day:** `docker compose -f docker-compose.app.yml up -d --no-build` / `down` /
 `pull` to start, stop, or update — from that same `wardeniq` folder. (`pull` refreshes

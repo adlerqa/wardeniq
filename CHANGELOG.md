@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+### Changed
+- **README install: `.env` configuration options documented for both platforms.** The
+  published-image install section now shows the `--bundled` (macOS/Linux) and
+  `WARDENIQ_BUNDLED=1` (Windows) variants directly next to the base install command
+  so both paths are visible upfront (previously `--bundled` was only mentioned in a
+  late callout). Added a new **"Setting your `.env` values — the ways to do it"**
+  subsection covering six approaches, with pre-seeding `.env` before the installer
+  runs as the recommended path — the installer skips overwriting `.env` when one
+  already exists, so a heredoc/here-string drop-in works for both bundled and
+  bring-your-own-Mongo flows. Also documents the common footgun of `cd wardeniq`
+  before pre-seeding (installer's own `mkdir wardeniq && cd wardeniq` nests it) and
+  the alternative `WARDENIQ_DIR=.` override. Other approaches listed: post-install
+  edit + restart, `--env-file` for multi-env, shell env-var interpolation for CI,
+  `docker-compose.override.yml`, and Docker/K8s secrets for production credentials.
+  Includes both Bash (`<<'EOF'`) and PowerShell (`@'…'@` + `-Encoding ASCII`)
+  examples with notes on why single-quoted heredocs matter (no `$` expansion).
+
 ### Fixed
 - **App-only install no longer points at a non-existent Ollama container.** The
   plain installer (`irm ... | iex` / `curl ... | bash`, no `-Bundled`/`--bundled`)
