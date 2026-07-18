@@ -73,6 +73,17 @@ IMPORT_SEMANTIC_THRESHOLD = float(os.getenv("IMPORT_SEMANTIC_THRESHOLD", "0.78")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 MONGOT_METRICS = os.getenv("MONGOT_METRICS", "http://mongot.warden-net:9946")
 ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").strip().lower()
+# Installer-chosen bootstrap password for the local `admin` account. When set (and
+# it passes the password policy), it REPLACES the shipped `admin123` default: the
+# admin row is seeded with this password's hash at boot and admin123 stops working.
+# Left empty (pure source dev), the legacy admin123 default applies with its
+# mandatory change-on-first-login. Never logged.
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "").strip()
+# The effective default password accepted for the bootstrap admin before any
+# in-app change: the operator's ADMIN_PASSWORD if valid, else the shipped default.
+DEFAULT_ADMIN_PASSWORD = (
+    ADMIN_PASSWORD if (ADMIN_PASSWORD and not auth.password_policy_errors(ADMIN_PASSWORD))
+    else auth.DEFAULT_LOCAL_PASSWORD)
 # Auth is ALWAYS enforced — there is no bypass flag. The first admin bootstraps
 # without SMTP by reading a one-time code printed to the server log (see
 # _deliver_otp), then configures email in-app.
@@ -841,6 +852,28 @@ def bootstrap():
                 store.create_user(ADMIN_EMAIL, ADMIN_EMAIL.split("@")[0], "admin")
     except Exception as e:  # noqa: BLE001
         BOOT["detail"] = f"admin seed: {e}"
+    # Seed the local `admin` account's password from ADMIN_PASSWORD (installer-chosen)
+    # so a provisioned deployment ships with NO well-known default. Only sets a
+    # password when the admin has none yet — it never clobbers one the operator has
+    # already changed in-app. A value that fails the policy is ignored with a warning
+    # (the account then keeps the admin123 default + its forced-change flow).
+    try:
+        if ADMIN_PASSWORD:
+            errs = auth.password_policy_errors(ADMIN_PASSWORD)
+            if errs:
+                print("[wardenIQ][WARNING] ADMIN_PASSWORD does not meet the policy "
+                      f"({', '.join(errs)}); ignoring it — the bootstrap admin keeps "
+                      "the default until changed.", flush=True)
+            else:
+                admin = store.get_user_by_email("admin")
+                if not admin:
+                    admin = store.create_user("admin", "Admin", "admin")
+                if not admin.get("password_hash"):
+                    store.set_user_password(admin["id"], auth.hash_password(ADMIN_PASSWORD))
+                    print("[wardenIQ] Seeded the local admin password from ADMIN_PASSWORD "
+                          "(the shipped default is disabled).", flush=True)
+    except Exception as e:  # noqa: BLE001
+        BOOT["detail"] = f"admin password seed: {e}"
     BOOT.update(stage="ready", ready=True, detail="")
 
 
@@ -4379,17 +4412,18 @@ def login_password(body: LoginPasswordIn, response: Response):
 
     user = store.get_user_by_email("admin")
     if not user:
-        # First boot: no local admin row yet, so only the shipped default works.
-        if password != auth.DEFAULT_LOCAL_PASSWORD:
+        # First boot: no local admin row yet, so only the configured default works
+        # (ADMIN_PASSWORD if the operator set one, else the shipped admin123).
+        if password != DEFAULT_ADMIN_PASSWORD:
             raise HTTPException(401, "Invalid username or password")
         user = store.create_user("admin", "Admin", "admin")
     else:
         stored_hash = user.get("password_hash")
-        # Once a real password has been set via /api/auth/change-password, it's the
-        # only one accepted — the shipped default stops working so a changed
-        # password can't be bypassed with the old admin123.
+        # Once a real password has been set (via ADMIN_PASSWORD seeding or
+        # /api/auth/change-password), it's the only one accepted — the shipped
+        # default stops working so it can't be bypassed with the old admin123.
         ok = (auth.password_matches(stored_hash, password) if stored_hash
-              else password == auth.DEFAULT_LOCAL_PASSWORD)
+              else password == DEFAULT_ADMIN_PASSWORD)
         if not ok:
             raise HTTPException(401, "Invalid username or password")
 
@@ -4427,7 +4461,7 @@ def change_password(body: ChangePasswordIn, request: Request, response: Response
     stored_hash = full.get("password_hash")
     current = body.current_password or ""
     current_ok = (auth.password_matches(stored_hash, current) if stored_hash
-                  else current == auth.DEFAULT_LOCAL_PASSWORD)
+                  else current == DEFAULT_ADMIN_PASSWORD)
     if not current_ok:
         raise HTTPException(400, "current password is incorrect")
 

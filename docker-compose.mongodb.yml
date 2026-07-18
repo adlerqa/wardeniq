@@ -14,7 +14,11 @@ services:
     image: ${MONGO_IMAGE:-mongodb/mongodb-community-server:8.3-ubi9}
     container_name: warden-mongod1
     command: ["--config", "/etc/mongod.conf", "--replSet", "rs0"]
-    ports: ["27017:27017"]
+    # No host port by default — the app reaches mongod over the warden-net Docker
+    # network (mongod1.warden-net:27017), so there's no need to expose an
+    # unauthenticated database to the host/LAN. To connect a local tool (mongosh /
+    # Compass) for debugging, add the optional override:
+    #   docker compose -f docker-compose.yml -f docker-compose.db-ports.yml up -d
     volumes:
       - ./config/mongod.conf:/etc/mongod.conf:ro
       - mongod1_data:/data/db
@@ -70,8 +74,22 @@ services:
       mongod2: { condition: service_healthy }
       mongod3: { condition: service_healthy }
     command: bash /setup-replica-set.sh
+    environment:
+      # Optional MongoDB authentication (default OFF). When enabled (via
+      # scripts/enable-mongo-auth.sh), the setup ALSO provisions a root + app user
+      # while the set is still unauthenticated; a later keyfile restart enforces it.
+      - MONGO_AUTH_ENABLED=${MONGO_AUTH_ENABLED:-false}
+      - MONGO_ROOT_USER=${MONGO_ROOT_USER:-}
+      - MONGO_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-}
+      - MONGO_APP_USER=${MONGO_APP_USER:-}
+      - MONGO_APP_PASSWORD=${MONGO_APP_PASSWORD:-}
+      - DB_NAME=${DB_NAME:-wardeniq}
     volumes:
       - ./config/setup-replica-set.sh:/setup-replica-set.sh:ro
+      # Single source of truth for the mongot user's password: the same pwfile
+      # mongot reads. The installer/run.sh generate a random value into it, so no
+      # secret is committed. (An explicit MONGOT_PASSWORD env would override.)
+      - ./config/pwfile:/run/secrets/mongot-pw:ro
     networks: [warden-net]
     restart: "no"
 
@@ -91,7 +109,9 @@ services:
       - ./config/mongot.conf:/mongot-community/config.default.yml:ro
       - ./config/pwfile:/etc/mongot/secrets/passwordFile:ro
       - ./config/mongot-entrypoint.sh:/usr/local/bin/wardeniq-mongot-entrypoint.sh:ro
-    ports: ["27027:27027", "9946:9946"]
+    # No host ports by default. mongod reaches mongot's gRPC over warden-net
+    # (mongot.warden-net:27027); the 9946 metrics endpoint likewise stays internal.
+    # Re-expose for local debugging via docker-compose.db-ports.yml (see mongod1).
     networks:
       warden-net: { aliases: [mongot.warden-net] }
     restart: unless-stopped

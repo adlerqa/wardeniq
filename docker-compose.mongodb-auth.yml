@@ -1,0 +1,35 @@
+# OPT-IN MongoDB authentication for the bundled replica set (hardening).
+#
+# Do NOT enable this by hand — use the helper, which performs the required two-phase
+# bootstrap (create users on the still-unauthenticated set, THEN restart with the
+# keyfile so auth is enforced) and wires up credentials for you:
+#
+#   ./scripts/enable-mongo-auth.sh
+#
+# The helper sets COMPOSE_FILE in your .env so every later `docker compose` / `run.sh`
+# automatically includes this override and keeps auth on. Applying this override to a
+# set that has no users yet WITHOUT the two-phase bootstrap will lock you out (the
+# localhost exception doesn't apply across containers).
+#
+# A shared keyfile provides internal replica-set member authentication; passing
+# --keyFile also enables client authorization. mongot is unaffected — it already
+# authenticates as mongotUser via config/pwfile.
+services:
+  mongod1:
+    entrypoint: ["/bin/sh", "/usr/local/bin/wardeniq-mongod-entrypoint.sh"]
+    command: []
+    volumes:
+      - ./config/keyfile:/etc/mongo-keyfile.src:ro
+      - ./config/mongod-entrypoint.sh:/usr/local/bin/wardeniq-mongod-entrypoint.sh:ro
+  mongod2:
+    entrypoint: ["/bin/sh", "/usr/local/bin/wardeniq-mongod-entrypoint.sh"]
+    command: []
+    volumes:
+      - ./config/keyfile:/etc/mongo-keyfile.src:ro
+      - ./config/mongod-entrypoint.sh:/usr/local/bin/wardeniq-mongod-entrypoint.sh:ro
+  mongod3:
+    entrypoint: ["/bin/sh", "/usr/local/bin/wardeniq-mongod-entrypoint.sh"]
+    command: []
+    volumes:
+      - ./config/keyfile:/etc/mongo-keyfile.src:ro
+      - ./config/mongod-entrypoint.sh:/usr/local/bin/wardeniq-mongod-entrypoint.sh:ro
