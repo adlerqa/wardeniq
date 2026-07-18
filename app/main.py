@@ -2750,7 +2750,7 @@ async def new_version(fid: str, text: str = Form(""), name: str = Form(""), key:
             raise HTTPException(409, f"Epic '{eff_key}' is already associated with another feature")
         summary = _generate_feature_summary(name or prev["name"], raw)
         newfid = store.create_feature(name or prev["name"], prev["project_id"], sources, raw,
-                                      summary, emb, key=eff_key,
+                                      summary, emb, key=eff_key, match_key=prev.get("match_key"),
                                       group_id=prev_group, version=new_v)
         diff = cov.diff_versions(current_llm(), prev.get("text", ""), raw, prev_cases)
         keep = set(diff.get("keep", []))
