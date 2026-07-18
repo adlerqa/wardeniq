@@ -288,7 +288,7 @@ export const LEGACY_SHELL_HTML = `
             <select id="f-project" hidden></select>
             <div class="feature-create-fields">
               <div><label>Feature name</label><input id="f-name" placeholder="Checkout — Apply Promo Code"/></div>
-              <div><label>Ticket key (optional)</label><select id="f-key"><option value="">No Jira ticket</option></select></div>
+              <div><label>Ticket key (optional)</label><select id="f-key"><option value="">No Jira ticket</option></select></div><div><label>PR match tag (optional)</label><input id="f-match-key" placeholder="e.g. HOLDS"/></div>
             </div>
             <div class="feature-create-jira-status" id="f-key-status">A linked Jira ticket lets PRs auto-link by branch/title.</div>
             <label>Upload documents <span class="muted" style="font-weight:400">(PRD, HLD, LLD, architecture — PDF, DOCX, MD, TXT · you can select several)</span></label><input type="file" id="f-file" accept=".pdf,.docx,.md,.txt,.markdown" multiple/>
@@ -332,7 +332,7 @@ export const LEGACY_SHELL_HTML = `
               <button class="danger" id="d-del" style="display:none">Delete feature</button>
             </div>
           </div>
-          <div class="muted" id="d-meta"></div><div id="d-overview"></div><div id="d-verinfo"></div><div id="d-genbanner"></div><div id="d-coverage"></div>
+          <div class="muted" id="d-meta"></div><div id="d-match-key" class="muted" style="margin:6px 0"></div><div id="d-overview"></div><div id="d-verinfo"></div><div id="d-genbanner"></div><div id="d-coverage"></div>
           <div class="case-bulk-toolbar" data-bulk-scope="feature">
             <div class="case-bulk-left"><span class="case-bulk-count" data-bulk-count="feature">0 selected</span></div>
             <div class="case-bulk-actions"><button class="ghost bulk-pass" onclick="bulkSetCaseResult('passed')">Pass selected</button><button class="ghost bulk-fail" onclick="bulkSetCaseResult('failed')">Fail selected</button><button class="ghost" onclick="bulkSetCaseResult('untested')">Clear status</button><button class="ghost" onclick="bulkExportSelected('pdf')">Export selected</button><button class="testcase-delete" onclick="bulkDeleteSelected()">Delete selected</button></div>

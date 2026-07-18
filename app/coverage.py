@@ -94,32 +94,35 @@ def pr_text(pr: dict, files: list) -> str:
 
 
 def map_pr_to_feature(store, jira, pr, project_id):
-    """Map a PR to a feature via the Epic it belongs to. Returns
-    (feature_id|None, confidence, method).
+    """Map a PR to a feature. Returns (feature_id|None, confidence, method).
 
-    A PR carries an Epic key or a ticket key in its TITLE or BODY. Features are
-    bound 1:1 to Epics (feature.key == epic key). Resolution, per key found:
-      1. If the key is itself an Epic bound to a feature -> map (method 'epic').
-      2. Else treat it as a ticket, resolve its parent Epic via Jira, and map to
-         the feature bound to that Epic (method 'ticket->epic').
+    Resolution order:
+      1. Jira Epic/ticket keys in the PR TITLE or BODY (feature.key == epic key):
+         a direct Epic -> map ('epic'); else resolve a ticket's parent Epic via
+         Jira -> map ('ticket->epic').
+      2. Manual PR match tag (Jira-independent): a feature's `match_key` present as
+         a bracketed tag (e.g. "[HOLDS]") in the PR title/body -> map ('tag').
     No semantic/embedding fallback: if nothing resolves, the PR is left unmapped
     (a miss is preferred over a wrong guess)."""
     keys = extract_keys(pr.get("title", ""), pr.get("body", ""))
-    if not keys:
-        return None, 0.0, "unmapped"
-    # 1) any key that is directly an Epic bound to a feature
     for key in keys:
         fid = store.feature_by_epic(project_id, key)
         if fid:
             return fid, 1.0, f"epic:{key}"
-    # 2) treat each key as a ticket, resolve its parent Epic via Jira
-    if jira is not None and getattr(jira, "ok", lambda: False)():
+    if keys and jira is not None and getattr(jira, "ok", lambda: False)():
         for key in keys:
             epic = jira.parent_epic(key)
             if epic and epic != key:
                 fid = store.feature_by_epic(project_id, epic)
                 if fid:
                     return fid, 1.0, f"ticket:{key}->epic:{epic}"
+    haystack = f"{pr.get('title', '')} {pr.get('body', '')}".upper()
+    try:
+        for fid, mk in store.features_with_match_key(project_id):
+            if mk and f"[{str(mk).upper()}]" in haystack:
+                return fid, 1.0, f"tag:[{str(mk).upper()}]"
+    except Exception:  # noqa: BLE001 -- mapping must never crash PR ingest
+        pass
     return None, 0.0, "unmapped"
 
 

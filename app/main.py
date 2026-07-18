@@ -2356,9 +2356,23 @@ Evidence:
     return _fallback_feature_summary(name, raw)
 
 
+class MatchKeyIn(BaseModel):
+    match_key: str = ""
+
+
+@app.post("/api/features/{fid}/match-key")
+def set_feature_match_key(fid: str, body: MatchKeyIn):
+    """Set/clear a feature's manual PR match tag (editor+, gated by auth_gateway).
+    PRs whose title/body contain the bracketed tag (e.g. [HOLDS]) auto-map to this
+    feature on the next poll -- for projects without a linked Jira epic."""
+    if not store.get_feature(fid):
+        raise HTTPException(404, "feature not found")
+    return {"match_key": store.set_feature_match_key(fid, body.match_key)}
+
+
 @app.post("/api/features")
 async def create_feature(request: Request, name: str = Form(...), project_id: str = Form(""),
-                         key: str = Form(""), text: str = Form(""),
+                         key: str = Form(""), match_key: str = Form(""), text: str = Form(""),
                          focus: str = Form(""), total: int = Form(16),
                          confluence_url: list[str] = Form(default=[]),
                          confluence_children: bool = Form(True),
@@ -2416,7 +2430,8 @@ async def create_feature(request: Request, name: str = Form(...), project_id: st
     base_raw = "\n\n".join(parts)
     summary = _generate_feature_summary(name, base_raw) if base_raw.strip() else name
     emb = embedder.embed((base_raw or name)[:2000])
-    fid = store.create_feature(name, pid, sources, base_raw, summary, emb, key=epic_key)
+    fid = store.create_feature(name, pid, sources, base_raw, summary, emb, key=epic_key,
+                               match_key=((match_key or "").strip().upper() or None))
 
     if not external:
         # Fast path: only local docs / pasted text — index + generate inline (unchanged).
