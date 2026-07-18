@@ -1,125 +1,219 @@
-#!/usr/bin/env pwsh
 <#
-  Windows port of install.sh - no repo, no build. Pulls the published Docker Hub
-  image and downloads only the handful of small config files needed to run it.
+  wardenIQ interactive installer (Windows) - no repo, no build. Pulls the published
+  Docker Hub image and downloads only the small config files needed to run it, then
+  guides you through the few choices that matter and starts the stack for you.
   Requires Docker Desktop with the `docker compose` CLI on PATH.
 
-  One-liner (run from Command Prompt or PowerShell - both work, since this
-  explicitly invokes powershell.exe rather than relying on the calling shell):
-
+  One-liner (Command Prompt or PowerShell):
     powershell -c "irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
 
-  For the bundled (zero-cloud-accounts local demo) variant, since a piped `iex`
-  can't take a -Bundled switch directly, set an env var first instead:
-
-    powershell -c "$env:WARDENIQ_BUNDLED=1; irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
-
-  Prefer running it as a saved file instead of the download-and-execute pattern?
-
+  Run as a saved file to get the interactive prompts reliably:
     iwr https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 -OutFile install.ps1
-    .\install.ps1                # bring your own MongoDB (recommended)
-    .\install.ps1 -Bundled       # also grab the all-local demo stack (bundled MongoDB + Ollama)
+    .\install.ps1
+    .\install.ps1 -Bundled        # force the all-in-one demo
+    .\install.ps1 -Mode byo -MongoUri "mongodb+srv://..."   # non-interactive
 
-  If Windows blocks script execution, either run once via:
-    powershell -ExecutionPolicy Bypass -File .\install.ps1
-  or (as an admin, one-time) relax the policy for your user:
-    Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+  Env (optional, for fully non-interactive / CI): WARDENIQ_MODE (bundled|byo),
+  WARDENIQ_MONGO_URI, WARDENIQ_ADMIN_PASSWORD, WARDENIQ_WIPE (yes|no),
+  WARDENIQ_ASSUME_YES=1, WARDENIQ_DIR, WARDENIQ_TAG.
 
-  NOTE: this file must stay plain ASCII. Windows PowerShell 5.1 (the default
-  powershell.exe on most Windows installs) does not reliably auto-detect UTF-8 in a
-  .ps1 file that has no byte-order mark, and a raw download via Invoke-WebRequest /
-  curl won't add one - so any non-ASCII character (em dashes, curly quotes, arrows,
-  etc.) risks being misread as a different codepage and breaking the parser with
-  errors like "Missing closing ')' in expression". Stick to -, ->, and "" instead.
+  NOTE: this file must stay plain ASCII (Windows PowerShell 5.1 reads a BOM-less
+  UTF-8 .ps1 as the local codepage). Use -, ->, and "" only - no smart quotes/arrows.
 #>
 param(
     [switch]$Bundled = ($env:WARDENIQ_BUNDLED -eq "1"),
-    [string]$Dest = "wardeniq",
-    [string]$Tag = "beta"
+    [string]$Mode = $env:WARDENIQ_MODE,
+    [string]$MongoUri = $env:WARDENIQ_MONGO_URI,
+    [string]$AdminPassword = $env:WARDENIQ_ADMIN_PASSWORD,
+    [string]$Wipe = $env:WARDENIQ_WIPE,
+    [string]$Dest = $(if ($env:WARDENIQ_DIR) { $env:WARDENIQ_DIR } else { "wardeniq" }),
+    [string]$Tag = $(if ($env:WARDENIQ_TAG) { $env:WARDENIQ_TAG } else { "beta" })
 )
 
 $ErrorActionPreference = "Stop"
 $RepoRaw = "https://raw.githubusercontent.com/adlerqa/wardeniq/main"
+$AppImageRef = "adlerqa/wardeniq:$Tag"
+$AssumeYes = ($env:WARDENIQ_ASSUME_YES -eq "1")
+$Interactive = ([Environment]::UserInteractive) -and (-not $AssumeYes)
 
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    Write-Error "Docker is required - install Docker Desktop first."
-    exit 1
+function Say($m)  { Write-Host "==> $m" -ForegroundColor Green }
+function Info($m) { Write-Host "    $m" }
+function Warn($m) { Write-Host "!! $m" -ForegroundColor Yellow }
+function Die($m)  { Write-Host "xx $m" -ForegroundColor Red; exit 1 }
+
+function Ask($q, $def) {
+    if (-not $Interactive) { return $def }
+    $suffix = if ($def) { " [$def]" } else { "" }
+    $ans = Read-Host "$q$suffix"
+    if ([string]::IsNullOrWhiteSpace($ans)) { return $def } else { return $ans }
+}
+function AskSecret($q) {
+    if (-not $Interactive) { return "" }
+    $sec = Read-Host $q -AsSecureString
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+    try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+}
+function AskYesNo($q, $def) {
+    $hint = if ($def -eq "y") { "Y/n" } else { "y/N" }
+    $ans = (Ask "$q ($hint)" $def).ToLower()
+    switch ($ans) { "y" { $true } "yes" { $true } "n" { $false } "no" { $false } default { $def -eq "y" } }
+}
+function Rand($n) {
+    $bytes = New-Object 'System.Byte[]' ($n * 2)
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $chars = ([char[]](48..57 + 65..90 + 97..122))  # 0-9 A-Z a-z
+    -join ($bytes | ForEach-Object { $chars[$_ % $chars.Length] })[0..($n - 1)]
+}
+function PasswordPolicyOk($p) {
+    if ($p.Length -lt 8) { return $false }
+    if ($p -notmatch '[A-Za-z]') { return $false }
+    if ($p -notmatch '[0-9]') { return $false }
+    if ($p.ToLower() -eq "admin123") { return $false }
+    return $true
+}
+function SetEnv($k, $v) {
+    if (-not (Test-Path ".env")) { New-Item -ItemType File -Path ".env" | Out-Null }
+    $lines = @(Get-Content ".env" | Where-Object { $_ -notmatch "^$k=" })
+    $lines += "$k=$v"
+    Set-Content -Path ".env" -Value $lines
 }
 
-Write-Host "==> setting up wardenIQ in .\$Dest (published image adlerqa/wardeniq:$Tag - no source needed)"
+# -- pre-flight --------------------------------------------------------------
+Say "wardenIQ installer"
+if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Die "Docker is required - install Docker Desktop first." }
+try { docker compose version *> $null } catch { Die "Docker Compose v2 is required (comes with Docker Desktop)." }
+try { docker info *> $null } catch { Die "Docker is installed but the daemon isn't running - start Docker Desktop and re-run." }
+
+# -- deployment mode ---------------------------------------------------------
+if ($Bundled) { $Mode = "bundled" }
+if (-not $Mode) {
+    if ($Interactive) {
+        Info "How do you want to run wardenIQ?"
+        Info "  1) All-in-one demo   - bundled MongoDB + search + Ollama (zero accounts, heavier)"
+        Info "  2) Bring your own DB - just the app; you supply a MongoDB URI (e.g. Atlas)"
+        if ((Ask "Choose 1 or 2" "1") -match '^(2|b|byo)$') { $Mode = "byo" } else { $Mode = "bundled" }
+    } else { $Mode = "bundled" }
+}
+Say "mode: $Mode"
+
+Say "setting up in .\$Dest  (published image $AppImageRef - no source needed)"
 New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 Set-Location -Path $Dest
 
-function Fetch($relPath) {
-    Invoke-WebRequest -Uri "$RepoRaw/$relPath" -OutFile $relPath
-}
+function Fetch($rel) { Invoke-WebRequest -Uri "$RepoRaw/$rel" -OutFile $rel }
 
+# -- fetch what the mode needs -----------------------------------------------
 Fetch "docker-compose.app.yml"
 Fetch ".env.example"
-
-if ($Bundled) {
-    Write-Host "==> also grabbing the bundled MongoDB/Ollama demo stack (config/ + compose files)"
+if ($Mode -eq "bundled") {
+    Info "downloading the bundled MongoDB/Ollama stack (config/ + compose files)"
     Fetch "docker-compose.yml"
     Fetch "docker-compose.mongodb.yml"
     Fetch "docker-compose.ollama.yml"
     New-Item -ItemType Directory -Force -Path "config" | Out-Null
-    foreach ($f in @("mongod.conf", "mongot.conf", "pwfile", "mongot-entrypoint.sh", "setup-replica-set.sh")) {
+    foreach ($f in @("mongod.conf", "mongot.conf", "mongot-entrypoint.sh", "setup-replica-set.sh")) {
         Invoke-WebRequest -Uri "$RepoRaw/config/$f" -OutFile "config/$f"
     }
 }
 
-if (-not (Test-Path ".env")) {
-    Copy-Item ".env.example" ".env"
-    if (-not (Select-String -Path ".env" -Pattern '^APP_IMAGE=' -Quiet)) {
-        Add-Content -Path ".env" -Value "APP_IMAGE=adlerqa/wardeniq:$Tag"
+# -- existing install? keep or wipe ------------------------------------------
+$DoWipe = "no"
+$existing = (docker ps -aq --filter "name=warden-" 2>$null)
+if ($existing) {
+    Warn "an existing wardenIQ install was detected (warden-* containers)."
+    if ($Wipe) { $DoWipe = $Wipe }
+    elseif ($Interactive) {
+        if (AskYesNo "Wipe ALL existing data (database + downloaded models) for a clean start?" "n") { $DoWipe = "yes" }
     }
-    Write-Host "==> created .env - APP_SECRET is generated automatically on first boot, nothing to edit there"
-} else {
-    Write-Host "==> .env already exists, leaving it as-is"
+    if ($DoWipe -eq "yes") { Warn "will WIPE data volumes." } else { Info "keeping existing data volumes." }
 }
 
-# Point the Ollama fallback at the right place for the chosen mode so an out-of-the-box
-# run never targets a non-existent container:
-#   bundled  -> the in-stack Ollama container
-#   app-only -> the user's own Ollama on the host (Docker Desktop resolves
-#               host.docker.internal). Switch to a hosted provider in-app anytime.
-if ($Bundled) {
-    $OllamaBundled = "http://ollama:11434"
-} else {
-    $OllamaBundled = "http://host.docker.internal:11434"
-}
-$envLines = @(Get-Content ".env")
-if ($envLines -match '^OLLAMA_URL_BUNDLED=') {
-    $envLines = $envLines -replace '^OLLAMA_URL_BUNDLED=.*', "OLLAMA_URL_BUNDLED=$OllamaBundled"
-    Set-Content -Path ".env" -Value $envLines
-} else {
-    Add-Content -Path ".env" -Value "OLLAMA_URL_BUNDLED=$OllamaBundled"
+# -- .env: create + app image + secrets --------------------------------------
+if (-not (Test-Path ".env")) { Copy-Item ".env.example" ".env"; Say "created .env" }
+else { Info ".env already exists - updating only the values you choose" }
+if (-not (Select-String -Path ".env" -Pattern '^APP_IMAGE=' -Quiet)) { SetEnv "APP_IMAGE" $AppImageRef }
+
+$curSecret = (Select-String -Path ".env" -Pattern '^APP_SECRET=(.*)$').Matches.Groups[1].Value
+if ($curSecret -in @("", "change-me-in-production", "change-me", "changeme", "mongoT-qa-dev-key-change-me")) {
+    SetEnv "APP_SECRET" (Rand 48); Info "generated a strong APP_SECRET"
 }
 
-# Pull the published app image up front so the "no source needed" promise holds.
-# docker-compose.app.yml carries a build: section for open-source contributors who
-# have .\app checked out. In this installer there is NO source, so if the image is
-# not cached locally `docker compose up` would fall back to BUILDING from .\app and
-# fail on a missing app/Dockerfile. Caching the image here keeps build: dormant, and
-# -no-build below turns any remaining fallback into a clear error instead of a
-# confusing source build.
-Write-Host "==> pulling adlerqa/wardeniq:$Tag"
-docker pull "adlerqa/wardeniq:$Tag"
-
-if ($Bundled) {
-    Write-Host "==> starting the full bundled demo stack (app + MongoDB + Ollama) - pulling images, not building"
-    docker compose up -d --no-build
-    Write-Host ""
-    Write-Host "wardenIQ -> http://localhost:8001"
-    Write-Host "First launch takes a few minutes (replica set init + model download)."
-    Write-Host "Watch it come up: docker logs -f warden-app"
+# -- bring-your-own MongoDB --------------------------------------------------
+if ($Mode -eq "byo") {
+    $uri = $MongoUri
+    if (-not $uri -and $Interactive) {
+        Info "Paste your MongoDB connection string (needs Vector Search - Atlas M10+ or self-managed mongot)."
+        $uri = Ask "MONGO_URI" ""
+    }
+    if ($uri) { SetEnv "MONGO_URI" $uri; Info "MONGO_URI saved to .env" }
+    else { Warn "no MONGO_URI provided - set it in $Dest\.env before the app will start." }
+    SetEnv "OLLAMA_URL_BUNDLED" "http://host.docker.internal:11434"
 } else {
-    Write-Host ""
-    Write-Host "One thing left - this flow brings your own MongoDB (no bundled DB was downloaded)."
-    Write-Host "Open $Dest\.env and set MONGO_URI to your database (e.g. a MongoDB Atlas connection string)."
-    Write-Host "Then start it:"
-    Write-Host ""
-    Write-Host "    cd $Dest; docker compose -f docker-compose.app.yml up -d --no-build"
-    Write-Host ""
-    Write-Host "(Prefer the zero-cloud-accounts local demo instead? Re-run this installer with -Bundled.)"
+    SetEnv "OLLAMA_URL_BUNDLED" "http://ollama:11434"
 }
+
+# -- admin password (replaces admin123) --------------------------------------
+$adminPw = $AdminPassword
+if (-not $adminPw -and $Interactive) {
+    Info "Set the first admin's login password (username: admin). Policy: >=8 chars, a letter and a number."
+    Info "Leave blank to keep the default admin123 (forced change on first login)."
+    while ($true) {
+        $p1 = AskSecret "Admin password (blank = default)"
+        if ([string]::IsNullOrEmpty($p1)) { break }
+        if (-not (PasswordPolicyOk $p1)) { Warn "must be >=8 chars, include a letter and a number, and not be 'admin123'."; continue }
+        $p2 = AskSecret "Confirm password"
+        if ($p1 -eq $p2) { $adminPw = $p1; break } else { Warn "passwords didn't match - try again." }
+    }
+}
+if ($adminPw) {
+    if (PasswordPolicyOk $adminPw) { SetEnv "ADMIN_PASSWORD" $adminPw; Info "admin password set (admin123 will be disabled)" }
+    else { Warn "provided admin password fails policy - leaving the default (forced change on first login)." }
+}
+
+# -- mongot search password (bundled only) - random, never committed ---------
+if ($Mode -eq "bundled") {
+    $pwPath = "config/pwfile"
+    $cur = if (Test-Path $pwPath) { (Get-Content $pwPath -Raw).Trim() } else { "" }
+    if (-not $cur -or $cur -eq "mongotPassword") {
+        [IO.File]::WriteAllText((Resolve-Path -LiteralPath . ).Path + "\$pwPath", (Rand 32))
+        Info "generated a random mongot (search) password -> config/pwfile"
+    } else { Info "keeping existing config/pwfile mongot password" }
+}
+
+# -- compose selection -------------------------------------------------------
+# Pass service files explicitly rather than relying on docker-compose.yml's `include:`
+# (needs Compose v2.20+), so this works on any Compose v2.
+if ($Mode -eq "bundled") {
+    $Compose = @("compose", "-f", "docker-compose.app.yml", "-f", "docker-compose.mongodb.yml", "-f", "docker-compose.ollama.yml")
+} else {
+    $Compose = @("compose", "-f", "docker-compose.app.yml")
+}
+
+# -- cleanup previous run + pull fresh ---------------------------------------
+Say "cleaning up any previous wardenIQ containers"
+if ($DoWipe -eq "yes") { docker @Compose down -v --remove-orphans 2>$null }
+else { docker @Compose down --remove-orphans 2>$null }
+
+Say "pulling fresh images"
+docker pull $AppImageRef
+docker @Compose pull 2>$null
+
+# -- start -------------------------------------------------------------------
+$hasUri = (Select-String -Path ".env" -Pattern '^MONGO_URI=..*' -Quiet)
+if ($Mode -eq "byo" -and -not $hasUri) {
+    Write-Host ""
+    Say "setup complete, but no MONGO_URI is set yet."
+    Info "Edit $Dest\.env -> set MONGO_URI, then start it:"
+    Info "    cd $Dest; docker compose -f docker-compose.app.yml up -d --no-build --pull always"
+    exit 0
+}
+
+Say "starting wardenIQ"
+docker @Compose up -d --no-build --pull always
+
+Write-Host ""
+Say "wardenIQ -> http://localhost:8001"
+if ($Mode -eq "bundled") { Info "First launch takes a few minutes (replica-set init + model download)." }
+Info "Sign in as admin with the password you set."
+Info "Watch it come up:  docker logs -f warden-app"
