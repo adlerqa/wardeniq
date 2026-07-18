@@ -4175,6 +4175,11 @@ async function initGap() {
     $("#gap-workspace").style.display = "none";
     return;
   }
+  // Reset any run-detail panel left over from a previously-viewed feature. It is
+  // otherwise only cleared by its own Close button, so without this it leaks across
+  // features (e.g. a Loan_2 PR run staying visible under Catalog_2's gap view).
+  $("#gap-pr-detail").style.display = "none";
+  $("#gap-pr-detail-body").innerHTML = "";
   $("#gap-no-feature").style.display = "none";
   $("#gap-workspace").style.display = "block";
   $("#gap-feat-title").textContent = `${$("#d-name").textContent || "Feature"} — Gap Analysis`;
@@ -4304,6 +4309,12 @@ window.openGapPrRun = async (rid) => {
   $("#gap-pr-detail-body").innerHTML = skeleton.block("Loading coverage run details");
   try {
     const r = await api(`/api/code-coverage/runs/${rid}`);
+    // Guard: never render a run whose feature differs from the one being viewed.
+    if (r.feature_id && currentFeature && r.feature_id !== currentFeature) {
+      $("#gap-pr-detail").style.display = "none";
+      $("#gap-pr-detail-body").innerHTML = "";
+      return;
+    }
     $("#gap-pr-detail-title").textContent = `Run · PR #${r.pr_number} · ${r.repo_full_name||""}`;
     
     const result = r.result || {};
