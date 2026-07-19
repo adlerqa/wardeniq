@@ -24,6 +24,9 @@ from pymongo.operations import SearchIndexModel
 
 VECTOR_INDEX = "vector_index"
 TEXT_INDEX = "text_index"
+# Association origins meaning a case was linked/inherited from ANOTHER feature
+# (not generated for THIS feature) -> surfaced as the "integration" category.
+_INHERITED_ORIGINS = {"reused", "carried", "carried_repaired", "inherited", "adapted"}
 
 # Safety cap for the EXACT numpy fallback. numpy loads every vector into app RAM
 # and scans linearly, so on a large store (mongot down / index rebuilding) it would
@@ -1649,6 +1652,11 @@ class Store:
                                   or (c.get("metadata") or {}).get("project_imported_row_id")),
                 "association": {"origin": origin[cid].get("origin"),
                                 "score": origin[cid].get("score")},
+                "inherited": origin[cid].get("origin") in _INHERITED_ORIGINS,
+                # Effective display category: inherited/linked cases are integration
+                # scenarios (they exercise behavior owned by another feature).
+                "category": ("integration" if origin[cid].get("origin") in _INHERITED_ORIGINS
+                             else c.get("type")),
             })
         order = {"functional": 0, "e2e": 1, "api": 2, "ui": 3, "nfr": 4}
 

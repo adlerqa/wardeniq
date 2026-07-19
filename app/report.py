@@ -36,6 +36,7 @@ TYPE_LABELS = OrderedDict([
     ("api", "API"),
     ("ui", "UI Validations"),
     ("nfr", "Edge & Reliability"),
+    ("integration", "Integration"),
 ])
 
 
@@ -137,7 +138,7 @@ def build_cycle_pdf(cycle: dict) -> bytes:
 def _group_cases(cases: list) -> OrderedDict:
     grouped = OrderedDict((key, []) for key in TYPE_LABELS)
     for case in cases:
-        key = (case.get("type") or "").strip().lower()
+        key = (case.get("category") or case.get("type") or "").strip().lower()
         grouped.setdefault(key, [])
         grouped[key].append(case)
     return grouped
@@ -591,7 +592,7 @@ def _case_rows(cases: list) -> list[list[str]]:
         rows.append([
             case.get("display_id") or case.get("id", ""),
             _clean_summary(case.get("title", "")),
-            _type_label(case.get("type", "")),
+            _type_label(case.get("category") or case.get("type", "")),
             _priority_label(case.get("priority", "")),
             _status_label(case.get("execution_status", "untested")),
             step_text,
