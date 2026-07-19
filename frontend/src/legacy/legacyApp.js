@@ -1764,8 +1764,8 @@ async function loadCoverage(fid){
     const s=r.summary; if(!s) return;
     const thr=(s.ready_threshold!=null)?s.ready_threshold:80;
     const banner=s.ready
-      ? `<div style="margin-top:10px;color:#34d399;font-weight:600;font-size:13px">✓ Ready for manual testing — code coverage ${s.code_pct}% meets the ${thr}% QA-readiness target.</div>`
-      : `<div style="margin-top:10px;color:#f6a623;font-size:12.5px">Not yet ready for QA — code coverage ${s.code_pct}% is below the ${thr}% target.</div>`;
+      ? `<div style="margin-top:10px;color:#34d399;font-weight:600;font-size:13px">✓ Minimum code-coverage target reached (${s.code_pct}% ≥ ${thr}%) — ready for manual QA.</div>`
+      : `<div style="margin-top:10px;color:#f6a623;font-size:12.5px">Not ready for manual QA — code coverage ${s.code_pct}% is below the ${thr}% target for this feature.</div>`;
     const strategy=`<div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--muted,#94a3b8)">
       <span>QA-readiness target:</span>
       <input id="fc-threshold" class="needs-editor" type="number" min="0" max="100" value="${thr}" style="width:64px" />
