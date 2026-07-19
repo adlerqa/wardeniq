@@ -740,33 +740,85 @@ def _gap_csv(preamble: list, header: list, rows: list) -> bytes:
     return buf.getvalue().encode("utf-8")
 
 
-def _pr_coverage_rows(runs: list) -> list:
+def _pr_covmap(run: dict) -> dict:
+    """Map test_case_id -> status (covered/partial) for one PR coverage run."""
+    m = {}
+    for cc in ((run.get("result") or {}).get("covered") or []):
+        cid = cc.get("test_case_id") or cc.get("id")
+        if cid:
+            m[cid] = cc.get("status", "covered")
+    return m
+
+
+def _pr_detail_rows(runs: list, cases: list) -> list:
+    """One row per (PR x test case): covered/partial/missing, with commit + repo."""
     rows = []
     for r in runs or []:
-        total = r.get("tests_total") or 0
-        covered = r.get("tests_covered") or 0
-        pct = round(100 * covered / total) if total else 0
-        rows.append([r.get("pr_number", ""), r.get("repo_full_name", ""),
-                     r.get("pr_branch", "") or r.get("head_ref", ""),
-                     (r.get("head_sha", "") or "")[:7],
-                     covered, total, f"{pct}%", r.get("status", "")])
+        covmap = _pr_covmap(r)
+        commit = (r.get("head_sha", "") or "")[:7]
+        branch = r.get("pr_branch", "") or r.get("head_ref", "")
+        for c in cases or []:
+            cid = c.get("id")
+            rows.append([r.get("pr_number", ""), r.get("repo_full_name", ""), branch, commit,
+                         c.get("display_id") or cid or "",
+                         _clean_summary(c.get("title", "")),
+                         _type_label(c.get("type", "")),
+                         covmap.get(cid, "missing")])
     return rows
 
 
-def build_gap_pr_csv(feature: dict, runs: list) -> bytes:
+def build_gap_pr_csv(feature: dict, runs: list, cases: list) -> bytes:
     return _gap_csv(
         [["Feature", feature.get("name", "")], ["Version", feature.get("version", 1)],
-         ["Report", "PR Code Coverage"], ["Runs", len(runs or [])]],
-        ["PR #", "Repo", "Branch", "Commit", "Covered", "Total", "Coverage %", "Status"],
-        _pr_coverage_rows(runs))
+         ["Report", "PR Code Coverage (per PR x test case)"],
+         ["PRs", len(runs or [])], ["Test cases", len(cases or [])]],
+        ["PR #", "Repo", "Branch", "Commit", "Case ID", "Case Title", "Category", "Status"],
+        _pr_detail_rows(runs, cases))
 
 
-def build_gap_pr_pdf(feature: dict, runs: list) -> bytes:
-    return _gap_table_pdf(
-        f"PR Code Coverage — {feature.get('name', '')}",
-        f"Version {feature.get('version', 1)} • {len(runs or [])} PR coverage run(s)",
-        ["PR #", "Repo", "Branch", "Commit", "Covered", "Total", "%", "Status"],
-        _pr_coverage_rows(runs))
+def build_gap_pr_pdf(feature: dict, runs: list, cases: list) -> bytes:
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=14 * mm, bottomMargin=16 * mm,
+                            leftMargin=12 * mm, rightMargin=12 * mm,
+                            title="PR Code Coverage - " + feature.get("name", ""))
+    styles = _styles()
+    story = [Paragraph(_e("PR Code Coverage - " + feature.get("name", "")), styles["section"]),
+             Spacer(1, 2),
+             Paragraph(_e("Version %s  |  %d PR(s)  |  %d test case(s)" % (
+                 feature.get("version", 1), len(runs or []), len(cases or []))), styles["body_muted"]),
+             Spacer(1, 8)]
+    if not runs:
+        story.append(Paragraph("No PR coverage runs yet.", styles["body_muted"]))
+    cell = TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), PANEL),
+        ("BOX", (0, 0), (-1, -1), 0.55, BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.35, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ])
+    for r in runs or []:
+        covmap = _pr_covmap(r)
+        total = len(cases or [])
+        covered_n = sum(1 for c in (cases or []) if covmap.get(c.get("id")))
+        commit = (r.get("head_sha", "") or "")[:7]
+        head = "PR #%s  |  %s  |  %s  -  %d/%d covered" % (
+            r.get("pr_number", ""), r.get("repo_full_name", ""), commit, covered_n, total)
+        story += [Spacer(1, 8), Paragraph(_e(head), styles["case_title"]), Spacer(1, 4)]
+        data = [[Paragraph("<b>%s</b>" % _e(h), styles["small"])
+                 for h in ["Case ID", "Title", "Category", "Status"]]]
+        for c in cases or []:
+            data.append([
+                Paragraph(_e(c.get("display_id") or c.get("id", "")), styles["small"]),
+                Paragraph(_e(_clean_summary(c.get("title", ""))), styles["small"]),
+                Paragraph(_e(_type_label(c.get("type", ""))), styles["small"]),
+                Paragraph(_e(covmap.get(c.get("id"), "missing")), styles["small"]),
+            ])
+        table = Table(data, repeatRows=1, colWidths=[26 * mm, 96 * mm, 28 * mm, 22 * mm])
+        table.setStyle(cell)
+        story.append(table)
+    doc.build(story, onFirstPage=_page, onLaterPages=_page)
+    return buf.getvalue()
 
 
 def _automation_rows(items: list) -> list:

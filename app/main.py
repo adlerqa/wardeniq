@@ -5927,11 +5927,12 @@ def export_gap_pr_coverage(fid: str, fmt: str):
     if not f:
         raise HTTPException(404, "feature not found")
     runs = store.list_code_coverage_runs(feature_id=fid, limit=500)
+    cases = store.cases_brief(store.feature_test_case_ids(fid))
     if fmt == "csv":
-        return Response(content=report.build_gap_pr_csv(f, runs), media_type="text/csv",
+        return Response(content=report.build_gap_pr_csv(f, runs, cases), media_type="text/csv",
                         headers={"Content-Disposition": f'attachment; filename="gap-pr-coverage-{fid}.csv"'})
     if fmt == "pdf":
-        return Response(content=report.build_gap_pr_pdf(f, runs), media_type="application/pdf",
+        return Response(content=report.build_gap_pr_pdf(f, runs, cases), media_type="application/pdf",
                         headers={"Content-Disposition": f'attachment; filename="gap-pr-coverage-{fid}.pdf"'})
     raise HTTPException(400, "format must be csv or pdf")
 
