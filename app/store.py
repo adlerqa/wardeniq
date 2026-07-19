@@ -24,9 +24,6 @@ from pymongo.operations import SearchIndexModel
 
 VECTOR_INDEX = "vector_index"
 TEXT_INDEX = "text_index"
-# Association origins meaning a case was linked/inherited from ANOTHER feature
-# (not generated for THIS feature) -> surfaced as the "integration" category.
-_INHERITED_ORIGINS = {"reused", "carried", "carried_repaired", "inherited", "adapted"}
 
 # Safety cap for the EXACT numpy fallback. numpy loads every vector into app RAM
 # and scans linearly, so on a large store (mongot down / index rebuilding) it would
@@ -1631,6 +1628,25 @@ class Store:
     def get_feature_cases(self, fid):
         case_ids = [a["test_case_id"] for a in self.assoc.find({"feature_id": fid})]
         origin = {a["test_case_id"]: a for a in self.assoc.find({"feature_id": fid})}
+        # "integration" = a case that ALSO belongs to a different feature GROUP
+        # (linked/reused from another functionality) -- not merely carried across
+        # this feature's own versions. Compare feature groups, not feature ids.
+        _cur = self.features.find_one({"_id": ObjectId(fid)}, {"group_id": 1})
+        _cur_group = (_cur or {}).get("group_id") or fid
+        cross_feature = set()
+        if case_ids:
+            _case_feats, _feat_ids = {}, set()
+            for a in self.assoc.find({"test_case_id": {"$in": case_ids}},
+                                     {"test_case_id": 1, "feature_id": 1}):
+                _case_feats.setdefault(a["test_case_id"], set()).add(a["feature_id"])
+                _feat_ids.add(a["feature_id"])
+            _grp = {}
+            _valid = [ObjectId(x) for x in _feat_ids if ObjectId.is_valid(x)]
+            for f in self.features.find({"_id": {"$in": _valid}}, {"group_id": 1}):
+                _grp[str(f["_id"])] = f.get("group_id") or str(f["_id"])
+            for _cid, _fset in _case_feats.items():
+                if any((_grp.get(x) or x) != _cur_group for x in _fset):
+                    cross_feature.add(_cid)
         out = []
         for c in self.cases.find({"_id": {"$in": [ObjectId(i) for i in case_ids]}}):
             cid = str(c["_id"])
@@ -1652,11 +1668,9 @@ class Store:
                                   or (c.get("metadata") or {}).get("project_imported_row_id")),
                 "association": {"origin": origin[cid].get("origin"),
                                 "score": origin[cid].get("score")},
-                "inherited": origin[cid].get("origin") in _INHERITED_ORIGINS,
-                # Effective display category: inherited/linked cases are integration
-                # scenarios (they exercise behavior owned by another feature).
-                "category": ("integration" if origin[cid].get("origin") in _INHERITED_ORIGINS
-                             else c.get("type")),
+                "inherited": cid in cross_feature,
+                # "integration" when the case is shared with another feature group.
+                "category": ("integration" if cid in cross_feature else c.get("type")),
             })
         order = {"functional": 0, "e2e": 1, "api": 2, "ui": 3, "nfr": 4}
 
