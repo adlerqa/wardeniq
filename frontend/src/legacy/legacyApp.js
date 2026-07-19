@@ -406,7 +406,7 @@ async function api(p,o){
   return j;
 }
 let currentProject=null,currentFeature=null,currentFeatureData=null,currentFeatureCases=[],currentViewName="dashboard",editing={id:null,steps:[]},tcPage=0;
-const TITLES={dashboard:"Dashboard",projects:"Projects & Repos",features:"Features",validator:"MCQ Validator",testplan:"Test Plan",cases:"Test Cases",gap:"Gap Analysis",cycles:"Code Analysis & Test Cycles",mindmap:"Mind Map",develop:"Start Developing",steps:"Step Library",usage:"LLM Usage & Cost",users:"Users",config:"Configuration"};
+const TITLES={dashboard:"Dashboard",projects:"Projects & Repos",features:"Features",validator:"MCQ Validator",testplan:"Test Plan",cases:"Test Cases",gap:"Gap Analysis",cycles:"Code Analysis",testcycles:"Test Cycles",mindmap:"Mind Map",develop:"Start Developing",steps:"Step Library",usage:"LLM Usage & Cost",users:"Users",config:"Configuration"};
 let ME=null;
 let ANALYSIS_IMPACTED=[];
 
@@ -419,7 +419,7 @@ function navigateTo(v){
   $("#view-title").textContent=TITLES[v] || "";
   if(v==="dashboard")loadDashboard(); if(v==="projects"){showProjectList();loadProjects();loadSyncStatus();}
   if(v==="features"){loadProjects();loadFeatures();if(currentFeature)openFeature(currentFeature);else showFeatureList();} if(v==="cases")initCases(); if(v==="steps")loadSteps();
-  if(v==="cycles")initCycles(); if(v==="mindmap")initMindmap(); if(v==="develop")initDevelop(); if(v==="config")loadConfig(); if(v==="jobs")initJobs(); if(v==="users"){loadProjectPicker();loadUsers();loadAudit();} if(v==="usage")loadUsage();
+  if(v==="cycles")initCycles(); if(v==="testcycles")initTestCycles(); if(v==="mindmap")initMindmap(); if(v==="develop")initDevelop(); if(v==="config")loadConfig(); if(v==="jobs")initJobs(); if(v==="users"){loadProjectPicker();loadUsers();loadAudit();} if(v==="usage")loadUsage();
   if(v==="validator")initValidator(); if(v==="testplan")initTestPlan(); if(v==="gap")initGap();
   renderBreadcrumbs();
   updateBackbar();
@@ -554,6 +554,7 @@ async function loadProjects(){
     if($("#proj-sel")){$("#proj-sel").innerHTML=opts;$("#proj-sel").value=currentProject;}
     if($("#f-project")){$("#f-project").innerHTML=opts;$("#f-project").value=currentProject;}
     if($("#cyc-proj")){$("#cyc-proj").innerHTML=opts;$("#cyc-proj").value=currentProject;}
+    if($("#tcy-proj")){$("#tcy-proj").innerHTML=opts;$("#tcy-proj").value=currentProject;}
     if($("#mm-proj")){$("#mm-proj").innerHTML=opts;$("#mm-proj").value=currentProject;}
     if($("#dev-proj")){$("#dev-proj").innerHTML=opts;$("#dev-proj").value=currentProject;}
     if($("#tc-proj")){$("#tc-proj").innerHTML=`<option value="">All projects</option>`+opts;}
@@ -2774,9 +2775,23 @@ $("#vm-go").onclick=async()=>{
   }catch(e){$("#vm-msg").innerHTML=`<span class="err">${esc(e.message)}</span>`;}finally{$("#vm-go").disabled=false;}};
 
 // ---- test cycles + code analysis ----
-async function initCycles(){await loadProjects();await loadCycleRepos();loadCycles();loadCycleTemplates();loadUnmappedPRs();loadLatestAnalysis();}
-$("#cyc-proj").onchange=()=>{currentProject=$("#cyc-proj").value;loadCycleRepos();loadCycles();loadCycleTemplates();loadUnmappedPRs();loadLatestAnalysis();};
-if($("#cyc-refresh")) $("#cyc-refresh").onclick=()=>{loadCycleRepos();loadCycles();loadCycleTemplates();loadUnmappedPRs();loadLatestAnalysis();};
+async function initCycles(){await loadProjects();await loadCycleRepos();loadUnmappedPRs();loadLatestAnalysis();}
+$("#cyc-proj").onchange=()=>{currentProject=$("#cyc-proj").value;loadCycleRepos();loadUnmappedPRs();loadLatestAnalysis();};
+if($("#cyc-refresh")) $("#cyc-refresh").onclick=()=>{loadCycleRepos();loadUnmappedPRs();loadLatestAnalysis();};
+// ---- Test Cycles view (independent of change-impact analysis) ----
+async function initTestCycles(){await loadProjects();if($("#tcy-proj"))$("#tcy-proj").value=currentProject;loadCycles();loadCycleTemplates();}
+if($("#tcy-proj"))$("#tcy-proj").onchange=()=>{currentProject=$("#tcy-proj").value;loadCycles();loadCycleTemplates();};
+if($("#tcy-refresh"))$("#tcy-refresh").onclick=()=>{loadCycles();loadCycleTemplates();};
+async function createEmptyCycle(){
+  const pid=($("#tcy-proj")&&$("#tcy-proj").value)||currentProject;
+  if(!pid){toast("Select a project first",true);return;}
+  const name=($("#tcy-name")&&$("#tcy-name").value.trim())||`Cycle ${new Date().toLocaleDateString()}`;
+  try{const r=await api("/api/test-cycles",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({project_id:pid,name,case_ids:[]})});
+    if($("#tcy-name"))$("#tcy-name").value="";toast("Cycle created — add the test cases you want to retest");loadCycles();if(r&&r.id)openCycle(r.id);}
+  catch(e){toast(e.message||"Could not create cycle",true);}
+}
+window.createEmptyCycle=createEmptyCycle;
+if($("#tcy-new"))$("#tcy-new").onclick=createEmptyCycle;
 async function loadCycleRepos(){const pid=$("#cyc-proj").value||currentProject;if(!pid)return;
   try{const r=await api(`/api/projects/${pid}/repos?repo_type=app`);   // app repos only (test repos excluded)
     $("#cyc-repos").innerHTML=repoBranchRows(r.repos,"cyc-repo");
@@ -2962,11 +2977,11 @@ async function createCycleFromSelection(){
   const pid=$("#cyc-proj").value||currentProject;
   const repoIds=[...document.querySelectorAll(".cyc-repo-chk")].filter(c=>c.checked).map(c=>c.value);
   try{await api("/api/test-cycles",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({project_id:pid,name,case_ids:ids,source:{repo_ids:repoIds,days:parseInt($("#cyc-days").value)||14}})});
-    if($("#cyc-name"))$("#cyc-name").value="";toast(`Cycle created with ${ids.length} case(s)`);loadCycles();}
+    if($("#cyc-name"))$("#cyc-name").value="";toast(`Cycle created with ${ids.length} case(s) — see it under Test Cycles`);loadCycles();}
   catch(e){toast(e.message,true);}}
 window.createCycleFromSelection=createCycleFromSelection;
 if($("#cyc-make"))$("#cyc-make").onclick=createCycleFromSelection;
-async function loadCycleTemplates(){const pid=$("#cyc-proj").value||currentProject;if(!pid||!$("#cyc-templates"))return;
+async function loadCycleTemplates(){const pid=($("#tcy-proj")&&$("#tcy-proj").value)||currentProject;if(!pid||!$("#cyc-templates"))return;
   try{const r=await api(`/api/projects/${pid}/cycle-templates`);
     $("#cyc-templates").innerHTML=(r.templates||[]).map(t=>`<div class="feat" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
       <div><div class="n">${esc(t.name)}</div><div class="m">${t.case_count} case(s)${t.description?` · ${esc(t.description)}`:""}</div></div>
@@ -2988,7 +3003,7 @@ window.deleteCycleTemplate=async(tid)=>{
   if(!await uiConfirm("Delete this template? Existing cycles are not affected.","Delete template","Delete",true))return;
   try{await api(`/api/cycle-templates/${tid}`,{method:"DELETE"});toast("Template deleted");loadCycleTemplates();}
   catch(e){toast(e.message,true);}};
-async function loadCycles(){const pid=$("#cyc-proj").value||currentProject;if(!pid)return;
+async function loadCycles(){const pid=($("#tcy-proj")&&$("#tcy-proj").value)||currentProject;if(!pid)return;
   skIn("#cyc-list",skeleton.rows(5,"Loading test cycles"));
   try{const r=await api(`/api/projects/${pid}/test-cycles`);
     $("#cyc-list").innerHTML=r.cycles.map(c=>{const cc=c.counts||{};const done=(cc.passed||0)+(cc.failed||0)+(cc.skipped||0)+(cc.blocked||0),pct=c.total?Math.round(done/c.total*100):0;
