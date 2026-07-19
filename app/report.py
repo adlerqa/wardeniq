@@ -700,3 +700,105 @@ def build_testcase_pdf(feature: dict, cases: list) -> bytes:
         story += [Spacer(1, 8), HRFlowable(color=BORDER, thickness=0.55, width="100%")]
     doc.build(story, onFirstPage=_page, onLaterPages=_page)
     return buf.getvalue()
+
+
+# ---- Gap Analysis exports (feature-level) -----------------------------------
+def _gap_table_pdf(title: str, subtitle: str, header: list, rows: list) -> bytes:
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=14 * mm, bottomMargin=16 * mm,
+                            leftMargin=12 * mm, rightMargin=12 * mm, title=title)
+    styles = _styles()
+    story = [Paragraph(_e(title), styles["section"]), Spacer(1, 2)]
+    if subtitle:
+        story += [Paragraph(_e(subtitle), styles["body_muted"]), Spacer(1, 8)]
+    data = [[Paragraph(f"<b>{_e(h)}</b>", styles["small"]) for h in header]]
+    for r in rows:
+        data.append([Paragraph(_e("" if c is None else str(c)), styles["small"]) for c in r])
+    table = Table(data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), PANEL),
+        ("BOX", (0, 0), (-1, -1), 0.55, BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.35, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(table)
+    doc.build(story, onFirstPage=_page, onLaterPages=_page)
+    return buf.getvalue()
+
+
+def _gap_csv(preamble: list, header: list, rows: list) -> bytes:
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    for line in preamble:
+        w.writerow(line)
+    if preamble:
+        w.writerow([])
+    w.writerow(header)
+    w.writerows(rows)
+    return buf.getvalue().encode("utf-8")
+
+
+def _pr_coverage_rows(runs: list) -> list:
+    rows = []
+    for r in runs or []:
+        total = r.get("tests_total") or 0
+        covered = r.get("tests_covered") or 0
+        pct = round(100 * covered / total) if total else 0
+        rows.append([r.get("pr_number", ""), r.get("repo_full_name", ""),
+                     r.get("pr_branch", "") or r.get("head_ref", ""),
+                     (r.get("head_sha", "") or "")[:7],
+                     covered, total, f"{pct}%", r.get("status", "")])
+    return rows
+
+
+def build_gap_pr_csv(feature: dict, runs: list) -> bytes:
+    return _gap_csv(
+        [["Feature", feature.get("name", "")], ["Version", feature.get("version", 1)],
+         ["Report", "PR Code Coverage"], ["Runs", len(runs or [])]],
+        ["PR #", "Repo", "Branch", "Commit", "Covered", "Total", "Coverage %", "Status"],
+        _pr_coverage_rows(runs))
+
+
+def build_gap_pr_pdf(feature: dict, runs: list) -> bytes:
+    return _gap_table_pdf(
+        f"PR Code Coverage — {feature.get('name', '')}",
+        f"Version {feature.get('version', 1)} • {len(runs or [])} PR coverage run(s)",
+        ["PR #", "Repo", "Branch", "Commit", "Covered", "Total", "%", "Status"],
+        _pr_coverage_rows(runs))
+
+
+def _automation_rows(items: list) -> list:
+    rows = []
+    for it in items or []:
+        mt = it.get("match") or {}
+        loc = mt.get("repo_full_name", "")
+        if mt.get("file_path"):
+            loc = (loc + ":" if loc else "") + mt.get("file_path", "")
+        rows.append([it.get("display_id") or it.get("generated_id", "") or "",
+                     _clean_summary(it.get("generated_title", "")),
+                     _type_label(it.get("generated_type", "")),
+                     "Covered" if it.get("status") == "covered" else "Missing",
+                     loc, _clean_summary(mt.get("title", ""))])
+    return rows
+
+
+def build_gap_automation_csv(feature: dict, snapshot: dict) -> bytes:
+    snap = snapshot or {}
+    return _gap_csv(
+        [["Feature", feature.get("name", "")], ["Version", feature.get("version", 1)],
+         ["Report", "Automation Test Coverage"], ["Coverage %", snap.get("coverage_pct", 0)],
+         ["Covered", snap.get("covered_count", 0)], ["Missing", snap.get("missing_count", 0)],
+         ["Scanned repo", snap.get("scanned_repo_full_name", "")]],
+        ["Case ID", "Title", "Category", "Automation", "Test location", "Matched test"],
+        _automation_rows(snap.get("items", [])))
+
+
+def build_gap_automation_pdf(feature: dict, snapshot: dict) -> bytes:
+    snap = snapshot or {}
+    sub = (f"Version {feature.get('version', 1)} • {snap.get('coverage_pct', 0)}% covered"
+           f" • {snap.get('covered_count', 0)} covered / {snap.get('missing_count', 0)} missing")
+    rows = [[r[0], r[1], r[2], r[3], r[5]] for r in _automation_rows(snap.get("items", []))]
+    return _gap_table_pdf(f"Automation Test Coverage — {feature.get('name', '')}", sub,
+                          ["Case ID", "Title", "Category", "Automation", "Matched test"], rows)
