@@ -5922,6 +5922,7 @@ def feature_export_selected_pdf(fid: str, body: dict):
 
 @app.get("/api/features/{fid}/gap/pr-coverage/export/{fmt}")
 def export_gap_pr_coverage(fid: str, fmt: str):
+    import report
     f = store.get_feature(fid)
     if not f:
         raise HTTPException(404, "feature not found")
@@ -5937,6 +5938,7 @@ def export_gap_pr_coverage(fid: str, fmt: str):
 
 @app.get("/api/features/{fid}/gap/automation/export/{fmt}")
 def export_gap_automation(fid: str, fmt: str):
+    import report
     f = store.get_feature(fid)
     if not f:
         raise HTTPException(404, "feature not found")

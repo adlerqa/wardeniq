@@ -1673,6 +1673,19 @@ async function downloadFeatureExport(format, explicitIds=null){
   a.href=url;a.download=`${(currentFeatureData?.name||"feature").replace(/[^a-z0-9]+/gi,"_").toLowerCase()}_test_cases.${ext}`;
   document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
 }
+async function downloadGapExport(kind, fmt){
+  if(!currentFeature){toast("Open a feature first",true);return;}
+  const mime=fmt==="pdf"?"application/pdf":"text/csv";
+  const res=await fetch(`/api/features/${currentFeature}/gap/${kind}/export/${fmt}`,{method:"GET"});
+  if(!res.ok){let detail="Export failed";try{detail=(await res.json()).detail||detail;}catch(e){}throw new Error(detail);}
+  const blob=await res.blob();
+  const url=URL.createObjectURL(new Blob([blob],{type:mime}));
+  const a=document.createElement("a");
+  const base=(currentFeatureData?.name||"feature").replace(/[^a-z0-9]+/gi,"_").toLowerCase();
+  const label=kind==="pr-coverage"?"pr_coverage":"automation_coverage";
+  a.href=url;a.download=`${base}_${label}.${fmt}`;
+  document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+}
 async function bulkExportSelected(format="pdf"){
   const ids=selectedCaseIds();
   try{await downloadFeatureExport(format,ids);toast(ids.length?"Selected test cases exported":"All feature test cases exported");}catch(e){toast(e.message,true);}
@@ -4178,9 +4191,9 @@ async function initGap() {
   $("#gap-no-feature").style.display = "none";
   $("#gap-workspace").style.display = "block";
   $("#gap-feat-title").textContent = `${$("#d-name").textContent || "Feature"} — Gap Analysis`;
-  const _gx=(id,path)=>{const a=$(id); if(a) a.href=`/api/features/${currentFeature}/${path}`;};
-  _gx("#gap-pr-export-csv","gap/pr-coverage/export/csv"); _gx("#gap-pr-export-pdf","gap/pr-coverage/export/pdf");
-  _gx("#gap-auto-export-csv","gap/automation/export/csv"); _gx("#gap-auto-export-pdf","gap/automation/export/pdf");
+  const _gx=(id,kind,fmt)=>{const a=$(id); if(a) a.onclick=(e)=>{e.preventDefault();downloadGapExport(kind,fmt).then(()=>toast("Export ready")).catch(err=>toast(err.message||"Export failed",true));};};
+  _gx("#gap-pr-export-csv","pr-coverage","csv"); _gx("#gap-pr-export-pdf","pr-coverage","pdf");
+  _gx("#gap-auto-export-csv","automation","csv"); _gx("#gap-auto-export-pdf","automation","pdf");
   switchGapTab(GAP_TAB);
 }
 
