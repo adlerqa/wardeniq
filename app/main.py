@@ -3589,7 +3589,22 @@ def project_prs(pid: str):
 
 @app.get("/api/features/{fid}/coverage")
 def feature_coverage(fid: str):
-    return store.feature_coverage_report(fid)
+    rep = store.feature_coverage_report(fid)
+    f = store.get_feature(fid)
+    snap = store.get_automation_coverage(fid, version=(f or {}).get("version", 1)) or {}
+    total = rep.get("total_test_cases", 0) or 0
+    covered = rep.get("covered", 0) or 0
+    # Holistic feature-level view: a case is covered once ANY linked PR implements
+    # it (union across all PRs), plus dev-test automation coverage.
+    rep["summary"] = {
+        "total_cases": total,
+        "code_pct": rep.get("coverage_pct", 0),
+        "covered_cases": covered,
+        "automation_pct": snap.get("coverage_pct", 0),
+        "automated_cases": snap.get("covered_count", 0),
+        "ready": bool(total and covered >= total),
+    }
+    return rep
 
 
 def _decorate_coverage_run(r: dict) -> dict:

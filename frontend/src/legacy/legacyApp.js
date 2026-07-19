@@ -1759,6 +1759,22 @@ function caseCard(c){
 }
 async function loadCoverage(fid){
   $("#d-coverage").innerHTML="";
+  try{
+    const r=await api(`/api/features/${fid}/coverage`);
+    const s=r.summary; if(!s) return;
+    const pending=Math.max(0,(s.total_cases||0)-(s.covered_cases||0));
+    const banner=s.ready
+      ? `<div style="margin-top:10px;color:#34d399;font-weight:600;font-size:13px">\u2713 All ${s.total_cases} test cases are covered by code across the linked PRs \u2014 ready for manual testing.</div>`
+      : `<div style="margin-top:10px;color:var(--muted,#94a3b8);font-size:12.5px">${pending} of ${s.total_cases} test cases are not yet covered by any linked PR.</div>`;
+    $("#d-coverage").innerHTML=`<div style="margin-top:14px;border:1px solid var(--line,#1e293b);border-radius:12px;padding:14px 16px;background:var(--panel,#0d1728)">
+      <div style="font-size:13px;font-weight:600">Coverage <span style="font-weight:400;color:var(--muted,#94a3b8)">\u2014 aggregated across all PRs linked to this feature</span></div>
+      <div style="font-size:12px;color:var(--muted,#94a3b8);margin:2px 0 10px">A test case counts as covered once ANY linked PR implements it (no single repo need cover everything).</div>
+      <div class="dash-gauge"><div class="top"><span>Code coverage (cases hit by PRs)</span><b>${s.code_pct}%</b></div><div class="track"><div class="fill code" style="width:${s.code_pct}%"></div></div></div>
+      <div class="dash-gauge"><div class="top"><span>Automation Test Coverage (dev-written tests)</span><b>${s.automation_pct}%</b></div><div class="track"><div class="fill auto" style="width:${s.automation_pct}%"></div></div></div>
+      <div class="dash-cov-note">${s.covered_cases} covered \u00b7 ${s.automated_cases} automated of ${s.total_cases} cases</div>
+      ${banner}
+    </div>`;
+  }catch(e){/* non-fatal: coverage card just stays empty */}
 }
 $("#d-close").onclick=showFeatureList;
 
