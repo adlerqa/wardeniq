@@ -3587,6 +3587,18 @@ def project_prs(pid: str):
     return {"prs": store.list_prs(project_id=pid)}
 
 
+class ReadyThresholdIn(BaseModel):
+    threshold: int = 80
+
+
+@app.post("/api/features/{fid}/ready-threshold")
+def set_ready_threshold(fid: str, body: ReadyThresholdIn):
+    """Set the feature's QA-readiness threshold (percent code coverage; editor+)."""
+    if not store.get_feature(fid):
+        raise HTTPException(404, "feature not found")
+    return {"ready_threshold": store.set_feature_ready_threshold(fid, body.threshold)}
+
+
 @app.get("/api/features/{fid}/coverage")
 def feature_coverage(fid: str):
     rep = store.feature_coverage_report(fid)
@@ -3594,15 +3606,20 @@ def feature_coverage(fid: str):
     snap = store.get_automation_coverage(fid, version=(f or {}).get("version", 1)) or {}
     total = rep.get("total_test_cases", 0) or 0
     covered = rep.get("covered", 0) or 0
-    # Holistic feature-level view: a case is covered once ANY linked PR implements
-    # it (union across all PRs), plus dev-test automation coverage.
+    code_pct = rep.get("coverage_pct", 0)
+    # Holistic view: a case is covered once ANY linked PR implements it (union).
+    # QA-readiness is a per-feature strategy (PM/Lead defined, stored on the
+    # feature): "ready for manual testing" once CODE coverage meets the threshold.
+    _thr = (f or {}).get("ready_threshold")
+    threshold = int(_thr) if _thr is not None else 80
     rep["summary"] = {
         "total_cases": total,
-        "code_pct": rep.get("coverage_pct", 0),
+        "code_pct": code_pct,
         "covered_cases": covered,
         "automation_pct": snap.get("coverage_pct", 0),
         "automated_cases": snap.get("covered_count", 0),
-        "ready": bool(total and covered >= total),
+        "ready_threshold": threshold,
+        "ready": bool(total and code_pct >= threshold),
     }
     return rep
 

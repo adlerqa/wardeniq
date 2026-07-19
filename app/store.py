@@ -3500,6 +3500,19 @@ class Store:
             out.append(r)
         return out
 
+    def set_feature_ready_threshold(self, fid, pct):
+        """Per-feature QA-readiness threshold (percent CODE coverage) at which the
+        feature is "ready for manual testing". Applied to all versions in the group
+        so it survives regeneration. Clamped 0-100."""
+        try:
+            p = max(0, min(100, int(pct)))
+        except (TypeError, ValueError):
+            p = 80
+        f = self.features.find_one({"_id": ObjectId(fid)}, {"group_id": 1})
+        gid = (f or {}).get("group_id") or fid
+        self.features.update_many({"group_id": gid}, {"$set": {"ready_threshold": p}})
+        return p
+
     def feature_coverage_report(self, fid):
         """Aggregate coverage for a feature across all mapped PRs."""
         all_cases = self.feature_test_case_ids(fid)

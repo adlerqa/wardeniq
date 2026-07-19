@@ -1762,19 +1762,35 @@ async function loadCoverage(fid){
   try{
     const r=await api(`/api/features/${fid}/coverage`);
     const s=r.summary; if(!s) return;
-    const pending=Math.max(0,(s.total_cases||0)-(s.covered_cases||0));
+    const thr=(s.ready_threshold!=null)?s.ready_threshold:80;
     const banner=s.ready
-      ? `<div style="margin-top:10px;color:#34d399;font-weight:600;font-size:13px">\u2713 All ${s.total_cases} test cases are covered by code across the linked PRs \u2014 ready for manual testing.</div>`
-      : `<div style="margin-top:10px;color:var(--muted,#94a3b8);font-size:12.5px">${pending} of ${s.total_cases} test cases are not yet covered by any linked PR.</div>`;
+      ? `<div style="margin-top:10px;color:#34d399;font-weight:600;font-size:13px">✓ Ready for manual testing — code coverage ${s.code_pct}% meets the ${thr}% QA-readiness target.</div>`
+      : `<div style="margin-top:10px;color:#f6a623;font-size:12.5px">Not yet ready for QA — code coverage ${s.code_pct}% is below the ${thr}% target.</div>`;
+    const strategy=`<div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--muted,#94a3b8)">
+      <span>QA-readiness target:</span>
+      <input id="fc-threshold" class="needs-editor" type="number" min="0" max="100" value="${thr}" style="width:64px" />
+      <span>% code coverage</span>
+      <button class="ghost needs-editor" type="button" onclick="saveReadyThreshold('${fid}')">Save</button>
+      <span id="fc-threshold-status" class="muted"></span>
+    </div>`;
     $("#d-coverage").innerHTML=`<div style="margin-top:14px;border:1px solid var(--line,#1e293b);border-radius:12px;padding:14px 16px;background:var(--panel,#0d1728)">
-      <div style="font-size:13px;font-weight:600">Coverage <span style="font-weight:400;color:var(--muted,#94a3b8)">\u2014 aggregated across all PRs linked to this feature</span></div>
+      <div style="font-size:13px;font-weight:600">Coverage <span style="font-weight:400;color:var(--muted,#94a3b8)">— aggregated across all PRs linked to this feature</span></div>
       <div style="font-size:12px;color:var(--muted,#94a3b8);margin:2px 0 10px">A test case counts as covered once ANY linked PR implements it (no single repo need cover everything).</div>
       <div class="dash-gauge"><div class="top"><span>Code coverage (cases hit by PRs)</span><b>${s.code_pct}%</b></div><div class="track"><div class="fill code" style="width:${s.code_pct}%"></div></div></div>
       <div class="dash-gauge"><div class="top"><span>Automation Test Coverage (dev-written tests)</span><b>${s.automation_pct}%</b></div><div class="track"><div class="fill auto" style="width:${s.automation_pct}%"></div></div></div>
-      <div class="dash-cov-note">${s.covered_cases} covered \u00b7 ${s.automated_cases} automated of ${s.total_cases} cases</div>
+      <div class="dash-cov-note">${s.covered_cases} covered · ${s.automated_cases} automated of ${s.total_cases} cases</div>
       ${banner}
+      ${strategy}
     </div>`;
   }catch(e){/* non-fatal: coverage card just stays empty */}
+}
+window.saveReadyThreshold=async(fid)=>{
+  const el=$("#fc-threshold"); const v=parseInt((el&&el.value)||"80",10);
+  try{
+    const r=await api(`/api/features/${fid}/ready-threshold`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({threshold:isNaN(v)?80:v})});
+    toast(`QA-readiness target set to ${r.ready_threshold}% code coverage`);
+    loadCoverage(fid);
+  }catch(e){ if($("#fc-threshold-status"))$("#fc-threshold-status").textContent=e.message||"failed"; toast(e.message||"Could not save target",true); }
 }
 $("#d-close").onclick=showFeatureList;
 
