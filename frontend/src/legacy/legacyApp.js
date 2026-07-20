@@ -1556,13 +1556,14 @@ window.openFeature=async fid=>{try{const f=await api("/api/features/"+fid);curre
       ${ret.length?`<details style="margin-top:6px"><summary class="muted">retired cases</summary>${ret.map(r=>`<div class="muted" style="margin-top:4px">• ${esc(r.title||r.id)} — ${esc(r.reason||"")}</div>`).join("")}</details>`:""}</div>`;
   } else if(vd.mode==="replace"){ $("#d-verinfo").innerHTML=`<div class="muted" style="margin:8px 0">This version was regenerated; ${vd.retired_orphans||0} obsolete cases removed.</div>`; }
   else { $("#d-verinfo").innerHTML=""; }
-  const bt={};f.test_cases.forEach(c=>{(bt[c.type]=bt[c.type]||[]).push(c);});
+  const bt={};f.test_cases.forEach(c=>{const _k=c.category||c.type;(bt[_k]=bt[_k]||[]).push(c);});
   const groups=[
     ["api","API","Endpoint happy paths, validation, authorization, and failure handling"],
     ["ui","UI validations","Visible fields, controls, and client-side validation"],
     ["functional","Business / functional","Business rules and requirement behavior"],
     ["e2e","End-to-end","Complete user journeys across UI, API, and persisted state"],
-    ["nfr","Edge & reliability","Concurrency, resilience, limits, latency, and degraded dependencies"]
+    ["nfr","Edge & reliability","Concurrency, resilience, limits, latency, and degraded dependencies"],
+    ["integration","Integration","Cross-feature scenarios: cases inherited / linked from other features"]
   ];
   const overviewStats=groups.map(([t,label])=>{
     const cases=bt[t]||[];
@@ -1751,7 +1752,7 @@ document.querySelectorAll(".feature-workspace-cases").forEach(button=>{
     if(currentFeature)openFeatureTestCases(currentFeature,currentProject);
   };
 });
-const TYPE_LABELS={functional:"Business / functional",e2e:"End-to-end",api:"API",ui:"UI validation",nfr:"Edge & reliability"};
+const TYPE_LABELS={functional:"Business / functional",e2e:"End-to-end",api:"API",ui:"UI validation",nfr:"Edge & reliability",integration:"Integration"};
 const typeLabel=t=>TYPE_LABELS[t]||t;
 const caseTitle=c=>cleanRequirementText(c?.title||"Untitled test case")||"Untitled test case";
 function caseListHeader(scope){
