@@ -332,7 +332,7 @@ export const LEGACY_SHELL_HTML = `
               <button class="danger" id="d-del" style="display:none">Delete feature</button>
             </div>
           </div>
-          <div class="muted" id="d-meta"></div><div id="d-match-key" class="muted" style="margin:6px 0"></div><div id="d-overview"></div><div id="d-verinfo"></div><div id="d-genbanner"></div><div id="d-coverage"></div>
+          <div class="muted" id="d-meta"></div><div id="d-match-key" class="muted" style="margin:6px 0"></div><div id="d-coverage"></div><div id="d-overview"></div><div id="d-verinfo"></div><div id="d-genbanner"></div>
           <div class="case-bulk-toolbar" data-bulk-scope="feature">
             <div class="case-bulk-left"><span class="case-bulk-count" data-bulk-count="feature">0 selected</span></div>
             <div class="case-bulk-actions"><button class="ghost bulk-pass" onclick="bulkSetCaseResult('passed')">Pass selected</button><button class="ghost bulk-fail" onclick="bulkSetCaseResult('failed')">Fail selected</button><button class="ghost" onclick="bulkSetCaseResult('untested')">Clear status</button><button class="ghost" onclick="bulkExportSelected('pdf')">Export selected</button><button class="testcase-delete" onclick="bulkDeleteSelected()">Delete selected</button></div>
