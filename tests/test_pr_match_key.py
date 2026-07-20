@@ -2,6 +2,10 @@
 
 Uses a duck-typed fake store (the function only calls feature_by_epic and
 features_with_match_key), so no MongoDB is required.
+
+The match tag is matched as a WHOLE WORD (case-insensitive), with brackets
+optional: "HOLDS", "[HOLDS]" and "feat(HOLDS):" all map, but a substring like
+"REFINES" must not match the key "FINES".
 """
 import coverage
 
@@ -25,7 +29,7 @@ def _map(store, title, body=""):
 def test_bracketed_tag_maps_when_no_jira_key():
     fid, conf, method = _map(FakeStore(match_keys=[("f1", "HOLDS")]),
                              "feat: add holds queue [HOLDS]")
-    assert (fid, conf, method) == ("f1", 1.0, "tag:[HOLDS]")
+    assert (fid, conf, method) == ("f1", 1.0, "tag:HOLDS")
 
 
 def test_tag_match_is_case_insensitive():
@@ -33,10 +37,19 @@ def test_tag_match_is_case_insensitive():
     assert fid == "f1"
 
 
-def test_unbracketed_keyword_does_not_match():
-    # Explicit [KEY] tag rule: 'feat(HOLDS):' contains HOLDS but not '[HOLDS]'.
+def test_bare_keyword_matches_without_brackets():
+    # Parens/colons are word boundaries, so 'feat(HOLDS):' maps even with no [ ].
     fid, _, method = _map(FakeStore(match_keys=[("f1", "HOLDS")]), "feat(HOLDS): add holds")
-    assert fid is None and method == "unmapped"
+    assert fid == "f1" and method == "tag:HOLDS"
+
+
+def test_substring_does_not_match():
+    # Whole-word guard: key 'FINES' must not match inside 'REFINES' / 'FINESSE'.
+    store = FakeStore(match_keys=[("f1", "FINES")])
+    assert _map(store, "REFINES the search query")[0] is None
+    assert _map(store, "add some FINESSE to it")[0] is None
+    # ...but the bare word does match.
+    assert _map(store, "feat: FINES accrual on overdue")[0] == "f1"
 
 
 def test_no_tag_and_no_key_is_unmapped():
