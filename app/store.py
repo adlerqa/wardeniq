@@ -764,12 +764,13 @@ class Store:
 
     # ---- features ------------------------------------------------------------
     def create_feature(self, name, project_id, sources, text, summary, embedding, key=None,
-                       group_id=None, version=1, version_diff=None):
+                       group_id=None, version=1, version_diff=None, match_key=None):
         if isinstance(sources, str):
             sources = [sources]
         from extract import extract_api_endpoints
         raw_api_spec = extract_api_endpoints(text)
         doc = {"name": name, "project_id": project_id, "key": key,
+               "match_key": ((match_key or "").strip().upper() or None),
                "sources": sources, "source": ", ".join(sources),
                "text": text, "summary": summary, "embedding": embedding,
                "raw_api_spec": raw_api_spec,
@@ -858,6 +859,28 @@ class Store:
             if best is None or v > best[1]:
                 best = (str(f["_id"]), v)
         return best[0] if best else None
+
+    def set_feature_match_key(self, fid, match_key):
+        """Set/clear a feature's manual PR match tag. Applied to every version in
+        the group so it survives regeneration. Stored UPPERCASE; blank clears."""
+        mk = (match_key or "").strip().upper() or None
+        f = self.features.find_one({"_id": ObjectId(fid)}, {"group_id": 1})
+        gid = (f or {}).get("group_id", fid)
+        self.features.update_many({"group_id": gid}, {"$set": {"match_key": mk}})
+        return mk
+
+    def features_with_match_key(self, project_id):
+        """Latest-version (feature_id, match_key) for every feature in the project
+        that has a manual PR match tag set."""
+        best = {}
+        for f in self.features.find(
+                {"project_id": project_id, "match_key": {"$nin": [None, ""]}},
+                {"_id": 1, "group_id": 1, "version": 1, "match_key": 1}):
+            gid = f.get("group_id", str(f["_id"]))
+            v = f.get("version", 1)
+            if gid not in best or v > best[gid][1]:
+                best[gid] = (str(f["_id"]), v, f.get("match_key"))
+        return [(fid, mk) for (fid, _v, mk) in best.values()]
 
     def epic_bound_group(self, project_id, epic_key, exclude_group_id=None):
         """Return the group_id of a feature already bound to `epic_key`, or None.

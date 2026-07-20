@@ -1176,7 +1176,7 @@ async function loadFeatureTicketOptions(){
 }
 async function showFeatureCreate(){
   $("#feature-list-page").hidden=true;$("#feature-create-page").hidden=false;$("#detail-card").hidden=true;
-  $("#f-name").value="";$("#f-key").innerHTML=`<option value="">No Jira ticket</option>`;$("#f-file").value="";$("#f-text").value="";$("#f-filelist").textContent="";$("#f-status").textContent="";$("#f-log").textContent="";$("#f-log").style.display="none";
+  $("#f-name").value="";$("#f-key").innerHTML=`<option value="">No Jira ticket</option>`;$("#f-file").value="";$("#f-text").value="";$("#f-filelist").textContent="";$("#f-status").textContent="";$("#f-log").textContent="";$("#f-log").style.display="none";if($("#f-match-key"))$("#f-match-key").value="";
   await loadFeatureTicketOptions();
   updateBackbar();
 }
@@ -1246,7 +1246,7 @@ $("#f-go").onclick=async()=>{
   const figmaList=splitLinks($("#f-figma"));
   if(!$("#f-file").files.length&&!$("#f-text").value.trim()&&!conflList.length&&!figmaList.length){
     fail("Add at least one source — upload a document, paste requirement text, or add a Confluence/Figma link.");return;}
-  const fd=new FormData();fd.append("name",name);fd.append("project_id",pid);fd.append("key",$("#f-key").value.trim());
+  const fd=new FormData();fd.append("name",name);fd.append("project_id",pid);fd.append("key",$("#f-key").value.trim());fd.append("match_key",(($("#f-match-key")&&$("#f-match-key").value)||"").trim());
   for(const f of $("#f-file").files)fd.append("files",f);fd.append("text",$("#f-text").value);
   fd.append("focus",JSON.stringify(focusVals()));
   conflList.forEach(u=>fd.append("confluence_url",u));
@@ -1516,10 +1516,28 @@ window.showAndScrollToTestCases = () => {
     el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 };
+function renderMatchKey(f){
+  const box=$("#d-match-key"); if(!box) return;
+  const cur=(f&&f.match_key)||"";
+  box.innerHTML=`<span title="PRs whose title/body contain [TAG] auto-map to this feature">PR match tag: </span>`+
+    `<input id="d-match-key-input" class="needs-editor" style="width:130px" placeholder="e.g. HOLDS" value="${esc(cur)}"/> `+
+    `<button class="ghost needs-editor" type="button" onclick="saveFeatureMatchKey()">Save</button> `+
+    `<span id="d-match-key-status" class="muted"></span>`;
+}
+window.saveFeatureMatchKey=async()=>{
+  if(!currentFeature) return;
+  const v=(($("#d-match-key-input")&&$("#d-match-key-input").value)||"").trim();
+  try{
+    const r=await api(`/api/features/${currentFeature}/match-key`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({match_key:v})});
+    if(currentFeatureData) currentFeatureData.match_key=r.match_key;
+    if($("#d-match-key-status"))$("#d-match-key-status").textContent=r.match_key?`saved · PRs tagged [${esc(r.match_key)}] map here`:"cleared";
+    toast("PR match tag "+(r.match_key?("set to ["+r.match_key+"]"):"cleared"));
+  }catch(e){ if($("#d-match-key-status"))$("#d-match-key-status").textContent=e.message||"failed"; toast(e.message||"failed",true); }
+};
 window.openFeature=async fid=>{try{const f=await api("/api/features/"+fid);currentFeature=fid;
   currentFeatureData=f;currentFeatureCases=f.test_cases||[];
   if($("#d-genbanner"))$("#d-genbanner").innerHTML="";
-  $("#feature-list-page").hidden=true;$("#feature-create-page").hidden=true;$("#detail-card").hidden=false;$("#d-name").textContent=f.name;
+  $("#feature-list-page").hidden=true;$("#feature-create-page").hidden=true;$("#detail-card").hidden=false;$("#d-name").textContent=f.name;renderMatchKey(f);
   const featureMeta=`Version ${f.version||1}${f.key?` · ${esc(f.key)}`:""} · ${f.test_cases.length} test case${f.test_cases.length===1?"":"s"}`;
   $("#d-meta").innerHTML="";
   $("#d-export").onclick=()=>bulkExportSelected("pdf");
