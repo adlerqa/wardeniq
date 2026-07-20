@@ -1540,7 +1540,7 @@ window.openFeature=async fid=>{try{const f=await api("/api/features/"+fid);curre
   $("#feature-list-page").hidden=true;$("#feature-create-page").hidden=true;$("#detail-card").hidden=false;$("#d-name").textContent=f.name;renderMatchKey(f);
   const featureMeta=`Version ${f.version||1}${f.key?` · ${esc(f.key)}`:""} · ${f.test_cases.length} test case${f.test_cases.length===1?"":"s"}`;
   $("#d-meta").innerHTML="";
-  $("#d-export").onclick=()=>bulkExportSelected("pdf");
+  $("#d-export").onclick=()=>bulkExportSelected("pdf");if($("#d-export-csv"))$("#d-export-csv").onclick=()=>bulkExportSelected("csv");
   $("#d-jira").style.display=f.key?"":"none";$("#d-jira").onclick=()=>syncJira(fid);
   // version switcher
   const vers=f.versions||[];
@@ -1689,6 +1689,19 @@ async function downloadFeatureExport(format, explicitIds=null){
   const url=URL.createObjectURL(new Blob([blob],{type:mime}));
   const a=document.createElement("a");
   a.href=url;a.download=`${(currentFeatureData?.name||"feature").replace(/[^a-z0-9]+/gi,"_").toLowerCase()}_test_cases.${ext}`;
+  document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+}
+async function downloadGapExport(kind, fmt){
+  if(!currentFeature){toast("Open a feature first",true);return;}
+  const mime=fmt==="pdf"?"application/pdf":"text/csv";
+  const res=await fetch(`/api/features/${currentFeature}/gap/${kind}/export/${fmt}`,{method:"GET"});
+  if(!res.ok){let detail="Export failed";try{detail=(await res.json()).detail||detail;}catch(e){}throw new Error(detail);}
+  const blob=await res.blob();
+  const url=URL.createObjectURL(new Blob([blob],{type:mime}));
+  const a=document.createElement("a");
+  const base=(currentFeatureData?.name||"feature").replace(/[^a-z0-9]+/gi,"_").toLowerCase();
+  const label=kind==="pr-coverage"?"pr_coverage":"automation_coverage";
+  a.href=url;a.download=`${base}_${label}.${fmt}`;
   document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
 }
 async function bulkExportSelected(format="pdf"){
@@ -4201,6 +4214,9 @@ async function initGap() {
   $("#gap-no-feature").style.display = "none";
   $("#gap-workspace").style.display = "block";
   $("#gap-feat-title").textContent = `${$("#d-name").textContent || "Feature"} — Gap Analysis`;
+  const _gx=(id,kind,fmt)=>{const a=$(id); if(a) a.onclick=(e)=>{e.preventDefault();downloadGapExport(kind,fmt).then(()=>toast("Export ready")).catch(err=>toast(err.message||"Export failed",true));};};
+  _gx("#gap-pr-export-csv","pr-coverage","csv"); _gx("#gap-pr-export-pdf","pr-coverage","pdf");
+  _gx("#gap-auto-export-csv","automation","csv"); _gx("#gap-auto-export-pdf","automation","pdf");
   switchGapTab(GAP_TAB);
 }
 
