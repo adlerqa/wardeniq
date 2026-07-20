@@ -700,3 +700,164 @@ def build_testcase_pdf(feature: dict, cases: list) -> bytes:
         story += [Spacer(1, 8), HRFlowable(color=BORDER, thickness=0.55, width="100%")]
     doc.build(story, onFirstPage=_page, onLaterPages=_page)
     return buf.getvalue()
+
+
+# ---- Gap Analysis exports (feature-level) -----------------------------------
+def _gap_table_pdf(title: str, subtitle: str, header: list, rows: list) -> bytes:
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=14 * mm, bottomMargin=16 * mm,
+                            leftMargin=12 * mm, rightMargin=12 * mm, title=title)
+    styles = _styles()
+    story = [Paragraph(_e(title), styles["section"]), Spacer(1, 2)]
+    if subtitle:
+        story += [Paragraph(_e(subtitle), styles["body_muted"]), Spacer(1, 8)]
+    data = [[Paragraph(f"<b>{_e(h)}</b>", styles["small"]) for h in header]]
+    for r in rows:
+        data.append([Paragraph(_e("" if c is None else str(c)), styles["small"]) for c in r])
+    table = Table(data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), PANEL),
+        ("BOX", (0, 0), (-1, -1), 0.55, BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.35, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    story.append(table)
+    doc.build(story, onFirstPage=_page, onLaterPages=_page)
+    return buf.getvalue()
+
+
+def _gap_csv(preamble: list, header: list, rows: list) -> bytes:
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    for line in preamble:
+        w.writerow(line)
+    if preamble:
+        w.writerow([])
+    w.writerow(header)
+    w.writerows(rows)
+    return buf.getvalue().encode("utf-8")
+
+
+def _pr_covmap(run: dict) -> dict:
+    """Map test_case_id -> status (covered/partial) for one PR coverage run."""
+    m = {}
+    for cc in ((run.get("result") or {}).get("covered") or []):
+        cid = cc.get("test_case_id") or cc.get("id")
+        if cid:
+            m[cid] = cc.get("status", "covered")
+    return m
+
+
+def _pr_detail_rows(runs: list, cases: list) -> list:
+    """One row per (PR x test case): covered/partial/missing, with commit + repo.
+
+    Excluded PRs (dropped from the coverage calculation) are still listed for a
+    full audit trail, flagged in the "Excluded" column."""
+    rows = []
+    for r in runs or []:
+        covmap = _pr_covmap(r)
+        commit = (r.get("head_sha", "") or "")[:7]
+        branch = r.get("pr_branch", "") or r.get("head_ref", "")
+        excluded = "Yes" if r.get("excluded") else "No"
+        for c in cases or []:
+            cid = c.get("id")
+            rows.append([r.get("pr_number", ""), r.get("repo_full_name", ""), branch, commit,
+                         c.get("display_id") or cid or "",
+                         _clean_summary(c.get("title", "")),
+                         _type_label(c.get("type", "")),
+                         covmap.get(cid, "missing"), excluded])
+    return rows
+
+
+def build_gap_pr_csv(feature: dict, runs: list, cases: list) -> bytes:
+    excluded_n = sum(1 for r in (runs or []) if r.get("excluded"))
+    return _gap_csv(
+        [["Feature", feature.get("name", "")], ["Version", feature.get("version", 1)],
+         ["Report", "PR Code Coverage (per PR x test case)"],
+         ["PRs", len(runs or [])], ["Excluded PRs (not counted in coverage)", excluded_n],
+         ["Test cases", len(cases or [])]],
+        ["PR #", "Repo", "Branch", "Commit", "Case ID", "Case Title", "Category", "Status", "Excluded"],
+        _pr_detail_rows(runs, cases))
+
+
+def build_gap_pr_pdf(feature: dict, runs: list, cases: list) -> bytes:
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=14 * mm, bottomMargin=16 * mm,
+                            leftMargin=12 * mm, rightMargin=12 * mm,
+                            title="PR Code Coverage - " + feature.get("name", ""))
+    styles = _styles()
+    story = [Paragraph(_e("PR Code Coverage - " + feature.get("name", "")), styles["section"]),
+             Spacer(1, 2),
+             Paragraph(_e("Version %s  |  %d PR(s)  |  %d test case(s)" % (
+                 feature.get("version", 1), len(runs or []), len(cases or []))), styles["body_muted"]),
+             Spacer(1, 8)]
+    if not runs:
+        story.append(Paragraph("No PR coverage runs yet.", styles["body_muted"]))
+    cell = TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), PANEL),
+        ("BOX", (0, 0), (-1, -1), 0.55, BORDER),
+        ("INNERGRID", (0, 0), (-1, -1), 0.35, BORDER),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ])
+    for r in runs or []:
+        covmap = _pr_covmap(r)
+        total = len(cases or [])
+        covered_n = sum(1 for c in (cases or []) if covmap.get(c.get("id")))
+        commit = (r.get("head_sha", "") or "")[:7]
+        prefix = "[EXCLUDED]  " if r.get("excluded") else ""
+        head = "%sPR #%s  |  %s  |  %s  -  %d/%d covered" % (
+            prefix, r.get("pr_number", ""), r.get("repo_full_name", ""), commit, covered_n, total)
+        story += [Spacer(1, 8), Paragraph(_e(head), styles["case_title"]), Spacer(1, 4)]
+        data = [[Paragraph("<b>%s</b>" % _e(h), styles["small"])
+                 for h in ["Case ID", "Title", "Category", "Status"]]]
+        for c in cases or []:
+            data.append([
+                Paragraph(_e(c.get("display_id") or c.get("id", "")), styles["small"]),
+                Paragraph(_e(_clean_summary(c.get("title", ""))), styles["small"]),
+                Paragraph(_e(_type_label(c.get("type", ""))), styles["small"]),
+                Paragraph(_e(covmap.get(c.get("id"), "missing")), styles["small"]),
+            ])
+        table = Table(data, repeatRows=1, colWidths=[26 * mm, 96 * mm, 28 * mm, 22 * mm])
+        table.setStyle(cell)
+        story.append(table)
+    doc.build(story, onFirstPage=_page, onLaterPages=_page)
+    return buf.getvalue()
+
+
+def _automation_rows(items: list) -> list:
+    rows = []
+    for it in items or []:
+        mt = it.get("match") or {}
+        loc = mt.get("repo_full_name", "")
+        if mt.get("file_path"):
+            loc = (loc + ":" if loc else "") + mt.get("file_path", "")
+        rows.append([it.get("display_id") or it.get("generated_id", "") or "",
+                     _clean_summary(it.get("generated_title", "")),
+                     _type_label(it.get("generated_type", "")),
+                     "Covered" if it.get("status") == "covered" else "Missing",
+                     loc, _clean_summary(mt.get("title", ""))])
+    return rows
+
+
+def build_gap_automation_csv(feature: dict, snapshot: dict) -> bytes:
+    snap = snapshot or {}
+    return _gap_csv(
+        [["Feature", feature.get("name", "")], ["Version", feature.get("version", 1)],
+         ["Report", "Automation Test Coverage"], ["Coverage %", snap.get("coverage_pct", 0)],
+         ["Covered", snap.get("covered_count", 0)], ["Missing", snap.get("missing_count", 0)],
+         ["Scanned repo", snap.get("scanned_repo_full_name", "")]],
+        ["Case ID", "Title", "Category", "Automation", "Test location", "Matched test"],
+        _automation_rows(snap.get("items", [])))
+
+
+def build_gap_automation_pdf(feature: dict, snapshot: dict) -> bytes:
+    snap = snapshot or {}
+    sub = (f"Version {feature.get('version', 1)} • {snap.get('coverage_pct', 0)}% covered"
+           f" • {snap.get('covered_count', 0)} covered / {snap.get('missing_count', 0)} missing")
+    rows = [[r[0], r[1], r[2], r[3], r[5]] for r in _automation_rows(snap.get("items", []))]
+    return _gap_table_pdf(f"Automation Test Coverage — {feature.get('name', '')}", sub,
+                          ["Case ID", "Title", "Category", "Automation", "Matched test"], rows)

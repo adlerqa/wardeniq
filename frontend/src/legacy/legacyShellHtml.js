@@ -325,7 +325,7 @@ export const LEGACY_SHELL_HTML = `
               <span class="version-combo"><span class="version-chip" id="d-version-chip">Version 1</span><button class="new-version-btn" id="d-newver" title="Create new version">+</button></span>
               <select id="d-version" style="display:none"></select>
               <button class="ghost" id="d-reuse-imports" type="button" title="Reuse imported sheet tests">↺ Reuse imported</button>
-              <button id="d-export" class="export-btn">Export</button>
+              <button id="d-export" class="export-btn">Export PDF</button><button id="d-export-csv" class="export-btn" type="button">Export CSV</button>
               <button class="ghost" id="d-regen" style="display:none">Regenerate</button>
               <button class="ghost" id="d-jira" style="display:none">Sync to Jira</button>
               <button class="ghost" id="d-rename" style="display:none">Rename</button>
@@ -841,7 +841,7 @@ export const LEGACY_SHELL_HTML = `
               <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
                 <h3 style="margin:0;font-size:14px">PR Coverage runs <span id="gap-pr-live" style="margin-left:6px;font-weight:400"></span></h3>
                 <div style="display:flex;gap:8px;align-items:center">
-                  <button class="ghost" id="gap-pr-refresh" type="button">Refresh</button>
+                  <button class="ghost" id="gap-pr-export-csv" type="button" title="Export PR coverage as CSV">Export CSV</button><button class="ghost" id="gap-pr-export-pdf" type="button" title="Export PR coverage as PDF">Export PDF</button><button class="ghost" id="gap-pr-refresh" type="button">Refresh</button>
                   <button class="go" id="gap-pr-manual" type="button">+ Run on a PR</button>
                 </div>
               </div>
@@ -864,7 +864,7 @@ export const LEGACY_SHELL_HTML = `
                 <h3 style="margin:0;font-size:14px">Automation Test Coverage</h3>
                 <div style="display:flex;gap:8px;align-items:center">
                   <span class="muted" id="gap-auto-summary" style="font-size:12px"></span>
-                  <button class="ghost" id="gap-auto-refresh" type="button">Refresh</button>
+                  <button class="ghost" id="gap-auto-export-csv" type="button" title="Export automation coverage as CSV">Export CSV</button><button class="ghost" id="gap-auto-export-pdf" type="button" title="Export automation coverage as PDF">Export PDF</button><button class="ghost" id="gap-auto-refresh" type="button">Refresh</button>
                 </div>
               </div>
               <div class="sub" style="margin:6px 0 12px">For each generated test case, wardenIQ finds the best-matching test in your connected <b>Test</b> repos (Playwright, Cypress, Cucumber, Jest, Pytest, Markdown, JSON, etc.) using a Jaccard prefilter + LLM verifier. Covered tests link to the exact file at the scanned commit.</div>

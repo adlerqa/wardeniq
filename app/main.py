@@ -5920,6 +5920,45 @@ def feature_export_selected_pdf(fid: str, body: dict):
                     headers={"Content-Disposition": f'attachment; filename="selected_test_cases_{fid}.pdf"'})
 
 
+@app.get("/api/features/{fid}/gap/pr-coverage/export/{fmt}")
+def export_gap_pr_coverage(fid: str, fmt: str):
+    import report
+    f = store.get_feature(fid)
+    if not f:
+        raise HTTPException(404, "feature not found")
+    runs = store.list_code_coverage_runs(feature_id=fid, limit=500)
+    # Flag PRs excluded from coverage (feature ships in the exclude-PR change);
+    # guarded so this export works standalone until that lands.
+    excluded_keys = (store.excluded_pr_run_keys(fid)
+                     if hasattr(store, "excluded_pr_run_keys") else set())
+    for r in runs:
+        r["excluded"] = (r.get("repo_id"), str(r.get("pr_number"))) in excluded_keys
+    cases = store.cases_brief(store.feature_test_case_ids(fid))
+    if fmt == "csv":
+        return Response(content=report.build_gap_pr_csv(f, runs, cases), media_type="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="gap-pr-coverage-{fid}.csv"'})
+    if fmt == "pdf":
+        return Response(content=report.build_gap_pr_pdf(f, runs, cases), media_type="application/pdf",
+                        headers={"Content-Disposition": f'attachment; filename="gap-pr-coverage-{fid}.pdf"'})
+    raise HTTPException(400, "format must be csv or pdf")
+
+
+@app.get("/api/features/{fid}/gap/automation/export/{fmt}")
+def export_gap_automation(fid: str, fmt: str):
+    import report
+    f = store.get_feature(fid)
+    if not f:
+        raise HTTPException(404, "feature not found")
+    snap = store.get_automation_coverage(fid, version=f.get("version", 1)) or {}
+    if fmt == "csv":
+        return Response(content=report.build_gap_automation_csv(f, snap), media_type="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="gap-automation-{fid}.csv"'})
+    if fmt == "pdf":
+        return Response(content=report.build_gap_automation_pdf(f, snap), media_type="application/pdf",
+                        headers={"Content-Disposition": f'attachment; filename="gap-automation-{fid}.pdf"'})
+    raise HTTPException(400, "format must be csv or pdf")
+
+
 @app.get("/api/features/{fid}/export/csv")
 def feature_export_csv(fid: str):
     import report
