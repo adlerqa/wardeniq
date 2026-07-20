@@ -5927,6 +5927,12 @@ def export_gap_pr_coverage(fid: str, fmt: str):
     if not f:
         raise HTTPException(404, "feature not found")
     runs = store.list_code_coverage_runs(feature_id=fid, limit=500)
+    # Flag PRs excluded from coverage (feature ships in the exclude-PR change);
+    # guarded so this export works standalone until that lands.
+    excluded_keys = (store.excluded_pr_run_keys(fid)
+                     if hasattr(store, "excluded_pr_run_keys") else set())
+    for r in runs:
+        r["excluded"] = (r.get("repo_id"), str(r.get("pr_number"))) in excluded_keys
     cases = store.cases_brief(store.feature_test_case_ids(fid))
     if fmt == "csv":
         return Response(content=report.build_gap_pr_csv(f, runs, cases), media_type="text/csv",

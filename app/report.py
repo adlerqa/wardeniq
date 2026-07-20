@@ -751,28 +751,34 @@ def _pr_covmap(run: dict) -> dict:
 
 
 def _pr_detail_rows(runs: list, cases: list) -> list:
-    """One row per (PR x test case): covered/partial/missing, with commit + repo."""
+    """One row per (PR x test case): covered/partial/missing, with commit + repo.
+
+    Excluded PRs (dropped from the coverage calculation) are still listed for a
+    full audit trail, flagged in the "Excluded" column."""
     rows = []
     for r in runs or []:
         covmap = _pr_covmap(r)
         commit = (r.get("head_sha", "") or "")[:7]
         branch = r.get("pr_branch", "") or r.get("head_ref", "")
+        excluded = "Yes" if r.get("excluded") else "No"
         for c in cases or []:
             cid = c.get("id")
             rows.append([r.get("pr_number", ""), r.get("repo_full_name", ""), branch, commit,
                          c.get("display_id") or cid or "",
                          _clean_summary(c.get("title", "")),
                          _type_label(c.get("type", "")),
-                         covmap.get(cid, "missing")])
+                         covmap.get(cid, "missing"), excluded])
     return rows
 
 
 def build_gap_pr_csv(feature: dict, runs: list, cases: list) -> bytes:
+    excluded_n = sum(1 for r in (runs or []) if r.get("excluded"))
     return _gap_csv(
         [["Feature", feature.get("name", "")], ["Version", feature.get("version", 1)],
          ["Report", "PR Code Coverage (per PR x test case)"],
-         ["PRs", len(runs or [])], ["Test cases", len(cases or [])]],
-        ["PR #", "Repo", "Branch", "Commit", "Case ID", "Case Title", "Category", "Status"],
+         ["PRs", len(runs or [])], ["Excluded PRs (not counted in coverage)", excluded_n],
+         ["Test cases", len(cases or [])]],
+        ["PR #", "Repo", "Branch", "Commit", "Case ID", "Case Title", "Category", "Status", "Excluded"],
         _pr_detail_rows(runs, cases))
 
 
@@ -802,8 +808,9 @@ def build_gap_pr_pdf(feature: dict, runs: list, cases: list) -> bytes:
         total = len(cases or [])
         covered_n = sum(1 for c in (cases or []) if covmap.get(c.get("id")))
         commit = (r.get("head_sha", "") or "")[:7]
-        head = "PR #%s  |  %s  |  %s  -  %d/%d covered" % (
-            r.get("pr_number", ""), r.get("repo_full_name", ""), commit, covered_n, total)
+        prefix = "[EXCLUDED]  " if r.get("excluded") else ""
+        head = "%sPR #%s  |  %s  |  %s  -  %d/%d covered" % (
+            prefix, r.get("pr_number", ""), r.get("repo_full_name", ""), commit, covered_n, total)
         story += [Spacer(1, 8), Paragraph(_e(head), styles["case_title"]), Spacer(1, 4)]
         data = [[Paragraph("<b>%s</b>" % _e(h), styles["small"])
                  for h in ["Case ID", "Title", "Category", "Status"]]]
