@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### Fixed
+- **`install.ps1` could misreport "Docker daemon isn't running" when Docker was
+  actually fine.** The pre-flight check wrapped `docker info` in `try/catch`; on
+  PowerShell 7+, `$PSNativeCommandUseErrorActionPreference` (default `$true`)
+  treats any stderr output from a native command as a terminating error when
+  `$ErrorActionPreference = "Stop"` is set (as this script does) — and `docker
+  info` routinely prints benign `WARNING:` lines to stderr (blkio throttle
+  support, cgroup v1 deprecation, etc.) even on success, tripping the catch
+  block. Found live on a Windows machine where `docker info` worked fine
+  directly but the installer still refused to proceed. Now checks
+  `$LASTEXITCODE` explicitly for both the `docker compose version` and
+  `docker info` checks instead of relying on exception-throwing behavior that
+  varies by PowerShell version.
+
 ### Added
 - **Installer validates the bring-your-own `MONGO_URI` instead of accepting
   anything.** Previously the "Bring your own DB" prompt in `install.sh`/`install.ps1`

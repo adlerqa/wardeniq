@@ -105,10 +105,19 @@ function MongoUriReachable($u) {
 }
 
 # -- pre-flight --------------------------------------------------------------
+# NOTE: checking $LASTEXITCODE explicitly rather than try/catch around the native
+# call. On PowerShell 7+, $PSNativeCommandUseErrorActionPreference (default $true)
+# treats ANY stderr output from a native command as a terminating error when
+# $ErrorActionPreference = "Stop" is set (as it is, above) -- and `docker info`
+# routinely prints benign WARNING lines to stderr (blkio support, cgroup v1
+# deprecation, etc.) even when it succeeds. That previously tripped this catch
+# block and reported "daemon isn't running" for a daemon that was actually fine.
 Say "wardenIQ installer"
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Die "Docker is required - install Docker Desktop first." }
-try { docker compose version *> $null } catch { Die "Docker Compose v2 is required (comes with Docker Desktop)." }
-try { docker info *> $null } catch { Die "Docker is installed but the daemon isn't running - start Docker Desktop and re-run." }
+docker compose version *> $null
+if ($LASTEXITCODE -ne 0) { Die "Docker Compose v2 is required (comes with Docker Desktop)." }
+docker info *> $null
+if ($LASTEXITCODE -ne 0) { Die "Docker is installed but the daemon isn't running - start Docker Desktop and re-run." }
 
 # -- deployment mode ---------------------------------------------------------
 if ($Bundled) { $Mode = "bundled" }
