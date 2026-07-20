@@ -4327,14 +4327,20 @@ async function loadGapPrRuns(opts) {
       const when = ts ? new Date(ts*1000).toLocaleString() : "";
       const prTitle = esc(run.pr_title || `PR #${run.pr_number}`);
       const rerunBadge = run.needs_rerun ? '<span class="badge nfr" style="color:var(--amber)">NEEDS RERUN</span>' : '';
-      return `<div class="repo-item-card" style="cursor:pointer" onclick="openGapPrRun('${run.id}')">
+      const excluded = !!run.excluded;
+      const exclBadge = excluded ? '<span class="badge" style="background:#3a2a20;color:var(--amber)">EXCLUDED</span>' : '';
+      const exclBtn = run.pr_id
+        ? `<button class="ghost needs-editor" type="button" title="${excluded?'Count this PR in coverage again':'Ignore this PR in coverage'}" style="font-size:11px;padding:3px 9px;margin-top:5px" onclick="event.stopPropagation();togglePrExcluded('${run.pr_id}',${excluded?'false':'true'})">${excluded?'Include':'Exclude'}</button>`
+        : '';
+      return `<div class="repo-item-card" style="cursor:pointer${excluded?';opacity:.55':''}" onclick="openGapPrRun('${run.id}')">
         <div style="flex:1">
-          <div><b>#${run.pr_number}</b> · ${prTitle} ${statusBadge} ${rerunBadge}</div>
+          <div><b>#${run.pr_number}</b> · ${prTitle} ${statusBadge} ${rerunBadge} ${exclBadge}</div>
           <div class="muted" style="font-size:11px;margin-top:3px">${esc(run.repo_full_name||"")} · branch <b>${esc(run.pr_branch||"")}</b> · ${esc(when)}</div>
         </div>
         <div style="text-align:right">
           <div><b>${covered}/${total}</b> covered</div>
           <div class="muted" style="font-size:11px">${pct}% · ${run.source||"webhook"}</div>
+          ${exclBtn}
         </div>
       </div>`;
     }).join("");
@@ -4344,6 +4350,20 @@ async function loadGapPrRuns(opts) {
     _scheduleGapPrPoll(false);   // keep retrying slowly on transient errors
   }
 }
+
+window.togglePrExcluded = async (prId, excluded) => {
+  if (!prId) { toast("PR id unavailable for this run", true); return; }
+  try {
+    await api(`/api/prs/${prId}/exclude`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ excluded })
+    });
+    toast(excluded ? "PR excluded from coverage" : "PR included in coverage");
+    loadGapPrRuns();
+    // Refresh the feature's coverage card so the % reflects the change.
+    if (currentFeature && typeof loadCoverage === "function") loadCoverage(currentFeature);
+  } catch (e) { toast(e.message || "Could not update PR", true); }
+};
 
 window.toggleCovMode = (btn, section, mode) => {
   const container = btn.closest('.case-group-body');

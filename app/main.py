@@ -3715,9 +3715,11 @@ def list_feature_code_coverage_runs(fid: str, limit: int = 50):
     runs = store.list_code_coverage_runs(feature_id=fid, limit=limit)
     feature = store.get_feature(fid)
     feat_updated = (feature or {}).get("updated_at", 0)
+    excluded_keys = store.excluded_pr_run_keys(fid)
     for r in runs:
         run_done = r.get("completed_at") or r.get("created_at") or 0
         r["needs_rerun"] = bool(feat_updated and feat_updated > run_done)
+        r["excluded"] = (r.get("repo_id"), str(r.get("pr_number"))) in excluded_keys
     return {"runs": runs}
 
 
@@ -3801,6 +3803,23 @@ def reassign_code_coverage_run(rid: str, body: ReassignIn):
         label=f"Coverage · reassign to {feature.get('name')}",
         project_id=run.get("project_id"), feature_id=body.feature_id)
     return {"ok": True, "job_id": jid}
+
+
+class ExcludePrIn(BaseModel):
+    excluded: bool = True
+
+
+@app.post("/api/prs/{pr_id}/exclude")
+def exclude_pr(pr_id: str, body: ExcludePrIn):
+    """Exclude (or re-include) a PR from a feature's Gap Analysis coverage.
+
+    Excluded PRs stay visible in the Gap Analysis list (flagged) but no longer
+    contribute to the feature's aggregate code coverage — lets a QA lead drop
+    an outdated/junk PR and have coverage recompute immediately."""
+    res = store.set_pr_excluded(pr_id, body.excluded)
+    if res is None:
+        raise HTTPException(404, "PR not found")
+    return res
 
 
 _GH_PR_RE = re.compile(r"github\.com/([^/]+/[^/]+)/pull/(\d+)", re.IGNORECASE)
@@ -6470,6 +6489,9 @@ def sync_repo(rid: str):
         return
     try:
         token = project_github_token(repo.get("project_id"))
+        # Ingest ALL PRs (including already-merged ones) — a feature may have
+        # merged PRs from before it was tracked in wardenIQ. Users can exclude
+        # individual PRs from Gap Analysis afterwards (see set_pr_excluded).
         pulls = github.GitHub(token, GITHUB_API).list_pulls(
             repo["owner"], repo["name"], state="all", per_page=30)
     except Exception as e:  # noqa: BLE001
