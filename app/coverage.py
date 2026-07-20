@@ -101,7 +101,9 @@ def map_pr_to_feature(store, jira, pr, project_id):
          a direct Epic -> map ('epic'); else resolve a ticket's parent Epic via
          Jira -> map ('ticket->epic').
       2. Manual PR match tag (Jira-independent): a feature's `match_key` present as
-         a bracketed tag (e.g. "[HOLDS]") in the PR title/body -> map ('tag').
+         a whole word (case-insensitive) in the PR title/body -> map ('tag').
+         e.g. match_key "FINES" matches "FINES", "[FINES]" or "FINES:" but NOT
+         "REFINES"/"FINESSE" (guards against accidental substring matches).
     No semantic/embedding fallback: if nothing resolves, the PR is left unmapped
     (a miss is preferred over a wrong guess)."""
     keys = extract_keys(pr.get("title", ""), pr.get("body", ""))
@@ -116,11 +118,21 @@ def map_pr_to_feature(store, jira, pr, project_id):
                 fid = store.feature_by_epic(project_id, epic)
                 if fid:
                     return fid, 1.0, f"ticket:{key}->epic:{epic}"
-    haystack = f"{pr.get('title', '')} {pr.get('body', '')}".upper()
+    haystack = f"{pr.get('title', '')} {pr.get('body', '')}"
     try:
         for fid, mk in store.features_with_match_key(project_id):
-            if mk and f"[{str(mk).upper()}]" in haystack:
-                return fid, 1.0, f"tag:[{str(mk).upper()}]"
+            tag = str(mk or "").strip()
+            if not tag:
+                continue
+            # Match the tag as a whole token (case-insensitive): surrounding
+            # brackets/colons/spaces all count as boundaries, so "FINES",
+            # "[FINES]" and "FINES:" match, but "REFINES"/"FINESSE" do not.
+            if re.search(
+                rf"(?<![A-Za-z0-9]){re.escape(tag)}(?![A-Za-z0-9])",
+                haystack,
+                re.IGNORECASE,
+            ):
+                return fid, 1.0, f"tag:{tag.upper()}"
     except Exception:  # noqa: BLE001 -- mapping must never crash PR ingest
         pass
     return None, 0.0, "unmapped"
