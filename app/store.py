@@ -3342,6 +3342,25 @@ class Store:
         self.prs.update_one({"_id": ObjectId(pr_id)}, {"$set": {
             "feature_id": feature_id, "mapping_confidence": confidence, "mapping_method": method}})
 
+    def set_pr_excluded(self, pr_id, excluded: bool):
+        """Exclude/include a PR from Gap Analysis coverage. Excluded PRs remain
+        listed (flagged) but do not contribute to a feature's coverage."""
+        if not ObjectId.is_valid(pr_id):
+            return None
+        self.prs.update_one({"_id": ObjectId(pr_id)},
+                            {"$set": {"excluded": bool(excluded)}})
+        p = self.prs.find_one({"_id": ObjectId(pr_id)})
+        return {"id": pr_id, "excluded": bool(p.get("excluded"))} if p else None
+
+    def excluded_pr_run_keys(self, feature_id):
+        """Set of (repo_id, str(pr_number)) for PRs excluded from a feature —
+        used to flag/skip their coverage runs in the Gap Analysis list."""
+        keys = set()
+        for p in self.prs.find({"feature_id": feature_id, "excluded": True},
+                               {"repo_id": 1, "number": 1}):
+            keys.add((p.get("repo_id"), str(p.get("number"))))
+        return keys
+
     def list_prs(self, project_id=None, feature_id=None):
         q = {}
         if project_id:
@@ -3504,7 +3523,9 @@ class Store:
         """Aggregate coverage for a feature across all mapped PRs."""
         all_cases = self.feature_test_case_ids(fid)
         covered_ids, dev_tested_ids, pr_rows = set(), set(), []
-        prs = self.list_prs(feature_id=fid)
+        # Excluded PRs are ignored in coverage (still visible in Gap Analysis,
+        # flagged) — a QA lead can drop outdated/junk PRs from the calculation.
+        prs = [p for p in self.list_prs(feature_id=fid) if not p.get("excluded")]
         repos_seen = {}
         evidence = []   # per covered (case, PR) with link + rationale
         for pr in prs:
