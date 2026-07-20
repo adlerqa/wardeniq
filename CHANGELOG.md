@@ -20,6 +20,24 @@
   examples with notes on why single-quoted heredocs matter (no `$` expansion).
 
 ### Fixed
+- **`scripts/enable-mongo-auth.sh` could enforce MongoDB auth before the app/root
+  users actually existed, breaking the app.** `config/setup-replica-set.sh` created
+  its admin users by connecting directly to `mongod1` with no check that it was
+  actually the current PRIMARY. On an already-initialized replica set (e.g. re-running
+  the script, or right after `mongod-setup` restarts) `mongod1` can briefly be a
+  secondary, so every `createUser`/`updateUser` call failed with `not primary` and was
+  silently skipped — the script then proceeded to enforce keyfile auth anyway, leaving
+  `warden-app` unable to authenticate (`Authentication failed`) with no automatic
+  recovery short of a full `--reset`. A re-run then compounded it: once auth was
+  enforced, the script's error handling treated any `Unauthorized` response as "user
+  already exists," masking that the users were never created. Fixed:
+  - `setup-replica-set.sh` now waits for an actual PRIMARY (mongod1 has the highest
+    priority and reliably reclaims it) before any user-creation call, on both the
+    fresh-init and already-initialized paths.
+  - User creation now reports one of `created` / `synced` / `NEEDS_AUTH` / an explicit
+    error instead of assuming success; on `NEEDS_AUTH` it retries authenticated as the
+    root user (covering legitimate re-runs/rotation) and prints an actionable warning
+    if that still fails, rather than silently claiming the user is fine.
 - **App-only install no longer points at a non-existent Ollama container.** The
   plain installer (`irm ... | iex` / `curl ... | bash`, no `-Bundled`/`--bundled`)
   downloads only `docker-compose.app.yml` — there is no bundled `ollama` service —
