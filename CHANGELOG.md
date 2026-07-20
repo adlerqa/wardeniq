@@ -38,6 +38,19 @@
     error instead of assuming success; on `NEEDS_AUTH` it retries authenticated as the
     root user (covering legitimate re-runs/rotation) and prints an actionable warning
     if that still fails, rather than silently claiming the user is fine.
+  - Follow-up: the retry-as-root call itself could crash the whole script (uncaught
+    `set -e` exit, surfacing as a raw Python traceback from the container entrypoint)
+    when root doesn't exist yet — e.g. `MONGO_AUTH_ENABLED`/`COMPOSE_FILE` left pinned
+    in `.env` from a prior `enable-mongo-auth.sh` run, then `run.sh --reset` wipes the
+    data volume but boots mongod straight into keyfile auth with zero users, which
+    can't be bootstrapped remotely (the localhost exception doesn't apply across the
+    Docker network). Now every such mongosh call is guarded so a hard connection/auth
+    failure can't kill the script, the replica-set state check no longer misclassifies
+    an auth-required error as "already initialized," and this specific dead-end state
+    prints one clear diagnostic (remove `config/keyfile` + the auth entries in `.env`,
+    re-run) instead of a stack trace. Verified with a mocked `mongosh` covering the
+    normal (auth off), fresh-auth-enabled, and this stuck-state path — all now exit 0
+    with actionable output instead of crashing.
 - **App-only install no longer points at a non-existent Ollama container.** The
   plain installer (`irm ... | iex` / `curl ... | bash`, no `-Bundled`/`--bundled`)
   downloads only `docker-compose.app.yml` — there is no bundled `ollama` service —

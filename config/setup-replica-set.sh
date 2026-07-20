@@ -41,17 +41,31 @@ try { rs.status(); print('INITIALIZED'); }
 catch (e) { if (e.code===94 || e.message.includes('no replset config')) print('NOT_INITIALIZED'); else print('ERR ' + e.message); }
 " | tail -1)
 
-if [ "$RS" = "NOT_INITIALIZED" ]; then
-  echo "[setup] initiating 3-member replica set rs0..."
-  mongosh "mongodb://${SEED}/" --quiet --eval "
-  rs.initiate({ _id: 'rs0', members: [
-    { _id: 0, host: '${M1}', priority: 2 },
-    { _id: 1, host: '${M2}', priority: 1 },
-    { _id: 2, host: '${M3}', priority: 1 }
-  ]});"
-else
-  echo "[setup] replica set already initialized"
-fi
+# Only "INITIALIZED" and "NOT_INITIALIZED" are real, known states -- anything else
+# (an 'ERR ...' string, e.g. 'requires authentication') used to fall into the same
+# else branch as 'already initialized', which is wrong: it usually means mongod
+# booted with the keyfile already active on an EMPTY, never-initiated data volume
+# (e.g. auth was left enabled in .env/COMPOSE_FILE after a `run.sh --reset` wipe).
+# That can't be recovered remotely (the localhost exception that normally bootstraps
+# a fresh auth-enabled deployment doesn't apply across the Docker network), so say
+# so clearly instead of silently limping through confusing follow-on failures.
+case "$RS" in
+  NOT_INITIALIZED)
+    echo "[setup] initiating 3-member replica set rs0..."
+    mongosh "mongodb://${SEED}/" --quiet --eval "
+    rs.initiate({ _id: 'rs0', members: [
+      { _id: 0, host: '${M1}', priority: 2 },
+      { _id: 1, host: '${M2}', priority: 1 },
+      { _id: 2, host: '${M3}', priority: 1 }
+    ]});" || true
+    ;;
+  INITIALIZED)
+    echo "[setup] replica set already initialized"
+    ;;
+  *)
+    echo "[setup] WARNING: could not determine replica-set state ($RS) — mongod likely already requires authentication on a data volume that was never initialized (e.g. auth was left on in .env/COMPOSE_FILE after a --reset wipe). This can't be bootstrapped remotely. Recover by removing config/keyfile and any MONGO_AUTH_ENABLED/COMPOSE_FILE auth entries from .env, then re-run." >&2
+    ;;
+esac
 wait_for_primary || true
 
 # mongot authenticates to mongod as this user (official self-managed role).
@@ -109,6 +123,7 @@ case "$RESULT" in
   created) echo "[setup] ${MONGOT_USER}: user created" ;;
   synced)  echo "[setup] ${MONGOT_USER}: user exists — password synced" ;;
   NEEDS_AUTH) echo "[setup] WARNING: ${MONGOT_USER} needs auth to fix and no working root credentials were available — mongot will fail to authenticate. Disable auth (drop config/keyfile, unset MONGO_AUTH_ENABLED) and re-run to recover." >&2 ;;
+  "") echo "[setup] WARNING: ${MONGOT_USER}: could not connect at all (auth enforced with no working credentials, e.g. root doesn't exist yet). mongot will fail to authenticate. Disable auth (drop config/keyfile, unset MONGO_AUTH_ENABLED/COMPOSE_FILE in .env) and re-run to recover." >&2 ;;
   *) echo "[setup] WARNING: ${MONGOT_USER}: $RESULT" >&2 ;;
 esac
 
@@ -141,18 +156,32 @@ if [ "${MONGO_AUTH_ENABLED:-false}" = "true" ]; then
     ensure(e.MONGO_ROOT_USER, e.MONGO_ROOT_PASSWORD, [{role:"root", db:"admin"}]);
     ensure(e.MONGO_APP_USER,  e.MONGO_APP_PASSWORD,  [{role:"root", db:"admin"}]);
   '
+  # NOTE: these command substitutions are NOT piped through `tail` (unlike
+  # _run_ensure_js above), so under `set -e` a hard mongosh connection/auth
+  # failure (not just a JS-level error caught inside AUTH_JS) would otherwise kill
+  # the whole script outright -- `|| AUTH_RESULT=""` guards every one of them.
   AUTH_RESULT=$(MONGO_ROOT_USER="$MONGO_ROOT_USER" MONGO_ROOT_PASSWORD="$MONGO_ROOT_PASSWORD" \
     MONGO_APP_USER="$MONGO_APP_USER" MONGO_APP_PASSWORD="$MONGO_APP_PASSWORD" \
-    mongosh "mongodb://${SEED}/" --quiet --eval "$AUTH_JS" 2>/dev/null)
+    mongosh "mongodb://${SEED}/" --quiet --eval "$AUTH_JS" 2>/dev/null) || AUTH_RESULT=""
   if echo "$AUTH_RESULT" | grep -q "NEEDS_AUTH"; then
     # Retry authenticated as root — covers the legitimate re-run/rotation case AND
-    # recovers from a prior run that enforced auth before the users existed.
+    # recovers from a prior run that enforced auth before the users existed. If
+    # root itself doesn't exist yet, this connection attempt fails outright rather
+    # than throwing a catchable JS error, so guard it and keep the original
+    # (pre-retry) AUTH_RESULT -- it still has the ':NEEDS_AUTH' lines the loop
+    # below reports clearly, instead of losing the diagnostic entirely.
     ROOT_URI="mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@${SEED}/?authSource=admin"
-    AUTH_RESULT=$(MONGO_ROOT_USER="$MONGO_ROOT_USER" MONGO_ROOT_PASSWORD="$MONGO_ROOT_PASSWORD" \
+    RETRY_RESULT=$(MONGO_ROOT_USER="$MONGO_ROOT_USER" MONGO_ROOT_PASSWORD="$MONGO_ROOT_PASSWORD" \
       MONGO_APP_USER="$MONGO_APP_USER" MONGO_APP_PASSWORD="$MONGO_APP_PASSWORD" \
-      mongosh "$ROOT_URI" --quiet --eval "$AUTH_JS" 2>/dev/null)
+      mongosh "$ROOT_URI" --quiet --eval "$AUTH_JS" 2>/dev/null) || RETRY_RESULT=""
+    if [ -n "$RETRY_RESULT" ]; then
+      AUTH_RESULT="$RETRY_RESULT"
+    else
+      echo "[setup] WARNING: could not connect as root (${MONGO_ROOT_USER}) either — auth is enforced with no working credentials (often means auth was left on after a database wipe). Recover by removing config/keyfile and any MONGO_AUTH_ENABLED/COMPOSE_FILE auth entries from .env, then re-run." >&2
+    fi
   fi
   echo "$AUTH_RESULT" | while IFS= read -r line; do
+    [ -z "$line" ] && continue
     case "$line" in
       *:NEEDS_AUTH) echo "[setup] WARNING: $line — root credentials didn't work either; auth is enforced with no working user. Disable auth (drop config/keyfile) and re-run to recover." >&2 ;;
       *:err\ *) echo "[setup] WARNING: $line" >&2 ;;
