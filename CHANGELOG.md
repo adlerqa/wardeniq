@@ -4,17 +4,27 @@
 
 ### Fixed
 - **`install.ps1` could misreport "Docker daemon isn't running" when Docker was
-  actually fine.** The pre-flight check wrapped `docker info` in `try/catch`; on
-  PowerShell 7+, `$PSNativeCommandUseErrorActionPreference` (default `$true`)
-  treats any stderr output from a native command as a terminating error when
-  `$ErrorActionPreference = "Stop"` is set (as this script does) — and `docker
-  info` routinely prints benign `WARNING:` lines to stderr (blkio throttle
-  support, cgroup v1 deprecation, etc.) even on success, tripping the catch
-  block. Found live on a Windows machine where `docker info` worked fine
-  directly but the installer still refused to proceed. Now checks
-  `$LASTEXITCODE` explicitly for both the `docker compose version` and
-  `docker info` checks instead of relying on exception-throwing behavior that
-  varies by PowerShell version.
+  actually fine, then crash outright once that was "fixed."** The pre-flight
+  check wrapped `docker info` in `try/catch`. Under this script's
+  `$ErrorActionPreference = "Stop"`, any stderr output from a native command —
+  even benign `WARNING:` lines `docker info` prints on success (blkio throttle
+  support, cgroup v1 deprecation, etc.) — becomes a terminating error. This is
+  general PowerShell native-command behavior, not a PS7-only
+  `$PSNativeCommandUseErrorActionPreference` thing (reproduced on Windows
+  PowerShell 5.1). First attempt removed the `try/catch` and checked
+  `$LASTEXITCODE` instead, but that alone doesn't help — the stderr line still
+  throws before the `$LASTEXITCODE` line is ever reached, so it just turned a
+  misleading "daemon isn't running" message into an unhandled
+  `NativeCommandError` crash, confirmed live on the same Windows machine.
+  Fixed properly with a `RunNative` helper that temporarily sets
+  `$ErrorActionPreference = "SilentlyContinue"` around each native `docker`/
+  `docker compose` call (restoring it afterward) so stderr output no longer
+  terminates the script, then checks `$LASTEXITCODE` for the real result.
+  Applied to the pre-flight `docker compose version`/`docker info` checks and,
+  proactively, to every other unguarded native call later in the script
+  (`docker compose down`, `docker pull`, `docker compose pull`,
+  `docker compose up`) since they were equally exposed and just hadn't been
+  hit yet.
 
 ### Added
 - **Installer validates the bring-your-own `MONGO_URI` instead of accepting

@@ -41,6 +41,21 @@ function Info($m) { Write-Host "    $m" }
 function Warn($m) { Write-Host "!! $m" -ForegroundColor Yellow }
 function Die($m)  { Write-Host "xx $m" -ForegroundColor Red; exit 1 }
 
+# RunNative { scriptblock } -> runs a native command (docker, docker compose, ...)
+# with $ErrorActionPreference temporarily relaxed, then restores it. Needed
+# because with the script's global $ErrorActionPreference = "Stop", ANY stderr
+# output from a native command becomes an unhandled terminating error -- even
+# on success. docker/docker compose routinely print benign lines to stderr
+# (blkio/cgroup warnings on `docker info`, pull progress, compose status), which
+# previously crashed the installer outright (or, wrapped in try/catch, made a
+# working Docker daemon look broken). $LASTEXITCODE still reflects the command's
+# real exit code afterward -- callers check that for actual failures.
+function RunNative([scriptblock]$Cmd) {
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    try { & $Cmd } finally { $ErrorActionPreference = $prevEap }
+}
+
 function Ask($q, $def) {
     if (-not $Interactive) { return $def }
     $suffix = if ($def) { " [$def]" } else { "" }
@@ -105,18 +120,22 @@ function MongoUriReachable($u) {
 }
 
 # -- pre-flight --------------------------------------------------------------
-# NOTE: checking $LASTEXITCODE explicitly rather than try/catch around the native
-# call. On PowerShell 7+, $PSNativeCommandUseErrorActionPreference (default $true)
-# treats ANY stderr output from a native command as a terminating error when
-# $ErrorActionPreference = "Stop" is set (as it is, above) -- and `docker info`
-# routinely prints benign WARNING lines to stderr (blkio support, cgroup v1
-# deprecation, etc.) even when it succeeds. That previously tripped this catch
-# block and reported "daemon isn't running" for a daemon that was actually fine.
+# NOTE: native docker calls are run via RunNative (see above), which relaxes
+# $ErrorActionPreference for the duration of the call. Under this script's
+# global $ErrorActionPreference = "Stop", ANY stderr output from a native
+# command -- even on PowerShell 5.1, not just PS7's
+# $PSNativeCommandUseErrorActionPreference -- is treated as a terminating
+# error. `docker info` routinely prints benign WARNING lines to stderr (blkio
+# support, cgroup v1 deprecation, etc.) even when it succeeds, which previously
+# either tripped a try/catch (misreporting "daemon isn't running" for a daemon
+# that was fine) or, once try/catch was removed, crashed the script outright
+# with an unhandled NativeCommandError. $LASTEXITCODE still reflects the real
+# exit code and is what's checked below.
 Say "wardenIQ installer"
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Die "Docker is required - install Docker Desktop first." }
-docker compose version *> $null
+RunNative { docker compose version *> $null }
 if ($LASTEXITCODE -ne 0) { Die "Docker Compose v2 is required (comes with Docker Desktop)." }
-docker info *> $null
+RunNative { docker info *> $null }
 if ($LASTEXITCODE -ne 0) { Die "Docker is installed but the daemon isn't running - start Docker Desktop and re-run." }
 
 # -- deployment mode ---------------------------------------------------------
@@ -242,13 +261,20 @@ if ($Mode -eq "bundled") {
 }
 
 # -- cleanup previous run + pull fresh ---------------------------------------
+# All of these go through RunNative (see helper near the top): docker/compose
+# routinely write status/progress lines to stderr, which -- even redirected
+# with `2>$null` or `*>$null` -- still get promoted to a terminating
+# NativeCommandError under this script's $ErrorActionPreference = "Stop".
+# Redirection alone does not prevent that; only relaxing $ErrorActionPreference
+# for the duration of the call does.
 Say "cleaning up any previous wardenIQ containers"
-if ($DoWipe -eq "yes") { docker @Compose down -v --remove-orphans 2>$null }
-else { docker @Compose down --remove-orphans 2>$null }
+if ($DoWipe -eq "yes") { RunNative { docker @Compose down -v --remove-orphans *>$null } }
+else { RunNative { docker @Compose down --remove-orphans *>$null } }
 
 Say "pulling fresh images"
-docker pull $AppImageRef
-docker @Compose pull 2>$null
+RunNative { docker pull $AppImageRef *>$null }
+if ($LASTEXITCODE -ne 0) { Warn "could not pull $AppImageRef (will fall back to any local image / build)." }
+RunNative { docker @Compose pull *>$null }
 
 # -- start -------------------------------------------------------------------
 $hasUri = (Select-String -Path ".env" -Pattern '^MONGO_URI=..*' -Quiet)
@@ -261,7 +287,8 @@ if ($Mode -eq "byo" -and -not $hasUri) {
 }
 
 Say "starting wardenIQ"
-docker @Compose up -d --no-build --pull always
+RunNative { docker @Compose up -d --no-build --pull always *>$null }
+if ($LASTEXITCODE -ne 0) { Die "docker compose up failed - run 'docker compose -f docker-compose.app.yml up -d' manually to see the full error." }
 
 Write-Host ""
 Say "wardenIQ -> http://localhost:8001"
