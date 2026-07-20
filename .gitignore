@@ -61,3 +61,10 @@ temp/
 *.key
 *.crt
 service-account*.json
+# Generated mongot secret — never commit (created by install.sh / run.sh)
+config/pwfile
+# Generated replica-set keyfile for optional Mongo auth — never commit
+config/keyfile
+
+# Example/demo app committed to its OWN GitHub repo (has its own .git)
+example-library-api/

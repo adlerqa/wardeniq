@@ -1,0 +1,14 @@
+# OPTIONAL override — re-publish the bundled database ports to the host for local
+# debugging with tools like mongosh or MongoDB Compass. NOT for anything exposed to
+# a network: the bundled replica set is unauthenticated by default (see
+# scripts/enable-mongo-auth.sh to add auth). By default these ports are NOT published.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.db-ports.yml up -d
+#
+# Then connect a local client to mongodb://localhost:27017/?replicaSet=rs0
+# (add credentials + authSource=admin if you've enabled Mongo auth).
+services:
+  mongod1:
+    ports: ["27017:27017"]
+  mongot:
+    ports: ["27027:27027", "9946:9946"]

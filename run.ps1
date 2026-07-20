@@ -34,13 +34,36 @@ if (-not (Test-Path ".env")) {
 # and re-secures it there - see that file's comments - so this is a non-issue
 # on Windows (and macOS) regardless of host-side permissions.
 
+# mongot's password is NOT committed (config/pwfile is git-ignored). Generate a
+# strong random one on first run; the setup container reads the SAME file so the
+# two always match. Re-generate if it's still the old committed default.
+$pwPath = Join-Path $PSScriptRoot "config/pwfile"
+$curPw = if (Test-Path $pwPath) { (Get-Content $pwPath -Raw).Trim() } else { "" }
+if (-not $curPw -or $curPw -eq "mongotPassword") {
+    $bytes = New-Object 'System.Byte[]' 64
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    $chars = ([char[]](48..57 + 65..90 + 97..122))
+    $pw = -join ($bytes | ForEach-Object { $chars[$_ % $chars.Length] })[0..31]
+    [IO.File]::WriteAllText($pwPath, $pw)
+    Write-Host "==> generated a random mongot (search) password -> config/pwfile"
+}
+
+# Compose file selection. docker-compose.yml uses `include:`, which needs Compose
+# v2.20+. To work on ANY Compose v2, pass the three service files explicitly - unless
+# .env pins COMPOSE_FILE (e.g. after scripts/enable-mongo-auth.sh), then honour that.
+if (Select-String -Path ".env" -Pattern '^COMPOSE_FILE=' -Quiet -ErrorAction SilentlyContinue) {
+    $Compose = @("compose")
+} else {
+    $Compose = @("compose", "-f", "docker-compose.app.yml", "-f", "docker-compose.mongodb.yml", "-f", "docker-compose.ollama.yml")
+}
+
 if ($Reset) {
     Write-Host "==> wiping volumes"
-    docker compose down -v --remove-orphans
+    docker @Compose down -v --remove-orphans
 }
 
 Write-Host "==> building + starting wardenIQ"
-docker compose up -d --build
+docker @Compose up -d --build
 
 Write-Host "==> waiting for services to settle (replica set + model pulls can take a few minutes)"
 Start-Sleep -Seconds 45

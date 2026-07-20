@@ -69,6 +69,10 @@ services:
       - SESSION_TTL_SECONDS=${SESSION_TTL_SECONDS:-604800}
       - OTP_TTL_SECONDS=${OTP_TTL_SECONDS:-600}
       - ALLOW_WEAK_SECRET=${ALLOW_WEAK_SECRET:-false}
+      # Installer-chosen bootstrap password for the local `admin` login. Set, it
+      # replaces the shipped admin123 default (seeded once at first boot). Blank =
+      # legacy admin123 with forced change-on-first-login.
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       # ── SMTP (optional; via .env, survives secret rotation) ──
       - SMTP_HOST=${SMTP_HOST:-}
       - SMTP_PORT=${SMTP_PORT:-}

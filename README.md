@@ -572,6 +572,7 @@ startup and secrets.
 | `WEBHOOK_SECRET` | _(empty)_ | Required only if you expose the Jira/GitHub webhook receiver |
 | `GEN_TOTAL` | `16` | Baseline test-case count at "Standard" depth |
 | `ADMIN_EMAIL` | _(empty)_ | Seeds the first admin; if blank, the first code-requester becomes admin |
+| `ADMIN_PASSWORD` | _(empty)_ | Bootstrap password for the local `admin` login (the installer prompts for it). Set ⇒ replaces the `admin123` default. Blank ⇒ `admin123` with forced change on first login |
 | `COOKIE_SECURE` | `false` | Set `true` when serving over HTTPS |
 | `SESSION_TTL_SECONDS` / `OTP_TTL_SECONDS` | `604800` / `600` | Session lifetime (7 d) / code lifetime (10 min) |
 | `MONGO_URI` | _(empty = bundled DB)_ | Bring your own MongoDB; also settable in-app |
@@ -591,7 +592,7 @@ to another database"** option to copy your data over safely before switching.
 
 ## Troubleshooting
 
-- **I can't sign in / SMTP is not configured.** If email delivery is not yet configured, make sure you log in using the default credentials: username `admin` and password `admin123` — unless you've already changed it (see [Signing in](#signing-in-the-very-first-time)), in which case use your new password. Once logged in, configure SMTP in **Configuration → Email**.
+- **I can't sign in / SMTP is not configured.** If email delivery is not yet configured, sign in with username `admin` and the password you set during install (`ADMIN_PASSWORD`). If you didn't set one, the bootstrap default `admin123` applies and you'll be forced to change it on first login. Once logged in, configure SMTP in **Configuration → Email**.
 - **I'm the only admin and "Disable" doesn't show up on my own account.** That's by
   design — the sole active admin can't disable themselves (see
   [Signing in](#signing-in-the-very-first-time)). Use "Add admin to unlock" to invite
@@ -641,7 +642,21 @@ backup/read from a secondary. For light dev, scale to one node (comment out
 `mongod2`/`mongod3` and use a one-member `rs.initiate` in
 `config/setup-replica-set.sh`). For production: put TLS in front of the app, set
 `COOKIE_SECURE=true`, use a strong `APP_SECRET`, set `APP_ENV=production`, and enable
-MongoDB authentication (`security.authorization: enabled` + a replica-set keyfile).
+MongoDB authentication (below).
+
+**Database ports are not published.** The bundled MongoDB (`27017`) and mongot
+(`27027`/`9946`) are reachable only over the internal `warden-net` Docker network — the
+app connects there, and nothing binds to the host. To attach a local `mongosh`/Compass
+for debugging, opt in with the override:
+`docker compose -f docker-compose.yml -f docker-compose.db-ports.yml up -d`.
+
+**Optional MongoDB authentication.** The bundled set is unauthenticated by default (for
+zero-config onboarding). To turn on auth, run `./scripts/enable-mongo-auth.sh`: it
+generates a replica-set keyfile, provisions a root + app user (two-phase bootstrap:
+create users, then restart with the keyfile to enforce them), writes an authenticated
+`MONGO_URI` into `.env`, and sets `COMPOSE_FILE` so every later `docker compose` / `run.sh`
+keeps auth on. mongot is unaffected (it already authenticates as `mongotUser`). See
+`docker-compose.mongodb-auth.yml`.
 
 ---
 
