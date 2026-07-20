@@ -17,6 +17,13 @@
     Atlas IP allow-list, so this never hard-blocks).
   - If `mongosh` isn't available, the format check still applies and the live check
     is silently skipped (not treated as a failure).
+  Follow-up fix: the live-check call site was a bare command under install.sh's
+  `set -e`, so a genuine connection failure (the exact case this feature exists to
+  catch) made the installer exit silently right after "checking the connection..."
+  with no error message at all, instead of reporting it. Guarded with `|| rc=$?` so
+  a real failure is reported and offers "use it anyway?" instead of killing the
+  script. Verified directly: the old pattern provably dies silently under `set -e`
+  on a failing check; the fixed one reaches the warning every time.
   Non-interactive runs (`WARDENIQ_MONGO_URI` / `-MongoUri`) only get the format
   check, with a clear warning if it fails, since there's no one to re-prompt.
 

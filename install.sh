@@ -207,7 +207,12 @@ if [ "$MODE" = "byo" ]; then
         continue
       fi
       info "checking the connection..."
-      mongo_uri_reachable "$uri"; rc=$?
+      # install.sh runs under `set -e`; mongo_uri_reachable legitimately returns
+      # non-zero when the connection fails (that's the whole point), so it MUST
+      # be guarded here or a real connection failure kills the entire installer
+      # silently right at this line, with no error message at all.
+      rc=0
+      mongo_uri_reachable "$uri" || rc=$?
       if [ "$rc" -eq 0 ]; then
         info "connected OK"
         break
