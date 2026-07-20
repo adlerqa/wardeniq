@@ -78,6 +78,31 @@ function SetEnv($k, $v) {
     $lines += "$k=$v"
     Set-Content -Path ".env" -Value $lines
 }
+# MongoUriFormatOk "uri" -> $true if it at least LOOKS like a Mongo connection
+# string (mongodb:// or mongodb+srv:// scheme). Catches plain typos/placeholders
+# (e.g. pasting a random word) before they're ever saved to .env.
+function MongoUriFormatOk($u) {
+    return ($u -match '^mongodb(\+srv)?://')
+}
+# MongoUriReachable "uri" -> 0 connected OK, 1 failed, 2 can't check (no mongosh
+# on this machine - not an error). Best-effort only, ~10s cap: network access
+# from this machine may legitimately differ from the container's (e.g. an Atlas
+# IP allow-list that includes the server's IP but not this laptop's).
+function MongoUriReachable($u) {
+    if (-not (Get-Command mongosh -ErrorAction SilentlyContinue)) { return 2 }
+    $job = Start-Job -ScriptBlock {
+        param($uri) & mongosh $uri --quiet --eval "db.adminCommand('ping')" *> $null
+        $LASTEXITCODE
+    } -ArgumentList $u
+    if (Wait-Job $job -Timeout 10) {
+        $code = Receive-Job $job
+        Remove-Job $job -Force
+        if ($code -eq 0) { return 0 } else { return 1 }
+    } else {
+        Stop-Job $job; Remove-Job $job -Force
+        return 1
+    }
+}
 
 # -- pre-flight --------------------------------------------------------------
 Say "wardenIQ installer"
@@ -144,7 +169,24 @@ if ($Mode -eq "byo") {
     $uri = $MongoUri
     if (-not $uri -and $Interactive) {
         Info "Paste your MongoDB connection string (needs Vector Search - Atlas M10+ or self-managed mongot)."
-        $uri = Ask "MONGO_URI" ""
+        while ($true) {
+            $uri = Ask "MONGO_URI" ""
+            if (-not $uri) { break }
+            if (-not (MongoUriFormatOk $uri)) {
+                Warn "that doesn't look like a MongoDB connection string - it must start with mongodb:// or mongodb+srv://"
+                continue
+            }
+            Info "checking the connection..."
+            $rc = MongoUriReachable $uri
+            if ($rc -eq 0) { Info "connected OK"; break }
+            elseif ($rc -eq 2) { Info "(mongosh not found on this machine - skipping the live connection check; format looks OK)"; break }
+            else {
+                Warn "could not connect using that URI (wrong host/user/password, IP not allow-listed, cluster paused, etc)."
+                if (AskYesNo "Use it anyway?" "n") { break }
+            }
+        }
+    } elseif ($uri -and -not (MongoUriFormatOk $uri)) {
+        Warn "WARDENIQ_MONGO_URI doesn't look like a valid MongoDB connection string (must start with mongodb:// or mongodb+srv://) - saving it as given since this is a non-interactive run, but the app will fail to start until it's fixed."
     }
     if ($uri) { SetEnv "MONGO_URI" $uri; Info "MONGO_URI saved to .env" }
     else { Warn "no MONGO_URI provided - set it in $Dest\.env before the app will start." }

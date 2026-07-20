@@ -86,6 +86,31 @@ password_policy_ok() {
   printf '%s' "$p" | grep -q '[0-9]' || return 1
   [ "$(printf '%s' "$p" | tr '[:upper:]' '[:lower:]')" != "admin123" ] || return 1
 }
+# mongo_uri_format_ok "uri" → 0 if it at least LOOKS like a Mongo connection string
+# (mongodb:// or mongodb+srv:// scheme). Catches plain typos/placeholders (e.g.
+# pasting a random word) before they're ever saved to .env.
+mongo_uri_format_ok() {
+  case "$1" in
+    mongodb://*|mongodb+srv://*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+# mongo_uri_reachable "uri" → 0 if a live connection actually succeeds, 1 if it
+# fails, 2 if we can't check at all (no mongosh on this host — not an error).
+# Best-effort only: a short timeout, never blocks setup, and network access from
+# this host may legitimately differ from the container's (e.g. an Atlas IP
+# allow-list that includes the server's IP but not this laptop's).
+mongo_uri_reachable() {
+  command -v mongosh >/dev/null 2>&1 || return 2
+  mongosh "$1" --quiet --eval "db.adminCommand('ping')" >/dev/null 2>&1 &
+  local pid=$! i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    i=$((i + 1))
+    [ "$i" -ge 100 ] && { kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null; return 1; }  # ~10s
+    sleep 0.1
+  done
+  wait "$pid"
+}
 # set_env KEY VALUE  → replace-or-append literally (no sed escaping surprises)
 set_env() {
   local k="$1"; shift; local v="$*"
@@ -174,7 +199,29 @@ if [ "$MODE" = "byo" ]; then
   uri="${WARDENIQ_MONGO_URI:-}"
   if [ -z "$uri" ] && interactive; then
     info "Paste your MongoDB connection string (needs Vector Search — Atlas M10+ or self-managed mongot)."
-    uri="$(ask 'MONGO_URI' '')"
+    while :; do
+      uri="$(ask 'MONGO_URI' '')"
+      [ -z "$uri" ] && break
+      if ! mongo_uri_format_ok "$uri"; then
+        warn "that doesn't look like a MongoDB connection string — it must start with mongodb:// or mongodb+srv://"
+        continue
+      fi
+      info "checking the connection..."
+      mongo_uri_reachable "$uri"; rc=$?
+      if [ "$rc" -eq 0 ]; then
+        info "connected OK"
+        break
+      elif [ "$rc" -eq 2 ]; then
+        info "(mongosh not found on this machine — skipping the live connection check; format looks OK)"
+        break
+      else
+        warn "could not connect using that URI (wrong host/user/password, IP not allow-listed, cluster paused, etc)."
+        if ask_yesno "Use it anyway?" "n"; then break; fi
+        # loop back and re-prompt
+      fi
+    done
+  elif [ -n "$uri" ] && ! mongo_uri_format_ok "$uri"; then
+    warn "WARDENIQ_MONGO_URI doesn't look like a valid MongoDB connection string (must start with mongodb:// or mongodb+srv://) — saving it as given since this is a non-interactive run, but the app will fail to start until it's fixed."
   fi
   if [ -n "$uri" ]; then
     set_env MONGO_URI "$uri"; info "MONGO_URI saved to .env"

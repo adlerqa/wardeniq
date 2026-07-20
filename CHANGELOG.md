@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Added
+- **Installer validates the bring-your-own `MONGO_URI` instead of accepting
+  anything.** Previously the "Bring your own DB" prompt in `install.sh`/`install.ps1`
+  saved whatever was typed verbatim — a typo or placeholder (e.g. pasting a random
+  word) would install successfully and only surface as a broken, half-rendered UI
+  once the app tried to actually connect. Now, interactively:
+  - The value must at least look like a Mongo connection string
+    (`mongodb://` or `mongodb+srv://`), re-prompting otherwise.
+  - If `mongosh` is available on the machine running the installer, it does a quick
+    (~10s capped) live `ping` against the URI and reports a clear connection error
+    if it fails, offering to re-enter or continue anyway (network reachability from
+    the installer's machine can legitimately differ from the container's, e.g. an
+    Atlas IP allow-list, so this never hard-blocks).
+  - If `mongosh` isn't available, the format check still applies and the live check
+    is silently skipped (not treated as a failure).
+  Non-interactive runs (`WARDENIQ_MONGO_URI` / `-MongoUri`) only get the format
+  check, with a clear warning if it fails, since there's no one to re-prompt.
+
 ### Changed
 - **README install: `.env` configuration options documented for both platforms.** The
   published-image install section now shows the `--bundled` (macOS/Linux) and
