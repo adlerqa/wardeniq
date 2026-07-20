@@ -228,12 +228,9 @@ Prefer to seed the admin ahead of time? Set `ADMIN_EMAIL=you@company.com` in `.e
 wardenIQ publishes a ready-to-run image to Docker Hub:
 **[`adlerqa/wardeniq`](https://hub.docker.com/r/adlerqa/wardeniq)**.
 
-```bash
-docker pull adlerqa/wardeniq:beta
-```
-
-The installer below pulls this same image automatically, plus the small Compose
-file and `.env` it needs to run — no clone, no build. It has two variants:
+The installer below pulls this image automatically, plus the small Compose
+file and `.env` it needs to run — no clone, no build, no separate `docker pull`
+step. It has two variants:
 
 - **Bring-your-own MongoDB (default, recommended for real use)** — pulls only the app
   image. You point it at your own MongoDB (Atlas or self-managed) and either a
@@ -271,6 +268,12 @@ with mongot):
 ```
 MONGO_URI=<your MongoDB connection string>
 ```
+If you paste this into the installer's interactive prompt instead, it checks the
+format (must start with `mongodb://` or `mongodb+srv://`) and, if `mongosh` is
+available locally, does a quick live connection test before saving it —
+re-prompting on a bad format, and warning (not blocking) on a failed connection,
+since your machine's network access can legitimately differ from the container's
+(e.g. an Atlas IP allow-list).
 
 **2 — AI backend (generation *and* embeddings).** This flow does **not** bundle Ollama,
 so you must give wardenIQ a model backend. wardenIQ needs **both** a generation model
