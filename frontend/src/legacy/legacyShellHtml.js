@@ -98,8 +98,9 @@ export const LEGACY_SHELL_HTML = `
       <button data-view="dashboard" title="Dashboard" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span class="nav-label">Dashboard</span></button>
       <button data-view="projects" title="Projects & Repos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span class="nav-label">Projects &amp; Repos</span></button>
       <button data-view="cases" title="Test Cases"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg><span class="nav-label">Test Cases</span></button>
-      <button data-view="cycles" title="Code Analysis & Cycles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-7 3.5M3 4v4h4"/></svg><span class="nav-label">Code Analysis &amp; Cycles</span></button>
+      <button data-view="cycles" title="Code Analysis"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-7 3.5M3 4v4h4"/></svg><span class="nav-label">Code Analysis</span></button>
       <button data-view="mindmap" title="Mind Map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M8.2 10.9l7.6-3.8M8.2 13.1l7.6 3.8"/></svg><span class="nav-label">Mind Map</span></button>
+      <button data-view="testcycles" title="Test Cycles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h7M8 13h4"/><path d="M14.5 15.2l1.6 1.6 3-3.2"/></svg><span class="nav-label">Test Cycles</span></button>
       <button data-view="steps" title="Step Library"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.5" cy="6" r="1"/><circle cx="3.5" cy="12" r="1"/><circle cx="3.5" cy="18" r="1"/></svg><span class="nav-label">Step Library</span></button>
       <button data-view="usage" title="LLM Usage &amp; Cost"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg><span class="nav-label">Usage &amp; Cost</span></button>
       <button data-view="users" title="Users" data-admin="1" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 5.5a3 3 0 0 1 0 5.5M21 20a5.5 5.5 0 0 0-4-5.3"/></svg><span class="nav-label">Users</span></button>
@@ -412,6 +413,22 @@ export const LEGACY_SHELL_HTML = `
             <div class="row" style="margin-top:12px"><input id="cyc-name" placeholder="Cycle name (for example: Sprint 12 regression)"/>
               <button class="go" id="cyc-make" style="flex:0 0 auto">Create cycle</button></div>
           </div>
+        </div>
+      </section>
+
+      <!-- TEST CYCLES -->
+      <section id="view-testcycles" class="view" hidden>
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+            <div><h2 style="margin:0">Create a test cycle</h2><div class="sub">Spin up a release regression cycle for a project, then add the cases you want to retest — independent of change-impact analysis.</div></div>
+            <button class="ghost" id="tcy-refresh"><span class="icon">↻</span><span>Refresh</span></button>
+          </div>
+          <div class="row" style="margin-top:12px;align-items:flex-end;gap:10px;flex-wrap:wrap">
+            <div style="flex:0 0 240px"><label>Project</label><select id="tcy-proj" style="height:38px"></select></div>
+            <div style="flex:1;min-width:200px"><label>Cycle name</label><input id="tcy-name" placeholder="e.g. Sprint 12 regression"/></div>
+            <button class="go" id="tcy-new" style="flex:0 0 auto">+ New cycle</button>
+          </div>
+        </div>
           <div class="card"><h2>Cycle templates</h2><div class="sub">Reusable case sets — save any cycle as a template, then spin up new cycles from it.</div><div id="cyc-templates"></div></div>
           <div class="card"><h2>Test cycles</h2><div class="sub">Saved release regression cycles for the selected project.</div><div id="cyc-list"></div></div>
           <div class="card" id="cyc-detail-card" style="display:none">
@@ -419,7 +436,6 @@ export const LEGACY_SHELL_HTML = `
               <div style="display:flex;gap:6px"><button class="ghost" id="cyc-d-rename">Rename</button><button class="danger" id="cyc-d-del">Delete cycle</button><button class="ghost" id="cyc-d-close">Close</button></div></div>
             <div id="cyc-d-items"></div>
           </div>
-        </div>
       </section>
 
       <!-- MIND MAP -->
