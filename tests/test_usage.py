@@ -53,10 +53,11 @@ class TestPricing:
 
     def test_family_fallback_prices_versioned_gemini(self):
         # "gemini-3.1-flash-lite" hits no exact/substring price but matches the family rule
+        # (("gemini","flash","lite") -> $0.10 / 1M input, current published rate).
         rec = {"gemini-3.1-flash-lite": {"prompt_tokens": 1_000_000, "completion_tokens": 0,
                                          "calls": 1, "kind": "llm"}}
         s = usage.summarize(rec, prices={})
-        assert abs(s["by_model"]["gemini-3.1-flash-lite"]["cost_usd"] - 0.05) < 1e-9
+        assert abs(s["by_model"]["gemini-3.1-flash-lite"]["cost_usd"] - 0.10) < 1e-9
 
     def test_ollama_tag_is_free(self):
         rec = {"qwen2.5:7b": {"prompt_tokens": 999_999, "completion_tokens": 999_999,
