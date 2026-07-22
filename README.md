@@ -104,7 +104,7 @@ services it connects to over `MONGO_URI` and an API key/endpoint. For real use
 With both of those pointed at the cloud, you only ever run **one container** — the
 app itself — so there's no local database or model competing for your machine's (or
 server's) resources. This is the natural shape for a **cloud deployment** too (e.g. a
-single small VM/ECS/Cloud Run instance running `adlerqa/wardeniq:beta`, with
+single small VM/ECS/Cloud Run instance running `adlerqa/wardeniq:latest`, with
 `MONGO_URI` pointing at Atlas) — nobody running or connecting to the tool needs to
 provision a database or a GPU/CPU budget for a local model. See [Prefer a pre-built
 image?](#prefer-a-pre-built-image-skip-the-local-build--recommended) below for the
@@ -240,23 +240,23 @@ step. It has two variants:
   in the same Compose stack, with the two default models auto-pulled on first boot
   (~2 GB). Slower generation on CPU but nothing to sign up for.
 
+One command per OS — the installer picks the mode:
+
 **macOS/Linux:**
 ```bash
-# Bring your own MongoDB (recommended)
 curl -fsSL https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.sh | bash
-
-# All-in-one bundled demo (adds MongoDB + Ollama)
-curl -fsSL https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.sh | bash -s -- --bundled
 ```
 
 **Windows** (Command Prompt or PowerShell — same command either way):
 ```bat
-:: Bring your own MongoDB (recommended)
 powershell -c "irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
-
-:: All-in-one bundled demo (adds MongoDB + Ollama)
-powershell -c "$env:WARDENIQ_BUNDLED=1; irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
 ```
+
+Run in a terminal, the installer **asks** which mode you want: **bring-your-own MongoDB**
+(recommended) or the **all-in-one bundled demo** (adds MongoDB + Ollama). To choose without
+the prompt (piped installs / CI, which default to bundled), set the mode up front —
+`WARDENIQ_MODE=byo` or `WARDENIQ_MODE=bundled` (macOS/Linux), or `$env:WARDENIQ_BUNDLED=1`
+before the Windows command for the bundled demo.
 
 This is the setup we recommend for client / production use: **you bring the database
 and the AI backend**, and wardenIQ runs as a single lightweight container (no bundled
@@ -333,10 +333,12 @@ MONGO_URI=mongodb+srv://USER:PASS@your-cluster.mongodb.net/?retryWrites=true&w=m
 ADMIN_EMAIL=you@company.com
 GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 EOF
-curl -fsSL https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.sh | WARDENIQ_MODE=byo bash
 ```
 
-The single-quoted heredoc (`<<'EOF'`) is important — it stops the shell from expanding
+`WARDENIQ_MODE=byo` is required here: a piped install can't show the mode prompt and
+otherwise defaults to the bundled stack, ignoring your `MONGO_URI`. The single-quoted
+heredoc (`<<'EOF'`) is important — it stops the shell from expanding
 `$` inside your values, which matters if a token or connection string contains `$` or
 other shell metacharacters.
 
@@ -360,10 +362,12 @@ MONGO_URI=mongodb+srv://USER:PASS@your-cluster.mongodb.net/?retryWrites=true&w=m
 ADMIN_EMAIL=you@company.com
 GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 '@ | Set-Content -Path wardeniq\.env -Encoding ASCII
-powershell -c "irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
+powershell -c "$env:WARDENIQ_MODE='byo'; irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
 ```
 
-The single-quoted here-string (`@'…'@`) is important — it stops PowerShell from
+`$env:WARDENIQ_MODE='byo'` is required here: a piped install can't show the mode prompt
+and otherwise defaults to the bundled stack, ignoring your `MONGO_URI`. The single-quoted
+here-string (`@'…'@`) is important — it stops PowerShell from
 expanding `$env:` or other `$` references inside your values. `-Encoding ASCII`
 avoids the UTF-8 BOM that some tools mis-parse.
 
@@ -377,16 +381,17 @@ avoids the UTF-8 BOM that some tools mis-parse.
 #### 2) Edit `.env` after install, then restart
 
 Skip pre-seeding, run the installer, then open `wardeniq/.env` in your editor and
-apply with:
+apply with the command for **your install mode** (from the `wardeniq` folder):
 
 ```bash
 cd wardeniq
-docker compose up -d --no-build                            # bundled
-# or:
-docker compose -f docker-compose.app.yml up -d --no-build  # bring-your-own-Mongo
+docker compose -f docker-compose.app.yml up -d --no-build   # bring-your-own MongoDB
+docker compose up -d --no-build                             # bundled all-in-one
 ```
 
-Best when you already ran the installer and now want to change one or two values.
+Best when you already ran the installer and now want to change one or two values. To
+*also* pull a newer image at the same time, add `--pull always` — see
+[Updating to a new release](#updating-to-a-new-release).
 
 #### 3) Multi-environment file (`--env-file`)
 
@@ -431,7 +436,7 @@ cd wardeniq
 docker compose -f docker-compose.app.yml up -d --no-build
 ```
 
-The installer already pulled `adlerqa/wardeniq:beta`, so this starts from the
+The installer already pulled `adlerqa/wardeniq:latest`, so this starts from the
 published image. The `--no-build` flag is a safety net: `docker-compose.app.yml`
 also carries a `build:` section for contributors who have the source checked out,
 and `--no-build` guarantees a no-source install never tries to build from a `./app`
@@ -448,13 +453,39 @@ Open **http://localhost:8001** and sign in. `APP_SECRET` is generated automatica
 > deployment](#cloud--lightweight-deployment-recommended-for-real-use) for why the
 > bring-your-own path is preferred for real deployments.
 
-**Day to day:** `docker compose -f docker-compose.app.yml up -d --no-build` / `down` /
-`pull` to start, stop, or update — from that same `wardeniq` folder. (`pull` refreshes
-the published image; keep `--no-build` on `up` since this folder has no source to build.)
+**Day to day:** `docker compose -f docker-compose.app.yml up -d --no-build` / `down` to
+start or stop — from that same `wardeniq` folder. (Keep `--no-build` on `up` since this
+folder has no source to build.)
+
+#### Updating to a new release
+
+You **don't** re-run the installer. From the `wardeniq` folder, run a single command — your
+normal start command with `--pull always` added, which fetches the newest image and
+recreates the container in one step:
+
+```bash
+# bring-your-own MongoDB
+docker compose -f docker-compose.app.yml up -d --no-build --pull always
+
+# bundled all-in-one stack
+docker compose up -d --no-build --pull always
+```
+
+`--pull always` grabs the newest image for the tag pinned in `.env` (`APP_IMAGE`, default
+`adlerqa/wardeniq:latest`) and `up -d` recreates only the app container — your database and
+data are untouched. This works because `latest` is a **moving tag** that every release
+(`vX.Y.Z`) overwrites, so the command always gets the newest code — no `.env` edit, no
+re-install. Prune old layers with `docker image prune -f`. To **pin** a specific build
+instead, set `APP_IMAGE=adlerqa/wardeniq:1.2.0` in `.env`, then run the same command.
+
+> Installs from before this change are pinned to `:beta` in their `.env`; switch them to
+> the release channel by setting `APP_IMAGE=adlerqa/wardeniq:latest` once, then pull.
 
 > **Maintainers:** built and pushed by `.github/workflows/docker-publish.yml`
-> (`linux/amd64` + `linux/arm64`) — trigger manually or push a `vX.Y.Z` tag. Needs
-> `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets. Script source:
+> (`linux/amd64` + `linux/arm64`). Pushing a `vX.Y.Z` git tag publishes both
+> `adlerqa/wardeniq:X.Y.Z` and `adlerqa/wardeniq:latest` (the channel users track), so a
+> version release reaches everyone on `pull`; a manual run publishes a one-off `<tag>`.
+> Needs `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets. Script source:
 > [`install.sh`](install.sh) / [`install.ps1`](install.ps1).
 
 ---
@@ -571,7 +602,7 @@ startup and secrets.
 | `GEN_MODEL` | `qwen2.5:3b` | Ollama generation model (swap in a bigger/hosted model for quality) |
 | `EMBED_MODEL` / `EMBED_DIM` | `nomic-embed-text` / `768` | Embedding model + dimensions |
 | `GITHUB_TOKEN` | _(empty)_ | Fine-grained PAT (PR + contents read); also settable in-app |
-| `POLL_INTERVAL_SECONDS` | `120` | How often watched repos are polled |
+| `POLL_INTERVAL_SECONDS` | `1800` | How often watched repos are polled for new PRs/commits (30 min). Seed default only — also settable live in **Configuration → Sync & polling**, which overrides this |
 | `WEBHOOK_SECRET` | _(empty)_ | Required only if you expose the Jira/GitHub webhook receiver |
 | `GEN_TOTAL` | `16` | Baseline test-case count at "Standard" depth |
 | `ADMIN_EMAIL` | _(empty)_ | Seeds the first admin; if blank, the first code-requester becomes admin |
@@ -580,7 +611,7 @@ startup and secrets.
 | `SESSION_TTL_SECONDS` / `OTP_TTL_SECONDS` | `604800` / `600` | Session lifetime (7 d) / code lifetime (10 min) |
 | `MONGO_URI` | _(empty = bundled DB)_ | Bring your own MongoDB; also settable in-app |
 | `MONGO_IMAGE` / `MONGOT_IMAGE` | pinned | Override the bundled MongoDB / mongot images |
-| `APP_IMAGE` | _(empty = build from source)_ | Point at a published image instead of building |
+| `APP_IMAGE` | `adlerqa/wardeniq:latest` _(set by the installer; empty = build from source)_ | Which published image tag to run. `latest` tracks every release; pin e.g. `adlerqa/wardeniq:0.2.0` to freeze a version |
 
 SMTP (for sign-in emails) is set under **Configuration → Email** (stored encrypted, takes
 precedence) or via `SMTP_*` vars in `.env`. Until SMTP exists, the first admin's code is

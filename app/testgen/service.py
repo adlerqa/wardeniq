@@ -4,6 +4,8 @@ import os
 import re
 import time
 
+import usage
+
 from testgen.prompt_builder import (
     build_api_agent_prompt,
     build_business_test_prompt,
@@ -838,8 +840,13 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     api_chunks = _chunks(api_surface, 8) or [[]]
     ui_chunks = [[], *_chunks(ui_components, 25)] if ui_components else [[]]
     jobs = []
+    # These LLM calls run on ThreadPoolExecutor child threads; the token recorder
+    # is thread-local, so bind the parent job's recorder inside each worker or the
+    # (often dominant) generation cost is lost from Usage & Cost.
+    _parent_rec = usage.current()
 
     def run_api_worker(values, mode, max_tokens):
+        usage.bind(_parent_rec)
         prompt = build_api_agent_prompt(context, rag_context, values, mode)
         return call_llm_json_with_repair(
             llm,
@@ -847,6 +854,18 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
             prompt["messages"][1]["content"],
             max_tokens=max_tokens,
             timeout_seconds=180,
+        )
+
+    def run_ui_worker(chunk):
+        usage.bind(_parent_rec)
+        prompt = build_ui_agent_prompt(context, chunk)
+        return call_llm_json_with_repair(
+            llm,
+            prompt["messages"][0]["content"],
+            prompt["messages"][1]["content"],
+            6500,
+            2,
+            180,
         )
 
     concurrency = max(1, min(6, int(os.getenv("TESTGEN_WORKER_CONCURRENCY", "3"))))
@@ -866,16 +885,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                     run_api_worker, risky, "chaos", 5000
                 )))
         for chunk in ui_chunks:
-            prompt = build_ui_agent_prompt(context, chunk)
-            jobs.append(("ui", executor.submit(
-                call_llm_json_with_repair,
-                llm,
-                prompt["messages"][0]["content"],
-                prompt["messages"][1]["content"],
-                6500,
-                2,
-                180,
-            )))
+            jobs.append(("ui", executor.submit(run_ui_worker, chunk)))
 
         api_tests, ui_tests = [], []
         future_kinds = {future: kind for kind, future in jobs}

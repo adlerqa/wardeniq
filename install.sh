@@ -10,7 +10,8 @@
 #
 # Env (all optional):
 #   WARDENIQ_DIR=wardeniq         install directory
-#   WARDENIQ_TAG=beta             image tag (adlerqa/wardeniq:<tag>)
+#   WARDENIQ_TAG=latest           image tag (adlerqa/wardeniq:<tag>). "latest" tracks
+#                                 every release; pin e.g. WARDENIQ_TAG=1.2.0 to freeze.
 #   WARDENIQ_MODE=bundled|byo     bundled all-in-one demo, or bring-your-own MongoDB
 #   WARDENIQ_MONGO_URI=...        your MongoDB URI (byo mode)
 #   WARDENIQ_ADMIN_PASSWORD=...   bootstrap admin password (>=8 chars, letter+number)
@@ -21,7 +22,7 @@ set -euo pipefail
 
 REPO_RAW="https://raw.githubusercontent.com/adlerqa/wardeniq/main"
 DEST="${WARDENIQ_DIR:-wardeniq}"
-TAG="${WARDENIQ_TAG:-beta}"
+TAG="${WARDENIQ_TAG:-latest}"
 APP_IMAGE_REF="adlerqa/wardeniq:${TAG}"
 
 MODE="${WARDENIQ_MODE:-}"

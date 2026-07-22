@@ -21,6 +21,27 @@ DEFAULT_BASE = {
 }
 
 
+# Models that reject an explicit `temperature` (GPT-5 / o-series and similar only
+# allow the provider default). Learned at runtime on the first rejection, then
+# reused so we never waste a second call on the same model in this process.
+_NO_CUSTOM_TEMPERATURE: set[str] = set()
+
+
+def _friendly_model_error(provider: str, model: str, r) -> RuntimeError:
+    """Turn a hosted-provider 400/404 into an actionable message about the model
+    id (the usual cause when a custom/typed model doesn't exist for the account),
+    surfacing the provider's own error text."""
+    detail = ""
+    try:
+        j = r.json()
+        detail = (j.get("error") or {}).get("message") or j.get("message") or ""
+    except Exception:  # noqa: BLE001
+        detail = (r.text or "").strip()[:200]
+    msg = (f"model '{model}' was rejected by {provider} (HTTP {r.status_code}) — "
+           f"check the exact model id exists and your API key has access to it.")
+    return RuntimeError(f"{msg} Provider said: {detail}" if detail else msg)
+
+
 class LLM:
     def __init__(self, provider="ollama", model="qwen2.5:7b", api_key="",
                  base_url="", ollama_url="http://localhost:11434", region=""):
@@ -127,6 +148,8 @@ class LLM:
                            json={"model": self.model, "max_tokens": max_tokens,
                                  "system": system + " Respond with a single JSON object only.",
                                  "messages": [{"role": "user", "content": user}]})
+            if r.status_code in (400, 404):
+                raise _friendly_model_error(self.provider, self.model, r)
             r.raise_for_status()
             data = r.json()
             u = data.get("usage") or {}
@@ -138,14 +161,26 @@ class LLM:
             url = f"{self.base_url}/chat/completions"
         else:
             url = f"{self.base_url}/v1/chat/completions"
-        r = httpx.post(url,
-                       timeout=timeout_seconds or 120.0,
-                       headers={"Authorization": f"Bearer {self.api_key}",
-                                "Content-Type": "application/json"},
-                       json={"model": self.model, "temperature": temperature,
-                             "response_format": {"type": "json_object"},
-                             "messages": [{"role": "system", "content": system},
-                                          {"role": "user", "content": user}]})
+        headers = {"Authorization": f"Bearer {self.api_key}",
+                   "Content-Type": "application/json"}
+        payload = {"model": self.model,
+                   "response_format": {"type": "json_object"},
+                   "messages": [{"role": "system", "content": system},
+                                {"role": "user", "content": user}]}
+        # Only send an explicit temperature to models that accept one. Newer models
+        # (GPT-5 / o-series) allow just the provider default and 400 on any value;
+        # once we've seen that for a model we stop sending it (no wasted retries).
+        if self.model not in _NO_CUSTOM_TEMPERATURE:
+            payload["temperature"] = temperature
+        r = httpx.post(url, timeout=timeout_seconds or 120.0, headers=headers, json=payload)
+        # First time a model rejects the temperature: remember it, drop the param,
+        # and retry once. Subsequent calls skip temperature upfront.
+        if r.status_code == 400 and "temperature" in (r.text or "").lower():
+            _NO_CUSTOM_TEMPERATURE.add(self.model)
+            payload.pop("temperature", None)
+            r = httpx.post(url, timeout=timeout_seconds or 120.0, headers=headers, json=payload)
+        if r.status_code in (400, 404):
+            raise _friendly_model_error(self.provider, self.model, r)
         r.raise_for_status()
         data = r.json()
         u = data.get("usage") or {}

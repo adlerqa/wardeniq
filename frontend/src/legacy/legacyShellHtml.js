@@ -261,7 +261,7 @@ export const LEGACY_SHELL_HTML = `
               <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
                 <div style="flex:2;min-width:220px"><label>Repository URL or Owner/Name</label><input id="repo-url" placeholder="https://github.com/org/backend-api" list="myrepos"/><datalist id="myrepos"></datalist></div>
                 <div style="width:115px"><label>Type</label><select id="repo-type"><option value="app">App (with webhook)</option><option value="test">Test (no webhook)</option></select></div>
-                <div style="width:135px"><label>Kind</label><select id="repo-kind"><option value="BE">Backend</option><option value="FE">Frontend</option><option value="infra">Infrastructure</option><option value="other">Other</option></select></div>
+                <div style="width:135px"><label>Kind</label><select id="repo-kind"><option value="BE">Backend</option><option value="FE">Frontend</option><option value="test">Test</option><option value="infra">Infrastructure</option></select></div>
                 <button class="go" id="repo-add">Connect</button>
               </div>
               <button class="ghost" id="repo-pick" style="margin-top:10px">Load my repositories</button>
@@ -398,7 +398,7 @@ export const LEGACY_SHELL_HTML = `
               <div style="flex:0 0 140px"><label>Lookback (days)</label><input id="cyc-days" type="number" value="14" min="1" max="180" style="height:38px"/></div>
               <button class="go mindmap-primary-btn" id="cyc-analyze">Analyze changes</button>
             </div>
-            <label style="margin-top:8px">Repos &amp; branches <span class="muted" style="font-weight:400">— uncheck any to exclude; set a branch per repo (blank = its default)</span></label>
+            <label style="margin-top:8px">Repos &amp; branches <span class="muted" style="font-weight:400">— uncheck any to exclude; set a branch per repo (blank = its default). Infra repos start unchecked — tick them to include.</span></label>
             <div id="cyc-repos" class="mindmap-panel" style="display:flex;flex-direction:column;gap:8px"></div>
             <button class="ghost" id="cyc-add-git" style="margin-top:8px;padding:5px 12px;align-self:flex-start">+ Add a repo from GitHub</button>
             <div class="muted" id="cyc-status" style="margin-top:8px"></div>
@@ -456,7 +456,7 @@ export const LEGACY_SHELL_HTML = `
             <div class="mindmap-control-project"><label>Project</label><select id="mm-proj"></select></div>
             <button class="go mindmap-primary-btn" id="mm-analyze">Analyze codebase</button>
           </div>
-          <label style="margin-top:8px">Repos &amp; branches <span class="muted" style="font-weight:400">— uncheck any to exclude; set a branch per repo (blank = its default)</span></label>
+          <label style="margin-top:8px">Repos &amp; branches <span class="muted" style="font-weight:400">— uncheck any to exclude; set a branch per repo (blank = its default). Infra repos start unchecked — tick them to include.</span></label>
           <div id="mm-repos" class="mindmap-panel" style="display:flex;flex-direction:column;gap:8px"></div>
           <button class="ghost" id="mm-add-git" style="margin-top:8px;padding:5px 12px;align-self:flex-start">+ Add a repo from GitHub</button>
           <div class="muted" id="mm-status" style="margin-top:8px"></div>
@@ -552,7 +552,7 @@ export const LEGACY_SHELL_HTML = `
               </div>
             </div>
             <div id="usage-totals" class="usage-stats"></div>
-            <div class="usage-formula">Cost = (input tokens ÷ 1,000,000 × input price) + (output tokens ÷ 1,000,000 × output price), per model, summed per process. Prices use built-in per-model defaults; local Ollama models are free.</div>
+            <div class="usage-formula">Cost = (input tokens ÷ 1,000,000 × input price) + (output tokens ÷ 1,000,000 × output price), per model, summed per process. Prices come from the per-model table below (editable); local Ollama models are free. Figures can still differ slightly from a provider console when prompt caching or batch discounts apply.</div>
           </div>
 
           <div class="card">
@@ -573,6 +573,22 @@ export const LEGACY_SHELL_HTML = `
             <div class="usage-filter-row"><label class="muted">Project</label>
               <select id="usage-project-filter" class="usage-select"><option value="">All projects</option></select></div>
             <div id="usage-by-project"></div>
+          </details>
+
+          <details class="card usage-collapse" id="usage-pricing-card">
+            <summary><span class="usage-collapse-title">Model pricing</span><span class="usage-collapse-hint muted">USD per 1M tokens — override or add any model</span></summary>
+            <div class="sub muted" style="margin:6px 0 10px">Set input/output prices for any model id — including custom or brand-new models you run. Rows left at the built-in default aren't stored, so defaults keep improving over app updates. Saving recalculates cost across all past processes.</div>
+            <div id="usage-pricing-rows"></div>
+            <div class="usage-pricing-add" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+              <input id="usage-price-new-model" placeholder="model id (e.g. gpt-5.1)" style="flex:2;min-width:160px"/>
+              <input id="usage-price-new-in" type="number" step="0.01" min="0" placeholder="input $/1M" style="flex:1;min-width:100px"/>
+              <input id="usage-price-new-out" type="number" step="0.01" min="0" placeholder="output $/1M" style="flex:1;min-width:100px"/>
+              <button class="ghost" id="usage-price-add">+ Add model</button>
+            </div>
+            <div style="margin-top:12px;display:flex;gap:10px;align-items:center">
+              <button id="usage-price-save">Save pricing</button>
+              <span id="usage-price-status" class="muted"></span>
+            </div>
           </details>
         </div>
       </section>
@@ -731,6 +747,17 @@ export const LEGACY_SHELL_HTML = `
             </div>
 
             <div class="cfg-actions"><button class="ghost" id="cfg-db-refresh">Refresh</button></div>
+          </div>
+
+          <div class="card cfg-card">
+            <div class="cfg-head"><div class="cfg-head-left"><span class="cfg-step">7</span><h2>Sync &amp; polling</h2></div><span class="cfg-badge glob">Global</span></div>
+            <div class="sub">How often wardenIQ polls your watched GitHub repositories for new commits &amp; pull requests. GitLab is webhook-driven and unaffected. Applies on the next poll — no restart needed — and is also written to <code>.env</code> (<code>POLL_INTERVAL_SECONDS</code>) so the config file stays in sync.</div>
+            <div class="cfg-field" style="max-width:320px">
+              <label>Poll interval (seconds) <span class="fi" tabindex="0" data-tip="Seconds between GitHub polls of watched repos. Lower = fresher but more API calls; higher = fewer calls. Minimum 30s. Common values: 300 (5 min), 1800 (30 min), 3600 (1 hour).">i</span></label>
+              <input type="number" id="cfg-poll-interval" min="30" step="30" placeholder="1800"/>
+            </div>
+            <div class="cfg-status muted" id="cfg-poll-status"></div>
+            <div class="cfg-actions"><button class="go" id="cfg-poll-save">Save</button></div>
           </div>
         </div>
       </section>

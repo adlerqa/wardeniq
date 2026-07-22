@@ -63,7 +63,13 @@ CASE_AUTO = float(os.getenv("CASE_AUTO_REUSE", "0.93"))
 SUGGEST = float(os.getenv("SUGGEST_THRESHOLD", "0.85"))
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_API = os.getenv("GITHUB_API", "https://api.github.com")
-POLL_INTERVAL = int(os.getenv("POLL_INTERVAL_SECONDS", "120"))
+# GitHub poller cadence. The frontend-saved value (settings.poll_interval_s) WINS;
+# POLL_INTERVAL_SECONDS in .env is only the seed default for fresh installs; else the
+# built-in 30-minute default. Resolved live per loop via current_poll_interval() so an
+# in-app change applies without a restart. Floored at MIN_POLL_INTERVAL to protect the API.
+_ENV_POLL = (os.getenv("POLL_INTERVAL_SECONDS") or "").strip()
+POLL_INTERVAL_FALLBACK = 1800  # 30 minutes
+MIN_POLL_INTERVAL = 30
 MAP_AUTO = float(os.getenv("MAP_AUTO_THRESHOLD", "0.86"))
 # GAP8 (opt-in): use embeddings to semantically match imported-pool rows to features
 # during the background re-scan, as an ADDITIONAL promotion path beyond the algorithmic
@@ -142,6 +148,28 @@ def current_ollama_url() -> str:
     except Exception:  # noqa: BLE001
         saved = ""
     return saved or OLLAMA_URL_BUNDLED
+
+
+def current_poll_interval() -> int:
+    """Resolve the GitHub poller cadence in seconds. Precedence: the value saved from
+    the frontend (settings.poll_interval_s) WINS; else POLL_INTERVAL_SECONDS in .env;
+    else the built-in 30-minute default. Read fresh so an in-app change applies on the
+    next loop (no restart). Floored at MIN_POLL_INTERVAL so the API isn't hammered."""
+    val = None
+    try:
+        saved = store.get_settings().get("poll_interval_s")
+        if saved:
+            val = int(saved)
+    except Exception:  # noqa: BLE001
+        val = None
+    if val is None and _ENV_POLL:
+        try:
+            val = int(_ENV_POLL)
+        except ValueError:
+            val = None
+    if val is None:
+        val = POLL_INTERVAL_FALLBACK
+    return max(MIN_POLL_INTERVAL, val)
 
 
 def current_embedder() -> Embedder:
@@ -945,6 +973,47 @@ def launch_job(jtype, params, label="", project_id=None, feature_id=None):
 
     threading.Thread(target=run, daemon=True).start()
     return jid
+
+
+def run_tracked(jtype, fn, *, label="", project_id=None, feature_id=None):
+    """Run ``fn()`` on the CURRENT thread inside a usage-recording context and
+    persist a lightweight job record with the token/cost summary.
+
+    Used for AI work that happens OUTSIDE ``launch_job`` — poller/webhook-driven
+    PR coverage, manual PR-assign coverage, and test-plan generation — so their
+    LLM/embedding spend still shows up in Usage & Cost. Must only be called from
+    a bare background thread that has no active recorder; never from inside a
+    ``launch_job`` worker (which already records) or recording would nest.
+    """
+    jid = store.create_job(jtype, {}, label, project_id, feature_id)
+    result = None
+    import usage
+    usage.start()
+    try:
+        result = fn()
+        j = store.get_job(jid)
+        if j and j.get("status") == "running":
+            store.update_job(jid, status="succeeded", stage="done", progress=100)
+    except Exception as e:  # noqa: BLE001
+        store.update_job(jid, status="failed", stage="error", error=str(e)[:300])
+    finally:
+        try:
+            prices = store.get_settings().get("llm_prices") or {}
+            store.set_job_usage(jid, usage.summarize(usage.stop(), prices))
+        except Exception as ue:  # noqa: BLE001
+            print(f"[usage] failed to record tracked {jtype} {jid}: {ue}", flush=True)
+    return result
+
+
+def ingest_pr_tracked(repo, pr, feature_id_override=None):
+    """``ingest_pr`` wrapped so its webhook/poller/sync-driven LLM + embedding
+    cost is captured as a job in Usage & Cost. Use ONLY from non-job threads
+    (the manual code_coverage worker already records via launch_job)."""
+    num = (pr or {}).get("number")
+    label = f"PR coverage · {repo.get('full_name', '')}#{num}"
+    return run_tracked("pr_coverage",
+                       lambda: ingest_pr(repo, pr, feature_id_override),
+                       label=label, project_id=repo.get("project_id"))
 
 
 def _gen_worker(jid, params):
@@ -2269,12 +2338,17 @@ def _import_reanalysis_scheduler(interval_s: int = 300):
             print(f"[import-scheduler] list failed: {e}", flush=True)
             continue
         for pid in pids:
-            try:
+            def _sweep(pid=pid):
                 for feat in store.list_features(project_id=pid):
                     try:
                         _rescan_pool_for_feature(feat)
                     except Exception:  # noqa: BLE001
                         continue
+            try:
+                # Runs on this scheduler thread (no job recorder), and the rescan
+                # embeds features/rows — wrap so any embedding cost is captured.
+                run_tracked("import_reanalysis", _sweep,
+                            label="Imported-library re-analysis", project_id=pid)
             except Exception as e:  # noqa: BLE001
                 print(f"[import-scheduler] project {pid}: {e}", flush=True)
 
@@ -3134,8 +3208,12 @@ def start_test_plan(fid: str, body: dict = None, request: Request = None):
     )
     
     def run_gen():
-        test_plan.generate_test_plan_job(store, current_llm(), run_id, fid)
-        
+        run_tracked(
+            "test_plan",
+            lambda: test_plan.generate_test_plan_job(store, current_llm(), run_id, fid),
+            label=f"Test plan · {feature.get('name', '')}",
+            project_id=feature.get("project_id"), feature_id=fid)
+
     threading.Thread(target=run_gen, daemon=True).start()
     return {"runId": run_id, "runNumber": run_number, "status": "PROCESSING"}
 
@@ -3500,13 +3578,36 @@ def list_project_jira_issues(pid: str, exclude_feature_id: str | None = None):
 
 
 # ---- project repos (with webhook registration) -----------------------------
+# Repo "kind" is a display/badge classification, independent of repo_type (app/test,
+# which governs webhooks). Canonical values: BE, FE, test, infra. "other" is a legacy
+# value kept only so pre-existing repos still render; it is no longer offered in the UI.
+_REPO_KINDS = {"BE", "FE", "test", "infra"}
+_REPO_KIND_ALIASES = {
+    "be": "BE", "backend": "BE",
+    "fe": "FE", "frontend": "FE",
+    "test": "test", "tests": "test", "testing": "test",
+    "infra": "infra", "infrastructure": "infra",
+    "other": "other",   # legacy passthrough
+}
+
+
+def _normalize_repo_kind(kind: str | None) -> str:
+    """Coerce an incoming kind to a canonical value (BE/FE/test/infra, or legacy
+    'other'), defaulting to BE. Accepts case-insensitive names/aliases so the API is
+    forgiving regardless of how the client spells it."""
+    k = (kind or "").strip()
+    if k in _REPO_KINDS or k == "other":
+        return k
+    return _REPO_KIND_ALIASES.get(k.lower(), "BE")
+
+
 class RepoIn(BaseModel):
     # Either provide an `url` (parsed) or `repo_full_name` (already-validated).
     url: str | None = None
     repo_full_name: str | None = None
     label: str | None = None
-    kind: str = "BE"                  # BE | FE | infra | other (legacy)
-    repo_type: str = "app"            # app | test
+    kind: str = "BE"                  # BE | FE | test | infra  (badge; 'other' = legacy)
+    repo_type: str = "app"            # app | test  (webhook behavior — separate axis)
     git_provider: str = "github"      # github | gitlab
     default_branch: str = "main"
 
@@ -3587,7 +3688,7 @@ def add_repo(pid: str, body: RepoIn, request: Request):
 
     rid = store.add_repo(pid, owner, name,
                          (body.url or f"https://{provider}.com/{full_name}"),
-                         body.kind, body.default_branch,
+                         _normalize_repo_kind(body.kind), body.default_branch,
                          repo_type=repo_type, git_provider=provider,
                          label=label,
                          webhook_id=webhook_id, webhook_secret_enc=webhook_secret_enc)
@@ -4012,7 +4113,14 @@ def get_settings():
         "ollama_url": ("" if _ENV_OLLAMA else s.get("ollama_url", "")),
         "ollama_url_effective": current_ollama_url(),
         "ollama_url_env_locked": bool(_ENV_OLLAMA),
-        "poll_interval_s": POLL_INTERVAL,
+        # GitHub poller cadence (seconds). Frontend-saved value wins; "" means unset
+        # (falls back to .env / the 30-min default, shown as *_effective).
+        "poll_interval_s": s.get("poll_interval_s", ""),
+        "poll_interval_s_effective": current_poll_interval(),
+        "poll_interval_min_s": MIN_POLL_INTERVAL,
+        # Whether a saved poll interval is also mirrored to .env (true) or applies at
+        # runtime only because .env isn't writable in this deployment (false).
+        "poll_interval_env_writable": _env_file_writable(),
         "jira_base_url": s.get("jira_base_url", ""),
         "jira_email": s.get("jira_email", ""),
         "jira_token_set": bool(s.get("jira_api_token_enc")),
@@ -4060,6 +4168,7 @@ class SettingsIn(BaseModel):
     smtp_ssl: bool | None = None
     figma_api_token: str | None = None
     llm_prices: dict | None = None
+    poll_interval_s: int | None = None
 
 
 def _merged_settings_dict(body: SettingsIn):
@@ -4213,6 +4322,20 @@ def put_settings(body: SettingsIn, request: Request):
         upd["smtp_ssl"] = body.smtp_ssl
     if body.figma_api_token is not None:
         upd["figma_api_token_enc"] = crypto.encrypt(body.figma_api_token) if body.figma_api_token else ""
+    if body.poll_interval_s is not None:
+        # Floor to MIN_POLL_INTERVAL so a stray small value can't hammer the GitHub API.
+        # Applies to the poller on its next loop — no restart needed.
+        pv = max(MIN_POLL_INTERVAL, int(body.poll_interval_s))
+        upd["poll_interval_s"] = pv
+        # Keep .env in sync with the UI so the two never appear to disagree — this is a
+        # self-hosted, open-source app and operators read .env directly. Best-effort:
+        # if .env isn't writable (e.g. not bind-mounted) the Mongo value still applies
+        # live, so we don't fail the save; we just note it in the log.
+        if _env_file_writable():
+            ok, err = _write_env_var(ENV_FILE_PATH, "POLL_INTERVAL_SECONDS", str(pv))
+            if not ok:
+                print(f"[settings] could not persist POLL_INTERVAL_SECONDS to "
+                      f"{ENV_FILE_PATH}: {err}", flush=True)
     if body.llm_prices is not None:
         # keep only well-formed {model: {in, out}} entries
         clean = {}
@@ -4250,6 +4373,8 @@ def ollama_models():
         print(f"[wardenIQ][ollama-tags] {url}: {e!r}", flush=True)
         return {"ok": False, "models": [], "url": url,
                 "error": "could not reach Ollama at this URL"}
+
+
 
 
 @app.post("/api/llm/test")
@@ -5766,7 +5891,12 @@ def assign_pr(pr_id: str, body: AssignPRIn):
             except Exception:  # noqa: BLE001
                 files = []
         try:
-            _pr_coverage(pr_id, pdoc, files, body.feature_id)
+            run_tracked(
+                "pr_coverage",
+                lambda: _pr_coverage(pr_id, pdoc, files, body.feature_id),
+                label=f"PR coverage · assign #{p.get('number')}",
+                project_id=(repo or {}).get("project_id"),
+                feature_id=body.feature_id)
         except Exception as e:  # noqa: BLE001
             print(f"[wardenIQ][assign] coverage failed for PR {pr_id}: {e}", flush=True)
 
@@ -6503,7 +6633,7 @@ def sync_repo(rid: str):
         upd = _ts(pr.get("updated_at"))
         if upd <= last:
             continue
-        ingest_pr(repo, pr)
+        ingest_pr_tracked(repo, pr)
         newest = max(newest, upd)
     store.set_repo_synced(repo["id"], newest)
 
@@ -6525,7 +6655,8 @@ def _ts(iso):
 
 def poller():
     while True:
-        time.sleep(POLL_INTERVAL)
+        # Resolved each loop so an in-app change to the interval takes effect next cycle.
+        time.sleep(current_poll_interval())
         try:
             SYNC["running"] = True
             for r in store.repos_watching():
@@ -6544,7 +6675,7 @@ def _start_poller():
 
 @app.get("/api/sync/status")
 def sync_status():
-    return {**SYNC, "poll_interval_s": POLL_INTERVAL,
+    return {**SYNC, "poll_interval_s": current_poll_interval(),
             "github_authenticated": bool(GITHUB_TOKEN)}
 
 
@@ -6585,7 +6716,7 @@ async def github_webhook(request: Request):
         if WEBHOOK_SECRET and _verify_github_signature(WEBHOOK_SECRET, body, sig_header):
             repo = store.repo_by_fullname(full)
             if repo:
-                threading.Thread(target=ingest_pr, args=(repo, payload.get("pull_request", {})),
+                threading.Thread(target=ingest_pr_tracked, args=(repo, payload.get("pull_request", {})),
                                  daemon=True).start()
                 return {"handled": True, "repo": full}
         return {"ok": True}
@@ -6602,7 +6733,7 @@ async def github_webhook(request: Request):
         if repo["project_id"] in seen:
             continue
         seen.add(repo["project_id"])
-        threading.Thread(target=ingest_pr, args=(repo, payload.get("pull_request", {})),
+        threading.Thread(target=ingest_pr_tracked, args=(repo, payload.get("pull_request", {})),
                          daemon=True).start()
     return {"handled": True, "projects": len(seen), "repo": full}
 
@@ -6654,7 +6785,7 @@ async def gitlab_webhook(request: Request):
         if repo["project_id"] in seen:
             continue
         seen.add(repo["project_id"])
-        threading.Thread(target=ingest_pr, args=(repo, pseudo_pr), daemon=True).start()
+        threading.Thread(target=ingest_pr_tracked, args=(repo, pseudo_pr), daemon=True).start()
     return {"handled": True, "projects": len(seen), "repo": full}
 
 

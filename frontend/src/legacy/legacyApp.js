@@ -662,10 +662,27 @@ if($("#features-back-project"))$("#features-back-project").onclick=()=>{navigate
 
 if($("#f-project"))$("#f-project").onchange=async e=>{currentProject=e.target.value;loadFeatures();renderBreadcrumbs();await loadFeatureTicketOptions();};
 
+// Repo "kind" = display/badge classification (independent of app/test repo_type).
+// Canonical: BE, FE, test, infra. "other" is legacy — still rendered, never offered.
+const REPO_KINDS = [["BE","Backend"],["FE","Frontend"],["test","Test"],["infra","Infrastructure"]];
+function repoKindLabel(k){
+  const m={BE:"BE",FE:"FE",test:"Test",infra:"Infra",other:"Other"};
+  return m[k]||(k||"BE");
+}
+function repoKindClass(k){ return (k||"BE").toLowerCase(); }
+function repoKindOptions(sel){
+  return REPO_KINDS.map(([v,lab])=>`<option value="${v}"${v===sel?" selected":""}>${lab}</option>`).join("");
+}
+// Kinds that appear in Mind Map / Change impact analysis but are NOT pre-selected —
+// infrastructure code, so the user opts it in rather than out. (Test-TYPE repos are
+// already excluded from these views entirely; that exclusion is unchanged.)
+const REPO_KINDS_ANALYSIS_OPT_IN = new Set(["infra"]);
+function repoAnalysisDefaultChecked(k){ return !REPO_KINDS_ANALYSIS_OPT_IN.has((k||"").toLowerCase()); }
+
 // New Project — multi-step form state
 const NEW_PROJ = {
   provider: "github",
-  appRepos: [],      // [{full_name, label}]
+  appRepos: [],      // [{full_name, label, kind}]
   testRepos: [],
   available: [],     // last loaded list
 };
@@ -717,7 +734,10 @@ function _renderCpRepoPickers(){
         <div class="cp-repo-main">
           <div class="cp-repo-name"><b>${esc(r.full_name)}</b> <span class="cp-repo-meta">${r.private?"private":"public"}${r.default_branch?" · "+esc(r.default_branch):""}</span></div>
           ${isStaged
-            ? `<input class="cp-repo-label-input" data-key="${sectionKey}" data-fn="${esc(r.full_name)}" value="${esc((stagedRepo && stagedRepo.label) || "")}" placeholder="Display name (e.g. Backend API)"/>`
+            ? `<div class="cp-repo-fields" style="display:flex;gap:8px;align-items:center;margin-top:6px">
+                 <input class="cp-repo-label-input" data-key="${sectionKey}" data-fn="${esc(r.full_name)}" value="${esc((stagedRepo && stagedRepo.label) || "")}" placeholder="Display name (e.g. Backend API)" style="flex:1"/>
+                 <select class="cp-repo-kind-input" data-key="${sectionKey}" data-fn="${esc(r.full_name)}" title="Kind" style="flex:0 0 130px;font-size:12px;padding:5px 8px">${repoKindOptions((stagedRepo && stagedRepo.kind) || (sectionKey==="test"?"test":"BE"))}</select>
+               </div>`
             : ``}
         </div>
         <div class="cp-repo-actions">
@@ -747,9 +767,19 @@ document.addEventListener("click", e => {
     const idx = bucket.findIndex(r => r.full_name === fn);
     if(idx >= 0) bucket.splice(idx, 1);
   } else if(meta){
-    bucket.push({full_name: fn, label: (fn.split("/").pop() || fn).replace(/[-_]+/g, " ")});
+    bucket.push({full_name: fn, label: (fn.split("/").pop() || fn).replace(/[-_]+/g, " "),
+                 kind: key === "test" ? "test" : "BE"});
   }
   _renderCpRepoPickers();
+});
+
+// Per-repo Kind dropdown in the create-project wizard.
+document.addEventListener("change", e => {
+  const t = e.target.closest(".cp-repo-kind-input");
+  if(!t) return;
+  const bucket = t.dataset.key === "app" ? NEW_PROJ.appRepos : NEW_PROJ.testRepos;
+  const repo = bucket.find(r => r.full_name === t.dataset.fn);
+  if(repo) repo.kind = t.value;
 });
 
 document.addEventListener("input", e => {
@@ -916,7 +946,7 @@ if($("#proj-create-save")) $("#proj-create-save").onclick = async () => {
             label: (r.label || "").trim() || r.full_name,
             repo_type: r.repo_type,
             git_provider: NEW_PROJ.provider,
-            kind: r.repo_type === "test" ? "other" : "BE",
+            kind: r.kind || (r.repo_type === "test" ? "test" : "BE"),
           })
         });
         connected += 1;
@@ -1107,7 +1137,7 @@ async function loadRepos(){if(!currentProject||!$("#repo-list"))return;
           <div>
             <div style="font-weight: 600; font-size: 13.5px; color: var(--text);">${esc(rp.full_name)}</div>
             <div style="display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap;">
-              <span class="badge ${rp.kind.toLowerCase()}" style="font-size: 10px;">${esc(rp.kind)}</span>
+              <span class="badge ${repoKindClass(rp.kind)}" style="font-size: 10px;">${esc(repoKindLabel(rp.kind))}</span>
               <span class="badge" style="font-size: 10px;">${rp.pr_count} PRs</span>
               <span style="font-size: 10.5px; display: flex; align-items: center; gap: 4px;" class="muted">
                 <span class="dot ${rp.watch ? 'ok' : ''}" style="margin: 0; width: 6px; height: 6px;"></span>
@@ -1336,8 +1366,69 @@ async function loadUsage(){
     filterUsageTable("#usage-recent-search","usage-recent");
     filterUsageTable("#usage-model-filter","usage-by-model");
     filterUsageTable("#usage-project-filter","usage-by-project");
+    loadPricingEditor();   // refresh the editable price table (defaults + overrides)
   }catch(e){totals.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
 }
+
+// ---- Model pricing editor (Usage page) -------------------------------------
+// Lets users set input/output $/1M for ANY model id — including custom/new models
+// the app doesn't ship a default for — so Usage & Cost stays accurate. Only prices
+// that differ from the built-in default are persisted (as `llm_prices` overrides).
+let _priceDefaults = {};
+async function loadPricingEditor(){
+  const box=$("#usage-pricing-rows");if(!box)return;
+  try{
+    const s=await api("/api/settings");
+    _priceDefaults=s.llm_price_defaults||{};
+    const overrides=s.llm_prices||{};
+    const ids=Array.from(new Set([...Object.keys(_priceDefaults),...Object.keys(overrides)])).sort();
+    box.innerHTML=`<div style="display:flex;gap:8px;font-size:11px;margin-bottom:4px" class="muted">`+
+      `<span style="flex:2;min-width:160px">Model</span><span style="flex:1;min-width:90px">Input $/1M</span><span style="flex:1;min-width:90px">Output $/1M</span></div>`+
+      ids.map(m=>{
+        const p=overrides[m]||_priceDefaults[m]||{in:0,out:0};
+        const custom=!!overrides[m];
+        return `<div class="price-row" data-model="${esc(m)}" style="display:flex;gap:8px;align-items:center;margin-bottom:6px">`+
+          `<code style="flex:2;min-width:160px">${esc(m)}${custom?' <span class="muted" title="custom override">•</span>':''}</code>`+
+          `<input class="price-in" type="number" step="0.01" min="0" value="${Number(p.in||0)}" style="flex:1;min-width:90px"/>`+
+          `<input class="price-out" type="number" step="0.01" min="0" value="${Number(p.out||0)}" style="flex:1;min-width:90px"/>`+
+        `</div>`;
+      }).join("");
+  }catch(e){box.innerHTML=`<div class="err">${esc(e.message)}</div>`;}
+}
+if($("#usage-price-add"))$("#usage-price-add").onclick=()=>{
+  const m=($("#usage-price-new-model").value||"").trim();
+  if(!m){toast("Enter a model id",true);return;}
+  const pin=parseFloat($("#usage-price-new-in").value)||0;
+  const pout=parseFloat($("#usage-price-new-out").value)||0;
+  const box=$("#usage-pricing-rows");if(!box)return;
+  if(box.querySelector(`.price-row[data-model="${CSS.escape(m)}"]`)){toast("Model already listed — edit its row",true);return;}
+  const row=document.createElement("div");
+  row.className="price-row";row.setAttribute("data-model",m);
+  row.style.cssText="display:flex;gap:8px;align-items:center;margin-bottom:6px";
+  row.innerHTML=`<code style="flex:2;min-width:160px">${esc(m)} <span class="muted" title="custom override">•</span></code>`+
+    `<input class="price-in" type="number" step="0.01" min="0" value="${pin}" style="flex:1;min-width:90px"/>`+
+    `<input class="price-out" type="number" step="0.01" min="0" value="${pout}" style="flex:1;min-width:90px"/>`;
+  box.appendChild(row);
+  $("#usage-price-new-model").value="";$("#usage-price-new-in").value="";$("#usage-price-new-out").value="";
+};
+if($("#usage-price-save"))$("#usage-price-save").onclick=async()=>{
+  const status=$("#usage-price-status");
+  const prices={};
+  document.querySelectorAll("#usage-pricing-rows .price-row").forEach(r=>{
+    const m=r.getAttribute("data-model");
+    const pin=parseFloat(r.querySelector(".price-in").value)||0;
+    const pout=parseFloat(r.querySelector(".price-out").value)||0;
+    const d=_priceDefaults[m];
+    // Persist only real overrides: custom models, or values that differ from default.
+    if(!d||Number(d.in)!==pin||Number(d.out)!==pout){prices[m]={in:pin,out:pout};}
+  });
+  try{
+    if(status){status.classList.remove("err","ok");status.textContent="Saving…";}
+    await api("/api/settings",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({llm_prices:prices})});
+    if(status){status.innerHTML=`<span class="ok">Saved ${Object.keys(prices).length} override(s) — costs recalculated.</span>`;}
+    loadUsage();   // re-render totals/tables with the new prices
+  }catch(e){if(status){status.innerHTML=`<span class="err">${esc(e.message)}</span>`;}}
+};
 // Populate a <select> with [value,label] options, keeping the current selection if still present.
 function fillUsageSelect(sel,allLabel,options){
   const el=$(sel);if(!el)return;
@@ -2279,6 +2370,15 @@ async function loadConfig(){try{const s=await api("/api/settings");
   }
   if($("#cfg-jira-base")){$("#cfg-jira-base").value=s.jira_base_url||"";$("#cfg-jira-email").value=s.jira_email||"";$("#cfg-jira-status").innerHTML=s.jira_token_set?`<span class="ok">Jira token configured</span>`:`<span class="muted">no Jira token set</span>`;}
   if($("#cfg-figma-status")){$("#cfg-figma-status").innerHTML=s.figma_token_set?`<span class="ok">Figma token configured</span>`:`<span class="muted">no Figma token set</span>`;}
+  if($("#cfg-poll-interval")){
+    const eff=s.poll_interval_s_effective||1800;
+    $("#cfg-poll-interval").value=(s.poll_interval_s!==""&&s.poll_interval_s!=null)?s.poll_interval_s:eff;
+    $("#cfg-poll-interval").min=s.poll_interval_min_s||30;
+    if($("#cfg-poll-status")){
+      const envNote=s.poll_interval_env_writable?" Saved values are also written to <code>.env</code>.":" Applies at runtime only — <code>.env</code> isn't writable in this deployment.";
+      $("#cfg-poll-status").innerHTML=`In use: <code>${eff}s</code> (≈ ${(eff/60).toFixed(eff%60?1:0)} min).${envNote}`;
+    }
+  }
   if($("#cfg-smtp-host")){$("#cfg-smtp-host").value=s.smtp_host||"";$("#cfg-smtp-port").value=s.smtp_port||"";$("#cfg-smtp-user").value=s.smtp_user||"";$("#cfg-smtp-from").value=s.smtp_from||"";$("#cfg-smtp-tls").checked=s.smtp_tls!==false;$("#cfg-smtp-ssl").checked=!!s.smtp_ssl;
     $("#cfg-smtp-status").innerHTML=s.smtp_configured?`<span class="ok">SMTP configured${s.smtp_pass_set?" (password saved)":""}</span>`:`<span class="warn">not configured — email sign-in unavailable</span>`;}
   // Embedding model
@@ -2452,30 +2552,45 @@ const PREDEFINED_MODELS = {
     { id: "qwen2.5:7b", label: "Qwen 2.5 7B — best quality, slowest" }
   ],
   groq: [
+    { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B — best quality" },
     { id: "llama-3.1-8b-instant", label: "Llama 3.1 8B Instant — fastest" },
-    { id: "llama-3.3-70b-versatile", label: "Llama 3.3 70B — best quality" }
+    { id: "llama3-70b-8192", label: "Llama 3 70B" },
+    { id: "llama3-8b-8192", label: "Llama 3 8B" },
+    { id: "gemma2-9b-it", label: "Gemma 2 9B" },
+    { id: "mixtral-8x7b-32768", label: "Mixtral 8x7B" }
   ],
+  // Curated per provider — newest flagships + balanced + cost-efficient staples.
   openai: [
-    { id: "gpt-4o", label: "GPT-4o (Recommended)" },
-    { id: "gpt-4o-mini", label: "GPT-4o Mini" },
-    { id: "gpt-4.1", label: "GPT-4.1" }
+    { id: "gpt-5", label: "GPT-5 (newest)" },
+    { id: "gpt-5-mini", label: "GPT-5 Mini — cost-efficient" },
+    { id: "gpt-4.1", label: "GPT-4.1" },
+    { id: "gpt-4.1-mini", label: "GPT-4.1 Mini" },
+    { id: "gpt-4o", label: "GPT-4o" },
+    { id: "gpt-4o-mini", label: "GPT-4o Mini — cheapest" }
   ],
   anthropic: [
-    { id: "claude-opus-4-6", label: "Claude Opus 4.6 (Recommended)" },
+    { id: "claude-opus-4-8", label: "Claude Opus 4.8 (newest)" },
+    { id: "claude-sonnet-5", label: "Claude Sonnet 5 — balanced" },
+    { id: "claude-haiku-4-5", label: "Claude Haiku 4.5 — cheapest" },
+    { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
     { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
-    { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" }
+    { id: "claude-3-5-haiku-latest", label: "Claude 3.5 Haiku" }
   ],
   gemini: [
-    { id: "gemini-3.5-flash", label: "Gemini 3.5 Flash (Recommended)" },
-    { id: "gemini-3.5-pro", label: "Gemini 3.5 Pro" },
-    { id: "gemini-3.1-pro", label: "Gemini 3.1 Pro" },
-    { id: "gemini-3.1-flash-lite", label: "Gemini 3.1 Flash-Lite" }
+    { id: "gemini-3-pro-preview", label: "Gemini 3 Pro (newest)" },
+    { id: "gemini-3-flash-preview", label: "Gemini 3 Flash (newest)" },
+    { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro — best quality" },
+    { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash — balanced" },
+    { id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash-Lite — cheapest" },
+    { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" }
   ],
   mistral: [
-    { id: "mistral-large-latest", label: "Mistral Large (Recommended)" },
-    { id: "mistral-small-latest", label: "Mistral Small" },
+    { id: "mistral-large-latest", label: "Mistral Large — best quality" },
+    { id: "mistral-medium-latest", label: "Mistral Medium — balanced" },
+    { id: "mistral-small-latest", label: "Mistral Small — cost-efficient" },
+    { id: "ministral-8b-latest", label: "Ministral 8B — cheapest" },
     { id: "open-mistral-nemo", label: "Mistral Nemo" },
-    { id: "codestral-latest", label: "Codestral" }
+    { id: "codestral-latest", label: "Codestral — code" }
   ],
   "openai-compatible": [],
   // Bedrock model IDs vary by account/region and may be inference-profile ARNs, so
@@ -2484,24 +2599,25 @@ const PREDEFINED_MODELS = {
 };
 
 function updateModelOptions(provider, selectedModel) {
-  // Built-in models only — a fixed curated list per provider, no free-text/custom
-  // entry (keeps model choice simple and supported for the open-source launch).
+  // Fixed curated dropdown of selected models per provider. Providers without a
+  // list (custom OpenAI-compatible, Bedrock) fall back to a typed model id since
+  // their model names are account/endpoint-specific.
   const models = PREDEFINED_MODELS[provider] || [];
   const select = $("#cfg-llm-model-select");
   const input = $("#cfg-llm-model");
   if (!select || !input) return;
 
   if (!models.length) {
-    // Providers with no built-in list (e.g. custom OpenAI-compatible) still need a
-    // typed model name — keep a plain input for just those.
     select.style.display = "none";
     input.style.display = "block";
     input.value = selectedModel || "";
     return;
   }
+
   select.style.display = "";
   const sel = models.some(m => m.id === selectedModel) ? selectedModel : models[0].id;
-  select.innerHTML = models.map(m => `<option value="${m.id}" ${m.id === sel ? "selected" : ""}>${m.label} (${m.id})</option>`).join("");
+  select.innerHTML = models.map(m =>
+    `<option value="${m.id}" ${m.id === sel ? "selected" : ""}>${m.label}</option>`).join("");
   input.style.display = "none";
   input.value = select.value;   // hidden input mirrors the dropdown; save reads it
 }
@@ -2509,7 +2625,7 @@ function updateModelOptions(provider, selectedModel) {
 if ($("#cfg-llm-model-select")) {
   $("#cfg-llm-model-select").onchange = e => {
     const input = $("#cfg-llm-model");
-    if (input) input.value = e.target.value;   // built-in choice → mirror to hidden input
+    if (input) input.value = e.target.value;   // dropdown choice → mirror to hidden input
   };
 }
 
@@ -2591,6 +2707,15 @@ $("#cfg-figma-save").onclick=async()=>{
   if(!t){toast("Enter a Figma token",true);return;}
   try{
     await saveConfigSection({buttonId:"#cfg-figma-save",statusId:"#cfg-figma-status",body:{figma_api_token:t},clearIds:["#cfg-figma-token"],successMessage:"Figma token saved"});
+  }catch(e){toast(e.message,true);}
+};
+$("#cfg-poll-save").onclick=async()=>{
+  const v=parseInt($("#cfg-poll-interval").value,10);
+  const min=parseInt($("#cfg-poll-interval").min,10)||30;
+  if(!Number.isFinite(v)||v<min){toast(`Enter a poll interval of at least ${min} seconds`,true);return;}
+  try{
+    await saveConfigSection({buttonId:"#cfg-poll-save",statusId:"#cfg-poll-status",body:{poll_interval_s:v},successMessage:`Poll interval set to ${v}s (≈ ${(v/60).toFixed(v%60?1:0)} min)`});
+    if(typeof loadSyncStatus==="function")loadSyncStatus();
   }catch(e){toast(e.message,true);}
 };
 $("#cfg-smtp-save").onclick=async()=>{
@@ -3332,7 +3457,7 @@ $("#mm-proj").onchange=()=>{currentProject=$("#mm-proj").value;loadMindmapRepos(
 $("#mm-refresh").onclick=()=>loadMindmap();
 function repoBranchRows(repos,cls){
   return repos.map(rp=>`<div style="display:flex;gap:8px;align-items:center;font-size:12.5px">
-    <label style="display:flex;gap:6px;align-items:center;margin:0;flex:1"><input type="checkbox" class="${cls}-chk" value="${rp.id}" checked style="width:auto"/> ${esc(rp.full_name)} <span class="pill">${esc(rp.kind)}</span></label>
+    <label style="display:flex;gap:6px;align-items:center;margin:0;flex:1"><input type="checkbox" class="${cls}-chk" value="${rp.id}"${repoAnalysisDefaultChecked(rp.kind)?" checked":""} style="width:auto"/> ${esc(rp.full_name)} <span class="pill ${repoKindClass(rp.kind)}">${esc(repoKindLabel(rp.kind))}</span></label>
     <select class="${cls}-branch" data-rid="${rp.id}" title="branch to analyze" style="flex:0 0 220px;font-size:12px;padding:5px 8px"><option value="">${esc(rp.default_branch||'default')} (default)</option></select>
   </div>`).join("")||`<span class="muted">no repos yet — connect one under Projects & Repos</span>`;}
 // populate each repo's branch <select> from the repo's configured provider

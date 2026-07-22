@@ -29,6 +29,8 @@ import hashlib
 import io
 import json
 import re
+
+import usage
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -1271,8 +1273,12 @@ def polish_all_rows(llm, rows: list[ParsedRow],
     polished_by_row: dict[int, dict] = {}
     drop_row_numbers: set[int] = set()
     completed = 0
+    # Bind the parent job's (thread-local) token recorder inside the pool workers
+    # so this polish pass's LLM cost is attributed to the import job.
+    _parent_rec = usage.current()
 
     def _do_batch(batch):
+        usage.bind(_parent_rec)
         return batch, polish_rows_batch(llm, batch, feature_name,
                                           feature_description)
 

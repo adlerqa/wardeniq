@@ -2,7 +2,22 @@
 
 ## Unreleased
 
+### Changed
+- **Installs now track the `latest` image tag so `docker compose pull` delivers new
+  releases.** The installer previously pinned `adlerqa/wardeniq:beta`, but the publish
+  workflow only updates `:beta` on a manual run — a version release (`vX.Y.Z`) publishes
+  `:X.Y.Z` and `:latest`, so `:beta` users never got updates via `pull`. `install.sh` /
+  `install.ps1` now default `WARDENIQ_TAG=latest`; existing `:beta` installs can move to
+  the release channel by setting `APP_IMAGE=adlerqa/wardeniq:latest` in `.env` once. The
+  README's quick-start now shows one install command per OS (the installer prompts for
+  bundled vs bring-your-own, or takes `WARDENIQ_MODE`) instead of two, and a new
+  "Updating to a new release" section documents the pull + recreate flow (no re-install).
+
 ### Fixed
+- **Docs: the bring-your-own-MongoDB pre-seed examples piped the installer without a
+  mode, which now defaults to the bundled stack and ignores `MONGO_URI`.** Updated those
+  examples to pass `WARDENIQ_MODE=byo` (macOS/Linux) / `$env:WARDENIQ_MODE='byo'`
+  (Windows) so a piped bring-your-own install actually uses the supplied database.
 - **`install.ps1` could misreport "Docker daemon isn't running" when Docker was
   actually fine, then crash outright once that was "fixed."** The pre-flight
   check wrapped `docker info` in `try/catch`. Under this script's
@@ -26,7 +41,76 @@
   `docker compose up`) since they were equally exposed and just hadn't been
   hit yet.
 
+### Fixed
+- **Usage & Cost mispriced every provider because the default price table was stale
+  and its keys didn't match the models the UI actually offers.** Most visibly,
+  `claude-opus-4-8` used the old Opus rate of $15/$75 per 1M tokens, so a job billed
+  $2.42 by Anthropic showed as ~$7 in wardenIQ. `usage.py` DEFAULT_PRICES is now keyed
+  to the exact model IDs in the Settings dropdown (`PREDEFINED_MODELS`) with rates
+  verified from each provider's own pricing page (2026-07-22):
+  - **Anthropic** — Opus 4.5–4.8 $5/$25, Haiku 4.5 $1/$5, Sonnet 5 $2/$10 (intro
+    through 2026-08-31, then $3/$15), Sonnet 4.5/4.6 $3/$15, plus Fable 5, Mythos 5,
+    Haiku 3.5, and legacy Opus 4.1.
+  - **Google Gemini** — 2.5 Pro $1.25/$10, 2.5 Flash $0.30/$2.50, 2.5 Flash-Lite &
+    2.0 Flash $0.10/$0.40, 3 Flash preview $0.50/$3, 3 Pro preview $2/$12.
+  - **Mistral** — Large $0.50/$1.50, Medium $1.50/$7.50, Small $0.15/$0.60,
+    Ministral 8B & Nemo $0.15/$0.15, Codestral $0.30/$0.90.
+  - **Groq** — Llama 3.3 70B $0.59/$0.79, Llama 3.1 8B $0.05/$0.08 (older
+    llama3/gemma2/mixtral kept at last-known legacy rates).
+  - **OpenAI** — kept at established list prices (gpt-4o $2.50/$10, gpt-4o-mini
+    $0.15/$0.60, gpt-4.1 $2/$8, gpt-4.1-mini $0.40/$1.60, gpt-5 $1.25/$10, gpt-5-mini
+    $0.25/$2); these models are legacy on OpenAI's current page, so re-verify when the
+    dropdown is refreshed.
+  Family fallbacks were realigned to match. Token *counts* were already correct — the
+  small delta vs a console is free local Ollama embedding tokens.
+- **AWS Bedrock usage was silently priced at $0 for many model ids.** `price_for`
+  treated any id containing a colon as a free local Ollama tag, but Bedrock version
+  ids end in `-v1:0`, so Bedrock calls whose id didn't happen to substring-match a
+  price key (e.g. `anthropic.claude-sonnet-4-20250514-v1:0`,
+  `us.anthropic.claude-3-5-haiku-20241022-v1:0`) resolved to $0. The free-tag rule is
+  now skipped for ids carrying a hosted-provider marker (`anthropic.`, `amazon.`,
+  `arn:`, …), so Bedrock Claude ids fall through to the Claude family price
+  (opus → $5/$25, sonnet → $3/$15, haiku → $1/$5); local Ollama tags stay free. Prompt-cache and
+  Batch-API discounts are still not modelled (wardenIQ makes uncached, non-batch
+  calls, so base rates match). Any model can still be overridden in Configuration →
+  LLM pricing; when new models are added to the dropdown, add their rates here too.
+
 ### Added
+- **Repo "kind" is now selectable everywhere and includes a dedicated `test`
+  badge.** The kind classification (a display badge, independent of the app/test
+  `repo_type` that governs webhooks) gained a `test` value and dropped `other` from
+  the UI (canonical set is now `BE | FE | test | infra`; `other` is retained only as
+  a legacy value so pre-existing repos still render). The create-project wizard now
+  shows a per-repo **Kind** dropdown beside the display-name box (defaulting to
+  Backend for app repos and Test for test repos) instead of hard-coding every repo to
+  `BE`/`other`; the project-settings **Connect repository** panel's Kind dropdown adds
+  Test in place of Other. Badges render via a shared label map (`test`→"Test",
+  `infra`→"Infra", legacy `other`→"Other") in the repositories list, Change impact
+  analysis, and the Implementation coverage map / Mind Map. Backend `POST /repos`
+  normalizes incoming kinds case-insensitively (`_normalize_repo_kind`), and a
+  one-time `store._converge_repo_kinds()` promotes existing test-type repos that were
+  defaulted to `other` up to `test` so their badge reflects the new value without
+  manual re-tagging. In the **Mind Map** and **Change impact analysis** repo pickers,
+  `infra`-kind repos are now listed but left **unchecked by default** (infrastructure
+  code, so you opt it in rather than out); backend, frontend, and test-kind repos stay
+  pre-selected. Test-*type* repos remain excluded from these views entirely, as before.
+- **The GitHub poll interval is now configurable in the UI (Configuration → Sync
+  & polling) and defaults to 30 minutes.** Previously the poller cadence was fixed
+  at import from `POLL_INTERVAL_SECONDS` (default 120s) and could only be changed by
+  editing `.env` and restarting. Now `current_poll_interval()` resolves it live on
+  every poll loop with precedence: the frontend-saved `settings.poll_interval_s`
+  wins, else `POLL_INTERVAL_SECONDS` in `.env` (seed default), else a built-in
+  1800s (30 min). Saved values are floored at `MIN_POLL_INTERVAL` (30s) so a stray
+  small value can't hammer the GitHub API, and a change applies on the next loop
+  with no restart. `.env`/`.env.example` defaults bumped 120 → 1800. Exposed via
+  `GET /api/settings` (`poll_interval_s`, `poll_interval_s_effective`,
+  `poll_interval_min_s`), settable via `PUT /api/settings` (`poll_interval_s`), and
+  reflected in `GET /api/sync/status`. GitLab (webhook-driven) is unaffected.
+  Saving from the UI also mirrors the value into `.env`
+  (`POLL_INTERVAL_SECONDS`, via the existing `_write_env_var` helper used for
+  `MONGO_URI`/`APP_SECRET`) so the config file never diverges from what's running;
+  this is best-effort, so when `.env` isn't writable (not bind-mounted) the value
+  still applies live from the `settings` doc and the UI says so.
 - **Installer validates the bring-your-own `MONGO_URI` instead of accepting
   anything.** Previously the "Bring your own DB" prompt in `install.sh`/`install.ps1`
   saved whatever was typed verbatim — a typo or placeholder (e.g. pasting a random

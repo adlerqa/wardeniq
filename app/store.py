@@ -127,6 +127,7 @@ class Store:
         self._renumber_display_ids()   # one-time: per-feature numbering (1..N)
         self._repair_temp_display_ids()   # self-heal any ids stuck on a temp value
         self._backfill_settings_configured()
+        self._converge_repo_kinds()
         self._ensure_vector(self.features, extra_filters=["project_id"])
         self._ensure_vector(self.fchunks, extra_filters=["project_id", "feature_id"])
         self._ensure_vector(self.code_chunks, extra_filters=["project_id", "repo_id"])
@@ -2845,6 +2846,21 @@ class Store:
             ):
                 self.db["settings"].update_one(
                     {"_id": "app"}, {"$set": {"configured": True}})
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _converge_repo_kinds(self):
+        """One-time convergence for the repo 'kind' badge. Test-type repos were
+        previously always tagged kind='other' by default (there was no way to choose
+        their kind), so promote those to the dedicated 'test' kind added later. Only
+        touches repo_type=='test' rows whose kind is unset/empty/'other' — a
+        deliberately-chosen kind on a test repo (if any) is left alone. App repos are
+        never auto-changed (their 'other' could be intentional)."""
+        try:
+            self.repos.update_many(
+                {"repo_type": "test",
+                 "kind": {"$in": ["other", "", None]}},
+                {"$set": {"kind": "test"}})
         except Exception:  # noqa: BLE001
             pass
 

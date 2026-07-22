@@ -339,6 +339,8 @@
   tr.click{cursor:pointer;} tr.click:hover{background:var(--panel2);}
   .badge{font-size:10.5px;color:var(--muted);background:var(--panel2);border:1px solid var(--line);padding:2px 7px;border-radius:10px;}
   .badge.functional{color:var(--blue);}.badge.e2e{color:var(--purple);}.badge.api{color:var(--green);}.badge.ui{color:#f0abfc;}.badge.nfr{color:var(--accent);}
+  /* Repo kind badges (BE/FE/Test/Infra; 'other' = legacy). */
+  .badge.be,.pill.be{color:var(--blue);}.badge.fe,.pill.fe{color:#f0abfc;}.badge.test,.pill.test{color:var(--green);}.badge.infra,.pill.infra{color:var(--accent);}.badge.other,.pill.other{color:var(--muted);}
   .pill{display:inline-block;font-size:11px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:1px 7px;margin:2px 3px 0 0;}
   .feat{padding:13px 15px;border:1px solid var(--line);border-radius:8px;margin-bottom:11px;cursor:pointer;background:var(--panel2);}
   .feat:hover{border-color:var(--accent);} .feat .n{font-weight:600;font-size:13.5px;} .feat .m{color:var(--muted);font-size:11.5px;}
@@ -1124,6 +1126,12 @@
   .badge.new{background:rgba(52,211,153,.16);color:#7eecc0;}
   .badge.reused{background:rgba(88,166,255,.16);color:#9cc7ff;}
   .badge.shared{background:rgba(188,140,255,.16);color:#d8bbff;}
+  /* Repo kind badges (BE/FE/Test/Infra; 'other' = legacy). */
+  .badge.be{background:rgba(88,166,255,.16);color:#9cc7ff;}
+  .badge.fe{background:rgba(240,171,252,.15);color:#f5c2fb;}
+  .badge.test{background:rgba(52,211,153,.16);color:#7eecc0;}
+  .badge.infra{background:rgba(246,166,35,.16);color:#f8cd78;}
+  .badge.other{background:rgba(255,255,255,.06);color:var(--muted);}
   .pill{border-radius:20px;background:rgba(255,255,255,.05);}
   /* lists + rows */
   .feat{border-radius:12px;background:linear-gradient(180deg,#1a2230,#161d28);transition:border-color .15s,transform .15s,background .15s;}

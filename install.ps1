@@ -27,7 +27,7 @@ param(
     [string]$AdminPassword = $env:WARDENIQ_ADMIN_PASSWORD,
     [string]$Wipe = $env:WARDENIQ_WIPE,
     [string]$Dest = $(if ($env:WARDENIQ_DIR) { $env:WARDENIQ_DIR } else { "wardeniq" }),
-    [string]$Tag = $(if ($env:WARDENIQ_TAG) { $env:WARDENIQ_TAG } else { "beta" })
+    [string]$Tag = $(if ($env:WARDENIQ_TAG) { $env:WARDENIQ_TAG } else { "latest" })
 )
 
 $ErrorActionPreference = "Stop"
