@@ -263,7 +263,11 @@ class GenerationPipelineTests(unittest.TestCase):
         }
         self.assertFalse(_semantic_reuse_compatible(candidate, negative, "api"))
 
-    def test_normal_generation_keeps_node_style_category_depth(self):
+    def test_budget_trims_over_represented_category_to_focus_weight(self):
+        # With equal focus weights, no single category should dominate: the
+        # over-represented suite (API here, 60 cases) is trimmed toward its
+        # weighted share of the produced pool, while categories that are already
+        # at or below their share are left untouched (we trim, never pad).
         suites = {
             "api_tests": [{"id": index} for index in range(60)],
             "ui_validations": [{"id": index} for index in range(12)],
@@ -272,14 +276,39 @@ class GenerationPipelineTests(unittest.TestCase):
             "edge_cases": [{"id": index} for index in range(8)],
         }
         budgeted = _budget_suites(
-            suites,
+            dict(suites),
             24,
-            {"functional": 25, "e2e": 25, "api": 25, "nfr": 25},
+            {"functional": 20, "e2e": 20, "api": 20, "nfr": 20, "ui": 20},
         )
-        self.assertEqual(
-            {key: len(value) for key, value in suites.items()},
-            {key: len(value) for key, value in budgeted.items()},
+        counts = {key: len(value) for key, value in budgeted.items()}
+        # Pool = 100 cases over 5 equal weights -> ~20 per category.
+        self.assertEqual(20, counts["api_tests"])          # trimmed down from 60
+        # Thin categories are preserved as-is, never inflated to hit the target.
+        self.assertEqual(12, counts["ui_validations"])
+        self.assertEqual(10, counts["business_tests"])
+        self.assertEqual(10, counts["e2e_tests"])
+        self.assertEqual(8, counts["edge_cases"])
+
+    def test_budget_zero_weight_drops_category(self):
+        suites = {
+            "api_tests": [{"id": index} for index in range(60)],
+            "ui_validations": [{"id": index} for index in range(12)],
+            "business_tests": [{"id": index} for index in range(10)],
+            "e2e_tests": [{"id": index} for index in range(10)],
+            "edge_cases": [{"id": index} for index in range(8)],
+        }
+        budgeted = _budget_suites(
+            dict(suites),
+            24,
+            {"functional": 25, "e2e": 25, "api": 0, "nfr": 25, "ui": 25},
         )
+        # A zero focus weight removes the category entirely...
+        self.assertEqual(0, len(budgeted["api_tests"]))
+        # ...and the remaining categories are still capped by their own material,
+        # not padded (each stays at its produced count here).
+        self.assertEqual(10, len(budgeted["business_tests"]))
+        self.assertEqual(10, len(budgeted["e2e_tests"]))
+        self.assertEqual(8, len(budgeted["edge_cases"]))
 
     def test_ui_components_are_recovered_from_document_controls(self):
         components = _derive_ui_components(
