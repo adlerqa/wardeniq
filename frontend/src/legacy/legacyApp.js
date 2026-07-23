@@ -433,12 +433,46 @@ function navigateTo(v){
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>navigateTo(b.dataset.view));
 if($("#sidebar-toggle"))$("#sidebar-toggle").onclick=()=>{
   $("#app-shell").classList.toggle("sidebar-collapsed");
-  $("#sidebar-toggle").textContent=$("#app-shell").classList.contains("sidebar-collapsed")?"›":"‹";
+  const isCollapsed = $("#app-shell").classList.contains("sidebar-collapsed");
+  $("#sidebar-toggle").textContent=isCollapsed?"›":"‹";
+  $("#sidebar-toggle").setAttribute("title", isCollapsed ? "Expand sidebar" : "Collapse sidebar");
+};
+
+function getProjectName(projectId) {
+  if (window.allProjects) {
+    const p = window.allProjects.find(x => x.id === projectId);
+    if (p) return p.name;
+  }
+  const activeTitle = $("#active-proj-title")?.textContent;
+  if (activeTitle && activeTitle !== "Project") return activeTitle;
+  const featTitle = $("#features-page-title")?.textContent;
+  if (featTitle && featTitle !== "Features") return featTitle;
+  return "Project";
+}
+
+window.goToProjects = () => {
+  navigateTo("projects");
+  showProjectList();
+  loadProjects();
+};
+
+window.goToProjectFeatures = () => {
+  currentFeature = null;
+  navigateTo("features");
+  showFeatureList();
+};
+
+window.goToFeatureWorkspace = () => {
+  if (currentFeature) {
+    navigateTo("features");
+    openFeature(currentFeature);
+  }
 };
 
 function renderBreadcrumbs() {
-  // The guided breadcrumb strip was removed in favor of simple back navigation.
+  updateBackbar();
 }
+
 function updateBackbar(){
   const bar=$("#backbar"),btn=$("#backbar-btn"),label=$("#backbar-label");
   if(!bar||!btn||!label)return;
@@ -460,8 +494,60 @@ function updateBackbar(){
     show=false;
   }
   bar.classList.toggle("show",show);
-  label.textContent=text;
   btn.onclick=handler||null;
+
+  if (show) {
+    const crumbs = [];
+    crumbs.push({
+      label: "Projects & Repos",
+      action: "goToProjects()"
+    });
+
+    if (currentProject) {
+      const projName = getProjectName(currentProject);
+      const isProjectCurrent = (currentViewName === "features" && !currentFeature && (!$("#feature-create-page") || $("#feature-create-page").hidden));
+      crumbs.push({
+        label: projName,
+        action: isProjectCurrent ? null : "goToProjectFeatures()"
+      });
+
+      if (currentViewName === "projects" && !$("#project-detail-page")?.hidden) {
+        crumbs.push({ label: "Settings", action: null });
+      } else if (currentViewName === "features" && !$("#feature-create-page")?.hidden) {
+        crumbs.push({ label: "Create feature", action: null });
+      } else if (currentFeature) {
+        const featName = currentFeatureData?.name || "Feature";
+        const isFeatureCurrent = (currentViewName === "features");
+        crumbs.push({
+          label: featName,
+          action: isFeatureCurrent ? null : "goToFeatureWorkspace()"
+        });
+
+        if (currentViewName === "validator") {
+          crumbs.push({ label: "Validator", action: null });
+        } else if (currentViewName === "testplan") {
+          crumbs.push({ label: "Test plan", action: null });
+        } else if (currentViewName === "gap") {
+          crumbs.push({ label: "Gap analysis", action: null });
+        } else if (currentViewName === "cases") {
+          crumbs.push({ label: "Test cases", action: null });
+        }
+      } else if (currentViewName === "cases") {
+        crumbs.push({ label: "Test cases", action: null });
+      }
+    }
+
+    label.innerHTML = crumbs.map((c, i) => {
+      const isLast = i === crumbs.length - 1;
+      if (isLast) {
+        return `<span class="crumb active">${esc(c.label)}</span>`;
+      } else {
+        return `<span class="crumb clickable" onclick="${c.action}">${esc(c.label)}</span><span class="separator">›</span>`;
+      }
+    }).join("");
+  } else {
+    label.innerHTML = "";
+  }
 }
 
 window.clickBreadcrumb = function(stepId) {
@@ -543,6 +629,7 @@ const gauge=(label,pct,cls)=>`<div class="gauge"><div class="top"><span>${label}
 async function loadProjects(){
   if($("#project-cards-container")&&!$("#project-cards-container").dataset.loaded)skIn("#project-cards-container",skeleton.cards(6,"Loading projects"));
   try{let r=await api("/api/projects");
+    window.allProjects = r.projects;
     if($("#project-cards-container"))$("#project-cards-container").dataset.loaded="1";
     if(r.projects.length){
       if(!currentProject||!r.projects.find(p=>p.id===currentProject))currentProject=r.projects[0].id;
@@ -595,6 +682,7 @@ async function loadProjects(){
       }
     }
     if(!$("#project-detail-page").hidden)loadRepos();
+    updateBackbar();
   }catch(e){}
 }
 
@@ -655,6 +743,12 @@ window.toggleProjectMenu = pid => {
 };
 document.addEventListener("click",e=>{
   if(!e.target.closest("[data-project-card]"))document.querySelectorAll("[data-project-card]").forEach(card=>card.classList.remove("menu-open"));
+  if(!e.target.closest("[data-feature-card]"))document.querySelectorAll("[data-feature-card]").forEach(card=>card.classList.remove("menu-open"));
+});
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"){
+    document.querySelectorAll("[data-project-card], [data-feature-card]").forEach(card=>card.classList.remove("menu-open"));
+  }
 });
 if($("#project-detail-back"))$("#project-detail-back").onclick=()=>showProjectList();
 if($("#proj-features-btn"))$("#proj-features-btn").onclick=()=>{currentFeature=null;navigateTo("features");showFeatureList();};
@@ -1214,7 +1308,7 @@ async function showFeatureCreate(){
 if($("#feature-new-btn"))$("#feature-new-btn").onclick=()=>showFeatureCreate();
 if($("#feature-create-back"))$("#feature-create-back").onclick=showFeatureList;
 $("#f-file").onchange=e=>{const fs=[...e.target.files].map(f=>f.name);$("#f-filelist").textContent=fs.length?`${fs.length} file(s): ${fs.join(", ")}`:"";};
-const FOCUS_TYPES=["functional","e2e","api","nfr"];
+const FOCUS_TYPES=["functional","ui","e2e","api","nfr"];
 function focusVals(){return FOCUS_TYPES.reduce((o,t)=>{o[t]=parseInt($("#foc-"+t).value)||0;return o;},{});}
 let FOCUS_PREVIOUS=focusVals();
 let FOCUS_PARTNER=null;
@@ -1541,7 +1635,7 @@ async function loadFeatures(){if(!$("#feat-list"))return;
   skIn("#feat-list",skeleton.cards(6,"Loading features"));
   try{const r=await api("/api/features"+(currentProject?`?project_id=${currentProject}`:""));
   if($("#feature-new-btn"))$("#feature-new-btn").style.display=r.features.length?"":"none";
-  $("#feat-list").innerHTML=r.features.map(f=>`<div class="entity-card" onclick="openFeature('${f.id}')">
+  $("#feat-list").innerHTML=r.features.map(f=>`<div class="entity-card" data-feature-card="${f.id}" onclick="openFeature('${f.id}')">
     <button class="entity-menu-btn" title="Feature options" onclick="event.stopPropagation();toggleFeatureMenu('${f.id}')"><svg viewBox="0 0 24 24" fill="currentColor" style="width:16px;height:16px;display:block"><circle cx="12" cy="5" r="2"></circle><circle cx="12" cy="12" r="2"></circle><circle cx="12" cy="19" r="2"></circle></svg></button>
     <div class="entity-menu" onclick="event.stopPropagation()">
       <button onclick="renameFeatureFromCard('${f.id}')">Rename</button>
@@ -1554,14 +1648,14 @@ async function loadFeatures(){if(!$("#feat-list"))return;
   </div>`).join("")||`<div class="empty-state"><div class="empty-state-icon">+</div><h3>No features yet</h3><p>Create your first feature to continue.</p><button class="go" onclick="showFeatureCreate()">Create feature</button></div>`;
 }catch(e){$("#feat-list").innerHTML=`<div class="empty-state"><div class="empty-state-icon">!</div><h3>Couldn't load features</h3><p>${esc(e.message)}</p><button class="ghost" onclick="loadFeatures()">Retry</button></div>`;}}
 window.toggleFeatureMenu = fid => {
-  document.querySelectorAll("#feat-list .entity-card").forEach(card=>{
-    if(!card.querySelector(`[onclick*="${fid}"]`))card.classList.remove("menu-open");
+  document.querySelectorAll("[data-feature-card]").forEach(card=>{
+    if(card.getAttribute("data-feature-card")!==fid)card.classList.remove("menu-open");
   });
-  const card=[...document.querySelectorAll("#feat-list .entity-card")].find(c=>c.querySelector(`[onclick*="${fid}"]`));
+  const card=document.querySelector(`[data-feature-card="${fid}"]`);
   if(card)card.classList.toggle("menu-open");
 };
 window.renameFeatureFromCard=async(fid)=>{
-  const card=[...document.querySelectorAll("#feat-list .entity-card")].find(c=>c.querySelector(`[onclick*="${fid}"]`));
+  const card=document.querySelector(`[data-feature-card="${fid}"]`);
   const current=card?.querySelector(".entity-name")?.textContent?.trim()||"";
   const name=await uiPrompt("Rename feature","Feature name",current);
   if(!name)return;
@@ -1657,7 +1751,20 @@ window.openFeature=async fid=>{try{const f=await api("/api/features/"+fid);curre
     ["nfr","Edge & reliability","Concurrency, resilience, limits, latency, and degraded dependencies"],
     ["integration","Integration","Cross-feature scenarios: cases inherited / linked from other features"]
   ];
-  const overviewStats=groups.map(([t,label])=>{
+  // "UI validations" now has its own slider at feature creation (alongside
+  // Functional / End-to-end / API / Edge & reliability — see FOCUS_TYPES),
+  // so the distribution summary shows it as its own category again. Integration
+  // is untouched: it's inherited/linked from other features, not generated by
+  // this slider set, so it has no corresponding configuration option.
+  const summaryGroups=[
+    ["api","API"],
+    ["ui","UI validations"],
+    ["functional","Business / functional"],
+    ["e2e","End-to-end"],
+    ["nfr","Edge & reliability"],
+    ["integration","Integration"]
+  ];
+  const overviewStats=summaryGroups.map(([t,label])=>{
     const cases=bt[t]||[];
     return `<div class="feature-stat"><b>${cases.length}</b><span>${label}</span></div>`;
   }).join("");
@@ -2402,6 +2509,32 @@ async function loadConfig(){try{const s=await api("/api/settings");
     updateEmbedModelOptions(embProv, s.embed_model||"");
     $("#cfg-embed-status").innerHTML=`<span class="muted">Active: ${esc(embProv)} / ${esc(s.embed_model||"nomic-embed-text")} · ${s.embed_dim||768}-d${s.embed_api_key_set?" · key set":""}</span>`;
   }
+  
+  // Update placeholders based on configuration status
+  if ($("#cfg-llm-key")) {
+    $("#cfg-llm-key").placeholder = s.llm_api_key_set ? "Leave blank to keep current" : "API token is required";
+  }
+  if ($("#cfg-llm-endpoint")) {
+    const hasLlmEndpointConfig = s.ollama_url_env_locked || s.llm_base_url || s.ollama_url || s.configured;
+    $("#cfg-llm-endpoint").placeholder = hasLlmEndpointConfig ? "Leave blank to keep current" : "Endpoint URL is required";
+  }
+  if ($("#cfg-embed-key")) {
+    $("#cfg-embed-key").placeholder = s.embed_api_key_set ? "Leave blank to keep current" : "API token is required";
+  }
+  if ($("#cfg-embed-base")) {
+    const hasEmbedEndpointConfig = s.embed_base_url || s.configured;
+    $("#cfg-embed-base").placeholder = hasEmbedEndpointConfig ? "Leave blank to keep current" : "Endpoint URL is required";
+  }
+  if ($("#cfg-jira-token")) {
+    $("#cfg-jira-token").placeholder = s.jira_token_set ? "Leave blank to keep current" : "API token is required";
+  }
+  if ($("#cfg-figma-token")) {
+    $("#cfg-figma-token").placeholder = s.figma_token_set ? "Leave blank to keep current" : "API token is required";
+  }
+  if ($("#cfg-smtp-pass")) {
+    $("#cfg-smtp-pass").placeholder = s.smtp_pass_set ? "Leave blank to keep current" : "API token is required";
+  }
+
   loadDbStatus();
 }catch(e){}}
 
@@ -2698,6 +2831,15 @@ $("#cfg-jira-save").onclick=async()=>{
   const b={jira_base_url:$("#cfg-jira-base").value.trim(),jira_email:$("#cfg-jira-email").value.trim()};
   const t=$("#cfg-jira-token").value;
   if(t)b.jira_api_token=t;
+  // Nothing entered and nothing previously configured: hitting Save here would
+  // silently no-op on the backend (empty base URL/email/token all validate as
+  // "unset") and still report success, which reads as "Jira is now configured."
+  // Block it client-side instead of showing a false-positive "saved" message.
+  const tokenAlreadySet=$("#cfg-jira-token").placeholder!=="API token is required";
+  if(!b.jira_base_url&&!b.jira_email&&!t&&!tokenAlreadySet){
+    toast("Enter Base URL, Email and API token to configure Jira",true);
+    return;
+  }
   try{
     await saveConfigSection({buttonId:"#cfg-jira-save",statusId:"#cfg-jira-status",body:b,clearIds:["#cfg-jira-token"],successMessage:"Jira settings saved"});
   }catch(e){toast(e.message,true);}

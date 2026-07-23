@@ -34,39 +34,86 @@ def _is_blocked_ip(ip: str) -> bool:
             or addr.is_reserved or addr.is_multicast or addr.is_unspecified)
 
 
-def is_safe_url(url: str) -> bool:
-    """http/https + every resolved IP for the host must be public (SSRF guard)."""
+def _resolve_and_validate(url: str):
+    """Resolve the URL's host ONCE and return (pinned_ip, parsed_url) if every
+    resolved address is public, else (None, None).
+
+    Resolving a single time and reusing that exact IP for the connection is what
+    closes the DNS-rebinding TOCTOU: previously is_safe_url() resolved the name,
+    and then fetch_text() let httpx resolve it AGAIN at connect time, so an
+    attacker controlling DNS (low TTL) could return a public IP for the check and
+    a private/internal one for the real fetch. Now the fetch connects to the
+    literal IP we already validated, so no second lookup can occur."""
     try:
         p = urlparse(url)
     except Exception:  # noqa: BLE001
-        return False
+        return None, None
     if p.scheme not in ("http", "https") or not p.hostname:
-        return False
+        return None, None
     port = p.port or (443 if p.scheme == "https" else 80)
     try:
         infos = socket.getaddrinfo(p.hostname, port, proto=socket.IPPROTO_TCP)
     except Exception:  # noqa: BLE001
-        return False
+        return None, None
     if not infos:
-        return False
-    return all(not _is_blocked_ip(info[4][0]) for info in infos)
+        return None, None
+    resolved = [info[4][0] for info in infos]
+    # Every A/AAAA record must be public — a host that resolves to a mix of
+    # public and private addresses is rejected outright.
+    if any(_is_blocked_ip(ip) for ip in resolved):
+        return None, None
+    return resolved[0], p
+
+
+def is_safe_url(url: str) -> bool:
+    """http/https + every resolved IP for the host must be public (SSRF guard).
+    Kept for callers/tests; the authoritative guard is now inside fetch_text,
+    which pins the validated IP for the actual connection."""
+    pinned, _ = _resolve_and_validate(url)
+    return pinned is not None
 
 
 def fetch_text(url: str) -> str:
-    """Fetch an HTML/text page (no redirects, size-capped) and return plain text."""
-    with httpx.stream("GET", url, timeout=TIMEOUT, follow_redirects=False,
-                      headers={"User-Agent": "wardenIQ-link-follower"}) as r:
-        r.raise_for_status()
-        ctype = r.headers.get("content-type", "")
-        if "html" not in ctype and "text" not in ctype:
-            return ""
-        chunks, total = [], 0
-        for chunk in r.iter_bytes():
-            chunks.append(chunk)
-            total += len(chunk)
-            if total > MAX_BYTES:
-                break
-        return b"".join(chunks).decode("utf-8", "replace")
+    """Fetch an HTML/text page (no redirects, size-capped) and return plain text.
+
+    SSRF-safe: the host is resolved and validated once, then the request is made
+    to the pinned IP literal so httpx cannot re-resolve to a different (internal)
+    address. For HTTPS the original hostname is still used for SNI and
+    certificate verification via the sni_hostname request extension, and the Host
+    header is preserved so name-based virtual hosts keep working."""
+    pinned_ip, p = _resolve_and_validate(url)
+    if not pinned_ip or p is None:
+        # Treat an unsafe/unresolvable URL as a fetch failure (callers skip it).
+        raise httpx.RequestError(f"blocked or unresolvable URL: {url[:80]}")
+
+    # Rebuild the URL against the literal IP (bracket IPv6). This is what httpx
+    # actually connects to — an IP literal triggers no DNS resolution.
+    host_ip = f"[{pinned_ip}]" if ":" in pinned_ip else pinned_ip
+    netloc = f"{host_ip}:{p.port}" if p.port else host_ip
+    pinned_url = p._replace(netloc=netloc).geturl()
+
+    host_header = f"{p.hostname}:{p.port}" if p.port else p.hostname
+    headers = {"User-Agent": "wardenIQ-link-follower", "Host": host_header}
+    extensions = {"sni_hostname": p.hostname} if p.scheme == "https" else {}
+
+    with httpx.Client(timeout=TIMEOUT, follow_redirects=False) as client:
+        request = client.build_request("GET", pinned_url, headers=headers,
+                                       extensions=extensions)
+        r = client.send(request, stream=True)
+        try:
+            r.raise_for_status()
+            ctype = r.headers.get("content-type", "")
+            if "html" not in ctype and "text" not in ctype:
+                return ""
+            chunks, total = [], 0
+            for chunk in r.iter_bytes():
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > MAX_BYTES:
+                    break
+            return b"".join(chunks).decode("utf-8", "replace")
+        finally:
+            r.close()
 
 
 def crawl(seed_urls, depth=None, max_pages=None) -> list:

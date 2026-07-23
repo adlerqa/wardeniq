@@ -121,6 +121,18 @@ app = FastAPI(title="wardenIQ — Test Intelligence Platform", version=VERSION,
               **_docs_kwargs)
 store = Store(MONGO_URI, DB_NAME, EMBED_DIM)
 
+
+# A malformed Mongo id (wrong length/format) reaches ObjectId() from many
+# path params and request bodies across the codebase. Without a handler,
+# bson raises InvalidId, which surfaces as a confusing HTTP 500. Convert it
+# to a clean 400 in one place instead of guarding ~100 individual call sites.
+from bson.errors import InvalidId as _InvalidId  # noqa: E402
+
+
+@app.exception_handler(_InvalidId)
+async def _invalid_id_handler(request: Request, exc: _InvalidId):  # noqa: ARG001
+    return JSONResponse({"detail": "invalid id format"}, status_code=400)
+
 # Known embedding models per provider (id + native dimension) for the UI. The real
 # dimension is always measured (probe_dim) at switch time, so these are just hints.
 EMBED_MODEL_OPTIONS = {
@@ -257,7 +269,7 @@ def _provider_client(repo: dict):
     if not token:
         raise RuntimeError("no GitHub PAT configured for this project")
     return provider, github.GitHub(token, GITHUB_API)
-
+    
 
 def _repo_list_commits(repo: dict, since_iso: str, ref: str = "", per_page: int = 50):
     provider, client = _provider_client(repo)
@@ -4178,18 +4190,18 @@ def _merged_settings_dict(body: SettingsIn):
         "llm_base_url": body.llm_base_url.strip() if body.llm_base_url is not None else s.get("llm_base_url", ""),
         "llm_model": body.llm_model if body.llm_model is not None else s.get("llm_model", GEN_MODEL),
         "llm_region": body.llm_region.strip() if body.llm_region is not None else s.get("llm_region", ""),
-        "llm_api_key": body.llm_api_key.strip() if body.llm_api_key is not None else (
+        "llm_api_key": body.llm_api_key.strip() if (body.llm_api_key is not None and body.llm_api_key.strip() != "") else (
             crypto.decrypt(s.get("llm_api_key_enc", "")) if s.get("llm_api_key_enc") else ""
         ),
         "jira_base_url": body.jira_base_url.strip() if body.jira_base_url is not None else s.get("jira_base_url", ""),
         "jira_email": body.jira_email.strip() if body.jira_email is not None else s.get("jira_email", ""),
-        "jira_api_token": body.jira_api_token.strip() if body.jira_api_token is not None else (
+        "jira_api_token": body.jira_api_token.strip() if (body.jira_api_token is not None and body.jira_api_token.strip() != "") else (
             crypto.decrypt(s.get("jira_api_token_enc", "")) if s.get("jira_api_token_enc") else ""
         ),
         "smtp_host": body.smtp_host.strip() if body.smtp_host is not None else s.get("smtp_host", ""),
         "smtp_port": body.smtp_port if body.smtp_port is not None else s.get("smtp_port", ""),
         "smtp_user": body.smtp_user.strip() if body.smtp_user is not None else s.get("smtp_user", ""),
-        "smtp_pass": body.smtp_pass if body.smtp_pass is not None else (
+        "smtp_pass": body.smtp_pass if (body.smtp_pass is not None and body.smtp_pass != "") else (
             crypto.decrypt(s.get("smtp_pass_enc", "")) if s.get("smtp_pass_enc") else ""
         ),
         "smtp_from": body.smtp_from.strip() if body.smtp_from is not None else s.get("smtp_from", ""),
@@ -4200,6 +4212,7 @@ def _merged_settings_dict(body: SettingsIn):
 
 @app.put("/api/settings")
 def put_settings(body: SettingsIn, request: Request):
+    s = store.get_settings()
     merged = _merged_settings_dict(body)
     # LLM connectivity validation if updated
     llm_updated = (
@@ -4291,7 +4304,10 @@ def put_settings(body: SettingsIn, request: Request):
     if body.llm_region is not None:
         upd["llm_region"] = body.llm_region.strip()
     if body.llm_api_key is not None:
-        upd["llm_api_key_enc"] = crypto.encrypt(body.llm_api_key) if body.llm_api_key else ""
+        if body.llm_api_key.strip() != "":
+            upd["llm_api_key_enc"] = crypto.encrypt(body.llm_api_key.strip())
+        elif not s.get("llm_api_key_enc") or (body.llm_provider or merged["llm_provider"]) in ("ollama", "bedrock"):
+            upd["llm_api_key_enc"] = ""
     if body.ollama_url is not None:
         # Ignored when OLLAMA_URL is locked by .env; otherwise applies live (no restart).
         upd["ollama_url"] = body.ollama_url.strip()
@@ -4304,7 +4320,10 @@ def put_settings(body: SettingsIn, request: Request):
     if body.jira_email is not None:
         upd["jira_email"] = body.jira_email
     if body.jira_api_token is not None:
-        upd["jira_api_token_enc"] = crypto.encrypt(body.jira_api_token) if body.jira_api_token else ""
+        if body.jira_api_token.strip() != "":
+            upd["jira_api_token_enc"] = crypto.encrypt(body.jira_api_token.strip())
+        elif not body.jira_base_url and not body.jira_email:
+            upd["jira_api_token_enc"] = ""
     if body.smtp_host is not None:
         upd["smtp_host"] = body.smtp_host.strip()
     if body.smtp_port is not None:
@@ -4312,8 +4331,11 @@ def put_settings(body: SettingsIn, request: Request):
     if body.smtp_user is not None:
         upd["smtp_user"] = body.smtp_user.strip()
     if body.smtp_pass is not None:
-        clean_pass = email_send.normalize_smtp_password(merged["smtp_host"], body.smtp_pass)
-        upd["smtp_pass_enc"] = crypto.encrypt(clean_pass) if clean_pass else ""
+        if body.smtp_pass != "":
+            clean_pass = email_send.normalize_smtp_password(merged["smtp_host"], body.smtp_pass)
+            upd["smtp_pass_enc"] = crypto.encrypt(clean_pass) if clean_pass else ""
+        elif not body.smtp_host:
+            upd["smtp_pass_enc"] = ""
     if body.smtp_from is not None:
         upd["smtp_from"] = body.smtp_from.strip()
     if body.smtp_tls is not None:
@@ -4972,6 +4994,14 @@ def _write_env_var(path: str, key: str, value: str):
     """Upsert `KEY=value` in a .env file, preserving all other lines and comments.
     Only an ACTIVE assignment is replaced; commented example lines are left intact.
     Returns (ok, error)."""
+    # Guard against .env line injection: a value (or key) containing CR/LF would
+    # otherwise be written as-is and split into extra lines, letting a caller
+    # smuggle additional KEY=value assignments into the file (e.g. a Mongo URI
+    # like "mongodb://h/db\nALLOW_WEAK_SECRET=true"). Reject any embedded newline
+    # outright rather than silently stripping, so the caller sees a clear error.
+    for part_name, part in (("key", key), ("value", value)):
+        if any(ch in str(part) for ch in ("\n", "\r", "\x00")):
+            return False, f"illegal newline or null byte in .env {part_name}"
     try:
         lines = []
         if os.path.exists(path):

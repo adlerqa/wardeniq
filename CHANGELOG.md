@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### Security
+- **Stronger encryption-key derivation for secrets at rest.** `app/crypto.py` now
+  derives the Fernet key from `ENCRYPTION_KEY`/`APP_SECRET` with PBKDF2-HMAC-SHA256
+  (200k iterations, fixed application salt) instead of a single unsalted SHA-256.
+  Decryption uses a `MultiFernet` that falls back to the legacy SHA-256 key, so
+  secrets stored by older versions keep decrypting; anything re-saved is written
+  with the strong key. No data migration or re-entry of tokens is required.
+- **`.env` writes are hardened against newline injection.** `_write_env_var`
+  (`app/main.py`) now rejects any key/value containing CR, LF, or NUL, closing a
+  path where an admin-supplied value (e.g. the MongoDB URI via `/api/db-config`
+  or `/api/db-migrate`) could smuggle additional `KEY=value` lines into `.env`.
+- **SSRF DNS-rebinding (TOCTOU) closed in the document link-follower.**
+  `app/weblinks.py` now resolves each URL's host once, validates every resolved
+  address is public, and connects to that pinned IP literal for the actual fetch
+  (preserving the `Host` header and, for HTTPS, SNI/cert verification against the
+  real hostname). Previously the safety check and the fetch resolved DNS
+  independently, so a low-TTL attacker domain could pass the check with a public
+  IP and then be fetched at an internal IP.
+- **Malformed Mongo ids now return HTTP 400 instead of 500.** A single
+  `bson.errors.InvalidId` exception handler (`app/main.py`) converts invalid id
+  path params / body fields into a clean `400 invalid id format` across all
+  routes, rather than the previous uncaught 500.
+- **Note (accepted risk, no code change):** admin-configurable outbound endpoints
+  (`llm_base_url`, `ollama_url`, `jira_base_url`) remain unrestricted by design —
+  wardenIQ is single-tenant/on-prem and must be able to target self-hosted
+  Ollama, custom LLM endpoints, and on-prem Jira. This is an admin-only,
+  admin-trusted capability; egress allowlisting would break the product's core
+  use case and is left to the operator's network policy.
+
 ### Changed
 - **Installs now track the `latest` image tag so `docker compose pull` delivers new
   releases.** The installer previously pinned `adlerqa/wardeniq:beta`, but the publish

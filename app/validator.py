@@ -286,7 +286,7 @@ def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=7000) 
         return parse_questions(raw_text)
     except Exception as e:
         print(f"[Self-Repair MCQ] JSON parse failed: {e}. Attempting self-repair...", flush=True)
-        if not raw_text.strip():
+        if not (raw_text or "").strip():
             # Only retry original chat if the first call failed completely (e.g. timeout/network error)
             try:
                 raw_text = llm._raw_chat(system_prompt, user_prompt, 8192, 0.2, max_tokens)

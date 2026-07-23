@@ -133,7 +133,7 @@ export const LEGACY_SHELL_HTML = `
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="11" width="14" height="9" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="currentColor" stroke-width="1.8"/></svg>
         <span>You're viewing in <b>read-only</b> mode. Your Viewer role can browse everything but can't create, edit, or delete. Ask an admin for Editor access to make changes.</span>
       </div>
-      <div class="backbar" id="backbar"><button class="ghost" id="backbar-btn">Back</button><span class="crumb" id="backbar-label"></span></div>
+      <div class="backbar" id="backbar"><button class="ghost" id="backbar-btn">Back</button><div class="divider"></div><span class="crumb" id="backbar-label"></span></div>
       <!-- DASHBOARD -->
       <section id="view-dashboard" class="view">
         <div class="dash" id="dash-root"></div>
@@ -305,10 +305,11 @@ export const LEGACY_SHELL_HTML = `
             <div class="muted" style="font-size:11px;margin-top:4px">Already keep test cases in a spreadsheet? Attach it — wardenIQ scores every row against this feature, promotes matches into the generated suite, and keeps the rest in your project library for other features to reuse. <a href="#" id="f-sheet-template">Download template</a></div>
             <label style="margin-top:10px">Test type mix <span class="muted" style="font-weight:400">— how much emphasis each category gets (not a fixed count)</span></label>
             <div id="focus-ctrl" class="focus-panel">
-              <div class="focus-row"><span>Functional</span><input class="focus-range" type="range" min="0" max="100" value="25" id="foc-functional"/><b class="focus-value" id="foc-functional-v">25%</b></div>
-              <div class="focus-row"><span>End-to-end</span><input class="focus-range" type="range" min="0" max="100" value="25" id="foc-e2e"/><b class="focus-value" id="foc-e2e-v">25%</b></div>
-              <div class="focus-row"><span>API</span><input class="focus-range" type="range" min="0" max="100" value="25" id="foc-api"/><b class="focus-value" id="foc-api-v">25%</b></div>
-              <div class="focus-row"><span>Edge &amp; reliability</span><input class="focus-range" type="range" min="0" max="100" value="25" id="foc-nfr"/><b class="focus-value" id="foc-nfr-v">25%</b></div>
+              <div class="focus-row"><span>Functional</span><input class="focus-range" type="range" min="0" max="100" value="20" id="foc-functional"/><b class="focus-value" id="foc-functional-v">20%</b></div>
+              <div class="focus-row"><span>UI validations</span><input class="focus-range" type="range" min="0" max="100" value="20" id="foc-ui"/><b class="focus-value" id="foc-ui-v">20%</b></div>
+              <div class="focus-row"><span>End-to-end</span><input class="focus-range" type="range" min="0" max="100" value="20" id="foc-e2e"/><b class="focus-value" id="foc-e2e-v">20%</b></div>
+              <div class="focus-row"><span>API</span><input class="focus-range" type="range" min="0" max="100" value="20" id="foc-api"/><b class="focus-value" id="foc-api-v">20%</b></div>
+              <div class="focus-row"><span>Edge &amp; reliability</span><input class="focus-range" type="range" min="0" max="100" value="20" id="foc-nfr"/><b class="focus-value" id="foc-nfr-v">20%</b></div>
               <div class="focus-total"><span>Changing one category adjusts the largest other category first.</span><span>Total <b id="foc-total">100%</b></span></div>
             </div>
             <button class="go" id="f-go" style="margin-top:12px">Generate test cases</button>
@@ -575,21 +576,6 @@ export const LEGACY_SHELL_HTML = `
             <div id="usage-by-project"></div>
           </details>
 
-          <details class="card usage-collapse" id="usage-pricing-card">
-            <summary><span class="usage-collapse-title">Model pricing</span><span class="usage-collapse-hint muted">USD per 1M tokens — override or add any model</span></summary>
-            <div class="sub muted" style="margin:6px 0 10px">Set input/output prices for any model id — including custom or brand-new models you run. Rows left at the built-in default aren't stored, so defaults keep improving over app updates. Saving recalculates cost across all past processes.</div>
-            <div id="usage-pricing-rows"></div>
-            <div class="usage-pricing-add" style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-              <input id="usage-price-new-model" placeholder="model id (e.g. gpt-5.1)" style="flex:2;min-width:160px"/>
-              <input id="usage-price-new-in" type="number" step="0.01" min="0" placeholder="input $/1M" style="flex:1;min-width:100px"/>
-              <input id="usage-price-new-out" type="number" step="0.01" min="0" placeholder="output $/1M" style="flex:1;min-width:100px"/>
-              <button class="ghost" id="usage-price-add">+ Add model</button>
-            </div>
-            <div style="margin-top:12px;display:flex;gap:10px;align-items:center">
-              <button id="usage-price-save">Save pricing</button>
-              <span id="usage-price-status" class="muted"></span>
-            </div>
-          </details>
         </div>
       </section>
 
@@ -610,7 +596,7 @@ export const LEGACY_SHELL_HTML = `
             </div>
             <div class="cfg-field" id="cfg-llm-endpoint-field">
               <label>Endpoint URL <span class="muted" style="font-weight:400">(optional)</span> <span class="fi" tabindex="0" data-tip="Leave blank for the provider default. Ollama: where Ollama runs (bundled Docker, your computer, or a remote host). OpenAI-compatible: your custom base URL. AWS Bedrock: an optional private VPC / PrivateLink endpoint for air-gapped networks.">i</span></label>
-              <input id="cfg-llm-endpoint" placeholder="leave blank for the provider default"/>
+              <input id="cfg-llm-endpoint" placeholder="Endpoint URL is required"/>
               <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px" id="cfg-ollama-presets">
                 <button type="button" class="ghost" id="cfg-ollama-native" style="font-size:11.5px;padding:5px 10px">Use Ollama on my computer</button>
                 <button type="button" class="ghost" id="cfg-ollama-bundled" style="font-size:11.5px;padding:5px 10px">Use bundled (Docker) Ollama</button>
@@ -623,7 +609,7 @@ export const LEGACY_SHELL_HTML = `
             </div>
             <div class="cfg-field">
               <label>API key / secret <span class="fi" tabindex="0" data-tip="Ollama: usually blank (only for a secured/remote Ollama behind a token). Hosted providers: your API key. AWS Bedrock: leave blank to use the machine's IAM role (recommended for air-gapped), or enter accessKeyId:secretAccessKey.">i</span></label>
-              <input type="password" id="cfg-llm-key" placeholder="leave blank to keep current"/>
+              <input type="password" id="cfg-llm-key" placeholder="API token is required"/>
             </div>
             <div class="cfg-status muted" id="cfg-llm-status"></div>
             <div class="cfg-actions">
@@ -659,11 +645,11 @@ export const LEGACY_SHELL_HTML = `
             </div>
             <div class="cfg-field">
               <label>API key / secret <span class="fi" tabindex="0" data-tip="Hosted providers: your API key. AWS Bedrock: leave blank to use the machine's IAM role, or enter accessKeyId:secretAccessKey. Ollama: leave blank.">i</span></label>
-              <input type="password" id="cfg-embed-key" placeholder="leave blank to keep current"/>
+              <input type="password" id="cfg-embed-key" placeholder="API token is required"/>
             </div>
             <div class="cfg-field">
               <label>Endpoint URL <span class="muted" style="font-weight:400">(optional)</span> <span class="fi" tabindex="0" data-tip="Leave blank for the provider default. OpenAI-compatible: your custom base URL. AWS Bedrock: an optional private VPC / PrivateLink endpoint for air-gapped networks.">i</span></label>
-              <input id="cfg-embed-base" placeholder="leave blank for the provider default"/>
+              <input id="cfg-embed-base" placeholder="Endpoint URL is required"/>
             </div>
             <div class="cfg-status muted" id="cfg-embed-status"></div>
             <div id="cfg-embed-log" class="cfg-log" style="display:none;white-space:pre-wrap;font-family:monospace;font-size:11px;margin-top:8px;max-height:160px;overflow:auto"></div>
@@ -683,7 +669,7 @@ export const LEGACY_SHELL_HTML = `
             </div>
             <div class="cfg-field">
               <label>API token <span class="fi" tabindex="0" data-tip="An Atlassian API token (not your password). Create one at id.atlassian.com → Security → API tokens. Stored encrypted; leave blank to keep the current one.">i</span></label>
-              <input type="password" id="cfg-jira-token" placeholder="leave blank to keep current"/>
+              <input type="password" id="cfg-jira-token" placeholder="API token is required"/>
             </div>
             <div class="cfg-status muted" id="cfg-jira-status"></div>
             <div class="cfg-actions">
@@ -695,7 +681,7 @@ export const LEGACY_SHELL_HTML = `
           <div class="card cfg-card">
             <div class="cfg-head"><div class="cfg-head-left"><span class="cfg-step">4</span><h2>Figma</h2></div><span class="cfg-badge opt">Optional</span></div>
             <div class="sub">A Figma <b>personal access token</b> lets features extract design screens &amp; text from a Figma link (Figma's API requires a token). <a href="https://www.figma.com/developers/api#access-tokens" target="_blank" rel="noopener noreferrer">Create one</a>. Stored encrypted.</div>
-            <div class="cfg-field"><label>Access token <span class="fi" tabindex="0" data-tip="A Figma personal access token (figma.com → Settings → Personal access tokens). Lets features pull screens and text from a Figma link. Stored encrypted; leave blank to keep the current one.">i</span></label><input type="password" id="cfg-figma-token" placeholder="leave blank to keep current"/></div>
+            <div class="cfg-field"><label>Access token <span class="fi" tabindex="0" data-tip="A Figma personal access token (figma.com → Settings → Personal access tokens). Lets features pull screens and text from a Figma link. Stored encrypted; leave blank to keep the current one.">i</span></label><input type="password" id="cfg-figma-token" placeholder="API token is required"/></div>
             <div class="cfg-status muted" id="cfg-figma-status"></div>
             <div class="cfg-actions"><button class="go" id="cfg-figma-save">Save</button></div>
           </div>
@@ -710,7 +696,7 @@ export const LEGACY_SHELL_HTML = `
             </div>
             <div class="cfg-row">
               <div class="cfg-field"><label>Username <span class="fi" tabindex="0" data-tip="The SMTP login. For Gmail use your full address; for SendGrid it is literally the word 'apikey'. Some relays allow blank.">i</span></label><input id="cfg-smtp-user" placeholder="apikey / user (optional)"/></div>
-              <div class="cfg-field"><label>Password <span class="fi" tabindex="0" data-tip="The SMTP password or app password. Gmail needs a 16-character App Password (2-Step Verification on). Stored encrypted; leave blank to keep the current one.">i</span></label><input type="password" id="cfg-smtp-pass" placeholder="leave blank to keep current"/></div>
+              <div class="cfg-field"><label>Password <span class="fi" tabindex="0" data-tip="The SMTP password or app password. Gmail needs a 16-character App Password (2-Step Verification on). Stored encrypted; leave blank to keep the current one.">i</span></label><input type="password" id="cfg-smtp-pass" placeholder="API token is required"/></div>
             </div>
             <div class="cfg-row">
               <div class="cfg-field" style="flex:2"><label>From address <span class="fi" tabindex="0" data-tip="The sender shown on sign-in emails, e.g. wardenIQ &lt;no-reply@example.com&gt;. Must be a sender your SMTP account is allowed to send as.">i</span></label><input id="cfg-smtp-from" placeholder="wardenIQ &lt;no-reply@example.com&gt;"/></div>

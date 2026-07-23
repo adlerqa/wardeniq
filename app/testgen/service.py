@@ -164,7 +164,7 @@ def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=4000,
         except Exception as exc:  # noqa: BLE001
             last_error = exc
             print(f"[TestGen] LLM attempt {attempt}/{attempts} failed: {exc}", flush=True)
-            if raw_text.strip():
+            if (raw_text or "").strip():
                 repair_prompt = (
                     "Repair the following malformed or truncated JSON. Preserve all recoverable "
                     "data and the requested schema. Return one JSON object only.\n\n"
@@ -477,47 +477,69 @@ def _apply_delta(existing: list, delta: dict, category: str) -> list[dict]:
     return _deduplicate(kept + _as_list(delta.get("tests_to_add")), category)
 
 
-def _budget_suites(suites: dict, total: int, focus: dict, smoke_mode=False) -> dict:
-    # The Node DAG treats worker ceilings as coverage controls. Its normal path
-    # does not truncate the completed category suites to one global test count.
-    # Preserve that behavior; only the explicit smoke path uses the small budget.
-    if not smoke_mode:
-        enabled = {
-            name: float((focus or {}).get(name, 25)) > 0
-            for name in ("functional", "e2e", "api", "nfr")
-        }
-        return {
-            "api_tests": suites["api_tests"] if enabled["api"] else [],
-            "ui_validations": suites["ui_validations"] if enabled["functional"] else [],
-            "business_tests": suites["business_tests"] if enabled["functional"] else [],
-            "e2e_tests": suites["e2e_tests"] if enabled["e2e"] else [],
-            "edge_cases": suites["edge_cases"] if enabled["nfr"] else [],
-        }
-    if total <= 0:
-        return suites
-    weights = {name: max(0.0, float((focus or {}).get(name, 25))) for name in ("functional", "e2e", "api", "nfr")}
-    weight_sum = sum(weights.values()) or 100.0
-    targets = {name: max(0, round(total * value / weight_sum)) for name, value in weights.items()}
-    api_endpoint_count = len({_api_key(case) for case in suites["api_tests"]})
-    api_allowance = max(targets["api"], api_endpoint_count)
+FOCUS_NAMES = ("functional", "e2e", "api", "nfr", "ui")
+_FOCUS_DEFAULT = 100.0 / len(FOCUS_NAMES)  # even split across the 5 sliders
 
-    functional_total = targets["functional"]
-    has_ui = bool(suites["ui_validations"])
-    has_business = bool(suites["business_tests"])
-    if has_ui and has_business and functional_total > 1:
-        ui_allowance = (functional_total + 1) // 2
-        business_allowance = functional_total - ui_allowance
-    elif has_ui:
-        ui_allowance, business_allowance = functional_total, 0
-    else:
-        ui_allowance, business_allowance = 0, functional_total
+
+def _budget_suites(suites: dict, total: int, focus: dict, smoke_mode=False) -> dict:
+    """Trim each generated suite so the final case counts track the user's
+    focus weights (functional / e2e / api / nfr / ui), instead of only gating
+    whole categories on/off. A weight of 0 drops a category entirely. Nonzero
+    weights cap how large a category's share of the pool can be, scaled by
+    weight, relative to the OTHER categories that were actually produced —
+    equal weights should mean no one category can dominate the results.
+
+    This only ever trims; it never invents tests to pad a thin category up to
+    its target. A lightly-documented feature with 3 grounded business rules
+    stays at 3 business tests even at 100% functional weight — the point is to
+    stop an over-represented category (typically API, since it scales with
+    discovered endpoints) from drowning out the others, not to fabricate
+    ungrounded content just to hit a number.
+    """
+    natural = {
+        "api": suites["api_tests"],
+        "ui": suites["ui_validations"],
+        "functional": suites["business_tests"],
+        "e2e": suites["e2e_tests"],
+        "nfr": suites["edge_cases"],
+    }
+    weights = {name: max(0.0, float((focus or {}).get(name, _FOCUS_DEFAULT))) for name in FOCUS_NAMES}
+
+    # A weight of 0 means "skip this category" in every mode.
+    for name in FOCUS_NAMES:
+        if weights[name] <= 0:
+            natural[name] = []
+
+    weight_sum = sum(weights.values()) or 100.0
+    api_endpoint_count = len({_api_key(case) for case in natural["api"]})
+
+    # smoke_mode keeps its small explicit-total behavior (e.g. a quick
+    # preview run); everything else scales caps off the pool the agents
+    # actually produced, so overall volume isn't arbitrarily shrunk to a
+    # fixed number — only redistributed relative to the chosen emphasis.
+    pool_total = max(0, int(total)) if smoke_mode else sum(len(v) for v in natural.values())
+
+    if pool_total > 0:
+        for name in FOCUS_NAMES:
+            if weights[name] <= 0:
+                continue
+            target = max(0, round(pool_total * weights[name] / weight_sum))
+            if name == "api":
+                # The API pass is per-endpoint coverage, not a fixed count —
+                # never cut below one test per discovered endpoint.
+                target = max(target, api_endpoint_count)
+            # Never zero out a nonzero-weight category purely from rounding
+            # when there's genuine material for it.
+            keep = max(target, min(len(natural[name]), 3))
+            if keep < len(natural[name]):
+                natural[name] = natural[name][:keep]
 
     return {
-        "api_tests": suites["api_tests"][:api_allowance],
-        "ui_validations": suites["ui_validations"][:ui_allowance],
-        "business_tests": suites["business_tests"][:business_allowance],
-        "e2e_tests": suites["e2e_tests"][:targets["e2e"]],
-        "edge_cases": suites["edge_cases"][:targets["nfr"]],
+        "api_tests": natural["api"],
+        "ui_validations": natural["ui"],
+        "business_tests": natural["functional"],
+        "e2e_tests": natural["e2e"],
+        "edge_cases": natural["nfr"],
     }
 
 
@@ -690,7 +712,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     raw_text = str(feature.get("text") or params.get("text") or "")
     version = int(feature.get("version") or 1)
     total = max(1, int(params.get("total") or 16))
-    focus = params.get("focus") or {name: 25 for name in ("functional", "e2e", "api", "nfr")}
+    focus = params.get("focus") or {name: _FOCUS_DEFAULT for name in FOCUS_NAMES}
 
     chunks = list(store.fchunks.find({"feature_id": feature_id}))
     rag_context = {

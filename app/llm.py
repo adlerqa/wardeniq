@@ -138,7 +138,10 @@ class LLM:
             data = r.json()
             usage.record(self.model, data.get("prompt_eval_count", 0),
                          data.get("eval_count", 0), kind="llm")
-            return data["message"]["content"]
+            # Ollama can return "content": null (e.g. an empty/truncated generation)
+            # instead of "" — normalize so every caller can rely on a plain string
+            # ("" meaning "no content") regardless of which provider answered.
+            return (data.get("message") or {}).get("content") or ""
         if self.provider == "anthropic":
             r = httpx.post(f"{self.base_url}/v1/messages",
                            timeout=timeout_seconds or 120.0,
@@ -186,7 +189,16 @@ class LLM:
         u = data.get("usage") or {}
         usage.record(self.model, u.get("prompt_tokens", 0),
                      u.get("completion_tokens", 0), kind="llm")
-        return data["choices"][0]["message"]["content"]
+        # OpenAI-compatible providers (OpenAI / Mistral / Groq / Gemini) can return
+        # "content": null (refusals, tool-call-only replies, content filtering) or
+        # even an empty "choices" list. Normalize to "" instead of raising
+        # IndexError/None so callers get the same "no content" signal for every
+        # provider, matching the Ollama/Anthropic/Bedrock branches above.
+        choices = data.get("choices") or []
+        if not choices:
+            return ""
+        message = choices[0].get("message") or {}
+        return message.get("content") or ""
 
     # ---- test-case generation -----------------------------------------------
     def generate_testcases(self, test_type: str, requirement_text: str, target: int | None = None) -> list[dict]:

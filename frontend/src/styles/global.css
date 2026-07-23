@@ -774,7 +774,12 @@
   .backbar{display:none;align-items:center;gap:10px;margin-bottom:14px;color:var(--muted);font-size:12px;}
   .backbar.show{display:flex;}
   .backbar button{flex:0 0 auto;}
-  .backbar .crumb{color:#b9c4d3;}
+  .backbar .divider{width:1px;height:14px;background-color:rgba(255,255,255,0.15);margin:0 4px;}
+  .backbar .crumb{color:#94a3b8;transition:color 0.15s ease;display:inline-flex;align-items:center;}
+  .backbar .crumb.clickable{cursor:pointer;color:var(--accent);}
+  .backbar .crumb.clickable:hover{color:#fff;text-decoration:underline;}
+  .backbar .crumb.active{color:#e2e8f0;font-weight:600;}
+  .backbar .separator{margin:0 6px;color:rgba(255,255,255,0.25);user-select:none;}
   .feature-workspace-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap;margin-bottom:16px;}
   .workspace-actions{display:flex;gap:8px;align-items:center;justify-content:flex-end;flex-wrap:wrap;}
   .version-combo{display:inline-flex;align-items:stretch;border:1px solid rgba(116,139,166,.28);border-radius:13px;overflow:hidden;background:#0e1622;}
