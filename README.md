@@ -1,5 +1,10 @@
 # wardenIQ — Test Intelligence Platform
 
+[![CI](https://github.com/adlerqa/wardeniq/actions/workflows/ci.yml/badge.svg)](https://github.com/adlerqa/wardeniq/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+
 > **QC for AI-built software.** Point wardenIQ at your requirement docs and your
 > code. It writes a structured test suite from the docs, then continuously checks
 > your GitHub code against those tests — so you always know **what's covered,
