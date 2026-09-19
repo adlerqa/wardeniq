@@ -54,6 +54,30 @@ is also available if you just want to try it out first — see [Requirements](#r
 - **See it all** — a dashboard with coverage %, automation %, per-project rollups, and
   a per-feature **PDF report**.
 
+## Supported inputs
+
+Requirement content can be uploaded as files, pasted into the requirement field, or
+read from connected external sources:
+
+| Input | Support and behavior |
+|---|---|
+| **PDF** | Text is extracted from each page. Links found in the PDF can also be followed as external sources. |
+| **DOCX** | Paragraphs and table cells are extracted. |
+| **Markdown (`.md`)** | Read as UTF-8 text, preserving the document content as plain text. |
+| **Plain text (`.txt`)** | Read as UTF-8 text. |
+| **Other file extensions** | There is no extension allowlist; files are decoded as UTF-8 text. Use a text format for anything other than PDF or DOCX, because binary or differently encoded files may produce unusable text. |
+| **Confluence page URL** | The page and, optionally, its child pages are fetched through the configured Confluence/Jira connection. |
+| **Figma file URL** | The design is read through the Figma API when a Figma access token is configured. |
+
+The supported document types used for source references are **PRD**, **HLD**, **LLD**,
+and **Figma**. These labels describe the requirement/design source; they do not
+restrict the uploaded filename extension.
+
+**Limitations:** PDF extraction reads embedded text only. Scanned or image-only PDFs
+do not have OCR, so they normally yield little or no useful requirement text. External
+Confluence and Figma sources require their respective credentials and may fail when a
+page or file is not accessible to the configured account.
+
 ---
 
 ## Requirements
