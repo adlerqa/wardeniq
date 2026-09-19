@@ -4,7 +4,8 @@
 .env.*
 !.env.example
 AGENTS.md
-docs
+# internal/private notes stay untracked; the public guides in docs/*.md are tracked
+docs/internal/
 
 # captured logs
 logs/
