@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added
+- Add a lightweight public `/api/healthz` readiness endpoint and Docker Compose
+  healthcheck for the app container. The probe reports unhealthy when MongoDB
+  cannot be reached; it does not wait for optional model downloads.
+
 ### Fixed
 - **A saved Jira (or LLM/SMTP) integration could silently disappear later, with
   no error at save time and no sign-out in between.** `app/store/base.py`

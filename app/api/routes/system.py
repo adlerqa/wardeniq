@@ -26,6 +26,18 @@ from core.state import SYNC, store
 router = APIRouter()
 
 
+@router.get("/api/healthz")
+def healthz():
+    """Lightweight readiness probe for the app container."""
+    try:
+        ready = store.ping()
+    except Exception:  # noqa: BLE001
+        ready = False
+    if not ready:
+        raise HTTPException(503, "datastore unavailable")
+    return {"status": "ok"}
+
+
 @router.get("/api/status")
 def status():
     ok = False
