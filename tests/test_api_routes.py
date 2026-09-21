@@ -34,6 +34,24 @@ client = TestClient(main.app)
 
 
 # --------------------------------------------------------------------- public
+def test_healthz_is_public_and_reports_database_readiness(monkeypatch):
+    monkeypatch.setattr(main.store, "ping", lambda: True)
+
+    response = client.get("/api/healthz")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_healthz_reports_unavailable_when_database_is_not_ready(monkeypatch):
+    monkeypatch.setattr(main.store, "ping", lambda: False)
+
+    response = client.get("/api/healthz")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "datastore unavailable"}
+
+
 def test_unauthenticated_unknown_route_is_401_not_404():
     # auth_gateway runs before route matching, so even a path that doesn't
     # exist is gated by auth first — it must never leak a 404 (route exists)

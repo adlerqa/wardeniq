@@ -76,9 +76,12 @@ finishes, generation and embeddings just work.
 
 - **Check it's ready.** From the same folder as your Compose files:
   ```bash
+  docker compose -f docker-compose.app.yml ps wardeniq  # app health (MongoDB reachable)
   docker compose exec ollama ollama list        # lists installed models
   docker logs -f warden-ollama-pull             # watch the first-boot download
   ```
+  The app container becomes healthy when it can reach MongoDB; model downloads
+  continue independently and can be monitored with the pull-service logs below.
   Generation will error until that first pull completes.
 - **Use a bigger or different model.** Pull it into the same container, then tell
   wardenIQ to use it:

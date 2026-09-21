@@ -34,7 +34,8 @@ from core.state import store  # noqa: F401  (bare name-import is safe: store is
 # --------------------------------------------------------------- auth gateway
 # Paths reachable without a session. The SPA itself is public (it shows the login
 # screen); external webhooks carry their own secret/signature.
-PUBLIC_EXACT = {"/", "/invite", "/favicon.ico", "/logo2.png", "/api/auth/request-otp", "/api/auth/verify-otp",
+PUBLIC_EXACT = {"/", "/invite", "/favicon.ico", "/logo2.png", "/api/healthz",
+                "/api/auth/request-otp", "/api/auth/verify-otp",
                 "/api/auth/me", "/api/auth/logout", "/api/auth/smtp-status", "/api/auth/login-password",
                 "/api/auth/request-password-reset", "/api/auth/reset-password", "/api/auth/reset-password-master",
                 # Self-service invite endpoints: they authenticate the caller via the
