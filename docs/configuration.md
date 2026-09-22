@@ -192,7 +192,7 @@ instead, set `APP_IMAGE=adlerqa/wardeniq:1.2.0` in `.env`, then run the same com
 > `adlerqa/wardeniq:X.Y.Z` and `adlerqa/wardeniq:latest` (the channel users track), so a
 > version release reaches everyone on `pull`; a manual run publishes a one-off `<tag>`.
 > Needs `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets. Script source:
-> [`install.sh`](install.sh) / [`install.ps1`](install.ps1).
+> [`install.sh`](../install.sh) / [`install.ps1`](../install.ps1).
 
 ---
 
