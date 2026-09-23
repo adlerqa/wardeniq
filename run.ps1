@@ -57,6 +57,29 @@ if (Select-String -Path ".env" -Pattern '^COMPOSE_FILE=' -Quiet -ErrorAction Sil
     $Compose = @("compose", "-f", "docker-compose.app.yml", "-f", "docker-compose.mongodb.yml", "-f", "docker-compose.ollama.yml")
 }
 
+# Fail fast on a kernel MongoDB's tcmalloc allocator refuses to start on (see #27).
+# Only applies to the bundled MongoDB profile - bring-your-own MONGO_URI isn't
+# affected, since that database isn't started by this script.
+$mongoUriSet = Select-String -Path ".env" -Pattern '^MONGO_URI=.+' -Quiet -ErrorAction SilentlyContinue
+if (-not $mongoUriSet) {
+    $kernelVersion = ""
+    try { $kernelVersion = (docker info --format '{{.KernelVersion}}' 2>$null) } catch {}
+    if ($kernelVersion -match '^(\d+)\.(\d+)') {
+        $kMajor = [int]$Matches[1]
+        $kMinor = [int]$Matches[2]
+        if (($kMajor -gt 6) -or (($kMajor -eq 6) -and ($kMinor -ge 19))) {
+            Write-Host "==> refusing to start: Docker's Linux kernel is $kernelVersion"
+            Write-Host "    MongoDB's tcmalloc allocator has a known startup failure on kernel >= 6.19"
+            Write-Host "    (see https://github.com/adlerqa/wardeniq/issues/27 for the full analysis)."
+            Write-Host "    The bundled local stack cannot run on this Docker install today."
+            Write-Host ""
+            Write-Host "    Supported alternative: bring your own MongoDB. Set MONGO_URI in .env"
+            Write-Host "    (Atlas, or a self-managed replica set with mongot) and run this script again."
+            exit 1
+        }
+    }
+}
+
 if ($Reset) {
     Write-Host "==> wiping volumes"
     docker @Compose down -v --remove-orphans
@@ -65,14 +88,47 @@ if ($Reset) {
 Write-Host "==> building + starting wardenIQ"
 docker @Compose up -d --build
 
-Write-Host "==> waiting for services to settle (replica set + model pulls can take a few minutes)"
-Start-Sleep -Seconds 45
+# Readiness gate: don't report success until the app actually answers, not just
+# "started". Polls the same public boot-status endpoint the sign-in screen
+# uses (never returns raw driver errors - see #34/#44).
+Write-Host "==> waiting for wardenIQ to become ready (replica set + model pulls can take a few minutes)"
+$ready = $false
+$deadline = (Get-Date).AddSeconds(300)
+$lastStatus = "no response from http://localhost:8001"
+while ((Get-Date) -lt $deadline) {
+    try {
+        $resp = Invoke-RestMethod -Uri "http://localhost:8001/api/auth/boot-status" -TimeoutSec 5
+        $lastStatus = $resp | ConvertTo-Json -Compress
+        if ($resp.ready -eq $true) {
+            $ready = $true
+            break
+        }
+    } catch {
+        # app not answering yet - keep polling
+    }
+    Start-Sleep -Seconds 5
+}
 
 try {
     & "$PSScriptRoot\collect-logs.ps1"
 } catch {
     # best-effort, mirrors `./collect-logs.sh || true` in run.sh
     Write-Host "log collection failed: $_"
+}
+
+if (-not $ready) {
+    Write-Host ""
+    Write-Host "==> wardenIQ did not become ready within 5 minutes."
+    Write-Host "    Last boot status: $lastStatus"
+    Write-Host ""
+    Write-Host "--- docker logs warden-app (last 50 lines) ---"
+    docker logs --tail 50 warden-app
+    Write-Host ""
+    Write-Host "--- docker logs warden-mongod1 (last 50 lines) ---"
+    docker logs --tail 50 warden-mongod1
+    Write-Host ""
+    Write-Host "Full logs also captured in .\logs\"
+    exit 1
 }
 
 Write-Host ""
