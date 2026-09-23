@@ -97,6 +97,17 @@ class JobsMixin(_Base):
             out.append(j)
         return out
 
+    def latest_job(self, project_id, jtype):
+        """Most recent job of `jtype` for a project, or None. Used to explain an
+        empty Mind Map result: the job's own diagnostics (note, per_repo) outlive
+        the live watchJob() poll that first showed them."""
+        j = self.db["jobs"].find_one(
+            {"project_id": project_id, "type": jtype}, sort=[("_id", -1)]
+        )
+        if j:
+            j["id"] = str(j.pop("_id"))
+        return j
+
     def fail_orphaned_jobs(self):
         """Background threads do not survive an application process restart."""
         now = time.time()
