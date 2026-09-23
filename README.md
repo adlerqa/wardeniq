@@ -151,6 +151,11 @@ Prefer to seed the admin ahead of time? Set `ADMIN_EMAIL=you@company.com` in `.e
 > the local admin's Disable/Delete options unlock automatically once a second
 > active admin exists.
 
+> **No PRD handy?** Upload [`examples/sample-prd.md`](examples/sample-prd.md) when
+> you create your first feature — a small password-reset PRD detailed enough to
+> generate Functional, E2E, API, and Non-functional test cases, so you can see the
+> whole flow work without writing a requirement document of your own first.
+
 ---
 
 Bring your own model — Ollama, OpenAI, Anthropic, Gemini, Mistral, Groq or Bedrock, all
