@@ -10,7 +10,7 @@
 > your code against those tests — so you always know **what's covered,
 > what's automated, and what's at risk.**
 
-**`v0.1.0-beta`** — early, evolving, open. Licensed **MIT**: fork it, run it
+**`v0.2.3`** — early, evolving, open. Licensed **MIT**: fork it, run it
 on-prem, use it commercially, no strings.
 
 ![Upload a PRD, wardenIQ generates a grounded test suite](docs/assets/demo.gif)

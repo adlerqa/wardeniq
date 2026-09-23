@@ -50,7 +50,7 @@ MINDMAP_SAMPLES = max(1, int(os.getenv("MINDMAP_SAMPLES", "1")))
 # windows. The former rank/chunk/per-file rationing knobs are gone — they existed only to
 # choose what to throw away.)
 DB_NAME = os.getenv("DB_NAME", "wardeniq")
-VERSION = "0.1.0-beta"
+VERSION = "0.2.3"
 AUTO_SETUP = os.getenv("AUTO_SETUP", "true").lower() == "true"
 STEP_AUTO = float(os.getenv("STEP_AUTO_REUSE", "0.95"))
 CASE_AUTO = float(os.getenv("CASE_AUTO_REUSE", "0.93"))

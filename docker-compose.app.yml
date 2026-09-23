@@ -22,7 +22,7 @@ services:
     build:
       context: .
       dockerfile: app/Dockerfile
-    image: ${APP_IMAGE:-wardeniq:0.1.0-beta}
+    image: ${APP_IMAGE:-wardeniq:0.2.3}
     container_name: warden-app
     ports: ["8001:8001"]
     # Lets the container reach services on the host (e.g. a natively-run Ollama at
