@@ -53,3 +53,32 @@ that satisfies a feature's requirements, push it to a feature-named branch, and 
 **pull request** (needs a write-scoped token). Then analyze that PR for coverage.
 
 ---
+
+## Supported inputs
+
+What a feature actually accepts, so you don't have to read the source to find out.
+
+**File formats**
+
+| Format | Notes |
+|---|---|
+| PDF | Text is extracted per page; clickable link annotations and visible-text URLs are both picked up and followed automatically (public web only). |
+| DOCX | Paragraph text plus table cells (cells joined with `\|`). |
+| Markdown / plain text | Read as UTF-8 text, no special parsing. |
+| Anything else | Rejected with a clear error naming the file and the supported formats — it is never silently decoded into garbage. |
+
+**Document types**
+
+A source can be tagged `prd`, `hld`, `lld`, or `figma` — this drives how a generated test case's evidence is labeled, not how the file itself is parsed.
+
+**Other sources**
+
+- **Confluence pages**, by URL or page id — the page body and its child pages are pulled in, using the same Atlassian token as Jira.
+- **Figma files**, by `figma.com/file|design|proto/<key>` URL — needs a Figma personal access token in *Configuration → Integrations*; there's no supported way to read a design's content from a bare public link without one.
+
+**Known limitations**
+
+- **No OCR.** A scanned or image-only PDF has no extractable text, so it contributes nothing to generation even though the upload itself succeeds.
+- Uploads with content that just happens to decode as UTF-8 text but isn't Markdown/plain-text (e.g. an unrelated data file) are accepted — the check is a real-format guard, not a content-quality check.
+
+---
