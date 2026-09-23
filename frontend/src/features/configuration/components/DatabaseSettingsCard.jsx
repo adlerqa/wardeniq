@@ -22,9 +22,9 @@ export default function DatabaseSettingsCard() {
         <div className="cfg-field">
           <label>
             Database connection string
-            <span className="fi" tabIndex="0" data-tip="A search-capable MongoDB URI (Atlas mongodb+srv://\u2026 or a self-managed replica set with mongot). wardenIQ copies your data into it and switches over. Saved to .env, encrypted, and never shown again.">i</span>
+            <span className="fi" tabIndex="0" data-tip="A search-capable MongoDB URI (Atlas mongodb+srv://… or a self-managed replica set with mongot). wardenIQ copies your data into it and switches over. Saved to .env, encrypted, and never shown again.">i</span>
           </label>
-          <input type="password" id="cfg-db-uri" placeholder="mongodb+srv://user:pass@cluster\u2026" autoComplete="off" />
+          <input type="password" id="cfg-db-uri" placeholder="mongodb+srv://user:pass@cluster…" autoComplete="off" />
         </div>
         <div className="cfg-status muted" id="cfg-db-status"></div>
         <div className="cfg-actions" style={{ border: "none", padding: "0", margin: "0" }}>

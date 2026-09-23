@@ -19,7 +19,7 @@ export default function FigmaSettingsCard() {
       <div className="cfg-field">
         <label>
           Access token
-          <span className="fi" tabIndex="0" data-tip="A Figma personal access token (figma.com \u2192 Settings \u2192 Personal access tokens). Lets features pull screens and text from a Figma link. Stored encrypted; leave blank to keep the current one.">i</span>
+          <span className="fi" tabIndex="0" data-tip="A Figma personal access token (figma.com → Settings → Personal access tokens). Lets features pull screens and text from a Figma link. Stored encrypted; leave blank to keep the current one.">i</span>
         </label>
         <input type="password" id="cfg-figma-token" placeholder="API token is required" />
       </div>

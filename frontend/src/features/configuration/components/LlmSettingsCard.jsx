@@ -20,7 +20,7 @@ export default function LlmSettingsCard() {
       <div className="cfg-field">
         <label>
           Provider
-          <span className="fi" tabIndex="0" data-tip="Ollama \u2014 free local AI (open-source, no key). OpenAI / Anthropic / Gemini / Mistral / Groq \u2014 hosted APIs (need an API key). AWS Bedrock \u2014 enterprise / air-gapped: uses an AWS region plus an IAM role or access keys.">i</span>
+          <span className="fi" tabIndex="0" data-tip="Ollama — free local AI (open-source, no key). OpenAI / Anthropic / Gemini / Mistral / Groq — hosted APIs (need an API key). AWS Bedrock — enterprise / air-gapped: uses an AWS region plus an IAM role or access keys.">i</span>
         </label>
         <select id="cfg-llm-provider">
           <option value="ollama">Ollama (built-in)</option>

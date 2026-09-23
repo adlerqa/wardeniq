@@ -37,17 +37,19 @@ export default function FeatureCreatePanel() {
           Or paste requirement text
           <span className="muted" style={{ fontWeight: "400" }}>(optional)</span>
         </label>
-        <textarea id="f-text" placeholder="Paste requirements, acceptance criteria, or extra context here\u2026"></textarea>
+        <textarea id="f-text" placeholder="Paste requirements, acceptance criteria, or extra context here…"></textarea>
         <label style={{ marginTop: "14px" }}>
           Confluence page link
           <span className="muted" style={{ fontWeight: "400" }}>(optional · one URL per line · uses your Jira/Atlassian token; child pages included)</span>
         </label>
-        <textarea id="f-confluence" rows="2" placeholder="https://your-org.atlassian.net/wiki/spaces/\u2026/pages/123456/\u2026\nhttps://your-org.atlassian.net/wiki/spaces/\u2026/pages/789012/\u2026"></textarea>
+        <textarea id="f-confluence" rows="2" placeholder={`https://your-org.atlassian.net/wiki/spaces/…/pages/123456/…
+https://your-org.atlassian.net/wiki/spaces/…/pages/789012/…`}></textarea>
         <label style={{ marginTop: "10px" }}>
           Figma design link
           <span className="muted" style={{ fontWeight: "400" }}>(optional · one URL per line · needs a Figma token in Configuration)</span>
         </label>
-        <textarea id="f-figma" rows="2" placeholder="https://www.figma.com/file/<key>/\u2026\nhttps://www.figma.com/design/<key>/\u2026"></textarea>
+        <textarea id="f-figma" rows="2" placeholder={`https://www.figma.com/file/<key>/…
+https://www.figma.com/design/<key>/…`}></textarea>
         <label style={{ marginTop: "14px" }}>
           Import test sheet
           <span className="muted" style={{ fontWeight: "400" }}>(optional · CSV / XLSX)</span>
