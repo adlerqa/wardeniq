@@ -587,13 +587,25 @@ def _case_exemplar_fields(case: dict) -> dict:
     }
 
 
-def is_prompt_exemplar_copy(case: dict, corpus: str = "") -> bool:
-    """True when a generated case is a verbatim or hybrid copy of a prompt few-shot."""
+# Fixed vocabulary for #64: every rejection this module or service.py's grounding/
+# dedup filters can produce is reported under one of these reason strings, so a
+# caller can log/count without inventing free text per call site.
+REASON_EXEMPLAR_COPY = "exemplar-copy"
+REASON_HYBRID_SCAFFOLD = "hybrid-scaffold"
+REASON_NO_SOURCE_GROUNDING = "no-source-grounding"
+REASON_EDGE_SUPPRESSED = "edge-suppressed"
+REASON_DUPLICATE = "duplicate"
+
+
+def prompt_exemplar_copy_reason(case: dict, corpus: str = "") -> str | None:
+    """REASON_EXEMPLAR_COPY / REASON_HYBRID_SCAFFOLD / None, matching exactly what
+    is_prompt_exemplar_copy() would have decided — same checks, same order, just
+    reporting which one fired instead of collapsing to a bool."""
     if not isinstance(case, dict):
-        return False
+        return None
     fields = _case_exemplar_fields(case)
     if not fields["title"] and not fields["intent"] and not fields["preconditions"]:
-        return False
+        return None
 
     for exemplar in PROMPT_EXEMPLAR_CASES:
         ex_title = _normalize_exemplar_text(exemplar.get("title"))
@@ -602,34 +614,53 @@ def is_prompt_exemplar_copy(case: dict, corpus: str = "") -> bool:
             _normalize_exemplar_text(item) for item in (exemplar.get("preconditions") or [])
         ]
         if fields["title"] and ex_title and fields["title"] == ex_title:
-            return True
+            return REASON_EXEMPLAR_COPY
         if fields["intent"] and ex_intent and fields["intent"] == ex_intent:
-            return True
+            return REASON_EXEMPLAR_COPY
         if fields["preconditions"] and ex_pre and fields["preconditions"] == ex_pre:
-            return True
+            return REASON_EXEMPLAR_COPY
         if (
             exemplar.get("fuzzy")
             and fields["title"]
             and ex_title
             and _exemplar_jaccard(fields["title"], ex_title) >= _EXEMPLAR_FUZZY_TITLE_JACCARD
         ):
-            return True
+            return REASON_EXEMPLAR_COPY
 
     corpus_n = _normalize_exemplar_text(corpus)
     blob = fields["blob"]
     if any(phrase in blob and phrase not in corpus_n for phrase in PROMPT_EXEMPLAR_SCAFFOLDING):
-        return True
+        return REASON_HYBRID_SCAFFOLD
     ungrounded = [entity for entity in PROMPT_EXEMPLAR_ENTITIES if entity in blob and entity not in corpus_n]
-    return len(ungrounded) >= 2
+    if len(ungrounded) >= 2:
+        return REASON_HYBRID_SCAFFOLD
+    return None
+
+
+def is_prompt_exemplar_copy(case: dict, corpus: str = "") -> bool:
+    """True when a generated case is a verbatim or hybrid copy of a prompt few-shot."""
+    return prompt_exemplar_copy_reason(case, corpus) is not None
+
+
+def filter_prompt_exemplar_copies_with_reasons(cases: list, corpus: str = "") -> tuple[list, list]:
+    """Like filter_prompt_exemplar_copies, but also returns (case, reason) pairs
+    for everything dropped, so a caller can log/report why."""
+    kept, rejected = [], []
+    for case in (cases or []):
+        if not isinstance(case, dict):
+            continue
+        reason = prompt_exemplar_copy_reason(case, corpus)
+        if reason:
+            rejected.append((case, reason))
+        else:
+            kept.append(case)
+    return kept, rejected
 
 
 def filter_prompt_exemplar_copies(cases: list, corpus: str = "") -> list:
     """Drop generated cases that copied a prompt few-shot exemplar."""
-    return [
-        case
-        for case in (cases or [])
-        if isinstance(case, dict) and not is_prompt_exemplar_copy(case, corpus)
-    ]
+    kept, _ = filter_prompt_exemplar_copies_with_reasons(cases, corpus)
+    return kept
 
 
 def filter_hallucinated_entities(entities: list, lowercase_corpus: str = None) -> list:

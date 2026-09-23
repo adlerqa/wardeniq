@@ -651,6 +651,18 @@ function watchJob(jobId, onTick, intervalMs) {
     finish();
   };
 }
+// #64: "N generated, M persisted (2 exemplar-copy, 1 no-source-grounding)" — the
+// filters in testgen/service.py already reject bad cases before persist; this
+// surfaces the counts so over- or under-filtering is visible, not just quieter.
+function filterSummaryLine(res) {
+  const f = res && res.testgen_filter;
+  if (!f || !f.rejected) return "";
+  const breakdown = Object.entries(f.rejected_by_reason || {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([reason, count]) => `${count} ${reason}`)
+    .join(", ");
+  return `${f.generated} generated, ${f.persisted} persisted (${breakdown})`;
+}
 function watchGen(jobId, fid) {
   if (!jobId) {
     $("#f-go").disabled = false;
@@ -661,12 +673,13 @@ function watchGen(jobId, fid) {
     const res = j.result || {};
     renderJobLog("#f-log", j);
     const line = `${res.cases_new || 0} new + ${res.cases_reused || 0} reused cases · ${res.steps_new || 0} new + ${res.steps_reused || 0} reused steps`;
+    const filterLine = filterSummaryLine(res);
     $("#f-status").innerHTML =
       j.status === "running"
         ? `<span class="muted">${esc(j.stage)}</span> — ${line}`
         : j.status === "failed"
           ? `<span class="err">✕ Generation failed: ${esc(j.error || "unknown error")}</span>`
-          : `<span class="ok">✓ Done</span> — ${line}${res.warnings && res.warnings.length ? `<br><span class="warn">${esc(res.warnings.join("; "))}</span>` : ""}${res.errors && res.errors.length ? `<br><span class="err">${esc(res.errors.join("; "))}</span>` : ""}`;
+          : `<span class="ok">✓ Done</span> — ${line}${filterLine ? `<br><span class="muted">${esc(filterLine)}</span>` : ""}${res.warnings && res.warnings.length ? `<br><span class="warn">${esc(res.warnings.join("; "))}</span>` : ""}${res.errors && res.errors.length ? `<br><span class="err">${esc(res.errors.join("; "))}</span>` : ""}`;
     if (j.status !== "running") {
       $("#f-go").disabled = false;
       setBusy("#f-go", false);

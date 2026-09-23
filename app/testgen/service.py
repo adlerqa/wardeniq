@@ -19,9 +19,12 @@ from testgen.prompt_builder import (
     build_repair_prompt,
     build_ui_agent_prompt,
     filter_hallucinated_entities,
-    filter_prompt_exemplar_copies,
+    filter_prompt_exemplar_copies_with_reasons,
     is_few_shot_leak,
     is_prompt_exemplar_copy,
+    REASON_DUPLICATE,
+    REASON_EDGE_SUPPRESSED,
+    REASON_NO_SOURCE_GROUNDING,
 )
 from testgen.lineage import (
     REUSE_SIMILARITY_API,
@@ -500,9 +503,9 @@ def _normal_steps(case: dict) -> list[dict]:
     return out
 
 
-def _deduplicate(cases: list, category: str) -> list[dict]:
+def _deduplicate_with_reasons(cases: list, category: str) -> tuple[list[dict], list[tuple[dict, str]]]:
     seen_hashes = set()
-    out = []
+    out, rejected = [], []
     for raw in cases:
         if not isinstance(raw, dict):
             continue
@@ -515,12 +518,19 @@ def _deduplicate(cases: list, category: str) -> list[dict]:
         identity_hash = generate_test_identity_hash(case)
         slug = generate_test_slug(case)
         if identity_hash in seen_hashes:
+            rejected.append((case, REASON_DUPLICATE))
             continue
         seen_hashes.add(identity_hash)
         case["identity_hash"] = identity_hash
         case["test_slug"] = slug
         out.append(case)
-    return sorted(out, key=lambda c: PRIORITY_ORDER.get(str(c.get("priority") or "P2").upper(), 2))
+    out.sort(key=lambda c: PRIORITY_ORDER.get(str(c.get("priority") or "P2").upper(), 2))
+    return out, rejected
+
+
+def _deduplicate(cases: list, category: str) -> list[dict]:
+    kept, _ = _deduplicate_with_reasons(cases, category)
+    return kept
 
 
 def _filter_api_tests(cases: list, api_surface: list[dict]) -> list[dict]:
@@ -730,11 +740,23 @@ def _case_has_source_grounding(case: dict, corpus: str) -> bool:
     return any(re.search(rf"\b{re.escape(token)}\b", corpus_l) for token in tokens)
 
 
+def _filter_ungrounded_suite_cases_with_reasons(
+    cases: list[dict], corpus: str
+) -> tuple[list[dict], list[tuple[dict, str]]]:
+    kept, rejected = [], []
+    for case in (cases or []):
+        if not isinstance(case, dict):
+            continue
+        if _case_has_source_grounding(case, corpus):
+            kept.append(case)
+        else:
+            rejected.append((case, REASON_NO_SOURCE_GROUNDING))
+    return kept, rejected
+
+
 def _filter_ungrounded_suite_cases(cases: list[dict], corpus: str) -> list[dict]:
-    return [
-        case for case in (cases or [])
-        if isinstance(case, dict) and _case_has_source_grounding(case, corpus)
-    ]
+    kept, _ = _filter_ungrounded_suite_cases_with_reasons(cases, corpus)
+    return kept
 
 
 # --- Category evidence sufficiency (deterministic, pre-generation) -------------------
@@ -1766,12 +1788,22 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         except Exception as exc:  # noqa: BLE001
             errors.append(f"Business fallback failed: {exc}")
 
+    # #64: every case a filter below drops is recorded here as (case, reason), so the
+    # run can report a generated/persisted/rejected summary instead of dropping cases
+    # silently. Reasons are the fixed REASON_* vocabulary from prompt_builder.py.
+    filter_rejections: list[tuple[dict, str]] = []
+
+    def _dedup_tracked(cases, category):
+        kept, rejected = _deduplicate_with_reasons(cases, category)
+        filter_rejections.extend(rejected)
+        return kept
+
     suites = {
-        "api_tests": _deduplicate(api_tests, "api_tests"),
+        "api_tests": _dedup_tracked(api_tests, "api_tests"),
         "ui_validations": ui_tests,
-        "e2e_tests": _deduplicate(e2e_tests, "e2e_tests"),
-        "edge_cases": _deduplicate(_as_list(e2e_result.get("edge_cases")), "edge_cases"),
-        "business_tests": _deduplicate(business_tests, "business_tests"),
+        "e2e_tests": _dedup_tracked(e2e_tests, "e2e_tests"),
+        "edge_cases": _dedup_tracked(_as_list(e2e_result.get("edge_cases")), "edge_cases"),
+        "business_tests": _dedup_tracked(business_tests, "business_tests"),
     }
     log_progress(
         update_job_fn,
@@ -1825,7 +1857,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                     hashed[suite_name], repair.get(delta_name) or {}, suite_name
                 )
             suites["api_tests"] = _filter_api_tests(suites["api_tests"], api_surface)
-            suites["api_tests"] = _deduplicate(
+            suites["api_tests"] = _dedup_tracked(
                 _ensure_api_endpoint_coverage(suites["api_tests"], api_surface), "api_tests"
             )
         except Exception as exc:  # noqa: BLE001
@@ -1842,18 +1874,21 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     }
     # Prompt few-shots are examples, not the user's feature. Reject verbatim and
     # hybrid copies on every suite before persist (issue #36).
-    suites = {
-        name: filter_prompt_exemplar_copies(cases, corpus)
-        for name, cases in suites.items()
-    }
+    for name, cases in suites.items():
+        kept, rejected = filter_prompt_exemplar_copies_with_reasons(cases, corpus)
+        suites[name] = kept
+        filter_rejections.extend(rejected)
     # e2e / nfr must have some source overlap. Category-level "feature has a
     # description" was enough to let an ungrounded E2E exemplar ship.
     for suite_name in ("e2e_tests", "edge_cases"):
-        suites[suite_name] = _filter_ungrounded_suite_cases(suites[suite_name], corpus)
+        kept, rejected = _filter_ungrounded_suite_cases_with_reasons(suites[suite_name], corpus)
+        suites[suite_name] = kept
+        filter_rejections.extend(rejected)
     # When edge evidence was insufficient we still ran the shared E2E call, and
     # whatever came back in edge_cases was persisted as nfr. Drop that suppressed
     # block; copies stuffed into e2e_tests are already removed above.
     if not evidence_sufficient.get("edge"):
+        filter_rejections.extend((case, REASON_EDGE_SUPPRESSED) for case in suites["edge_cases"])
         suites["edge_cases"] = []
 
     suites = _budget_suites(
@@ -1862,6 +1897,25 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     generated_count = sum(len(values) for values in suites.values())
     if generated_count == 0 and inherited_reused + inherited_rebuilt == 0:
         raise RuntimeError("EmptyGenerationError: no valid test cases survived normalization and evidence guards")
+
+    # #64: log one line per rejected case (id/reason/title), plus a summary of
+    # candidates -> persisted, so silent over- or under-filtering is visible instead
+    # of only showing up as a smaller-than-expected suite with no explanation.
+    for case, reason in filter_rejections:
+        case_id = case.get("id") or case.get("test_slug") or "?"
+        title = case.get("title") or ""
+        print(f'[TestGen][filter] rejected id={case_id} reason={reason} title="{title}"', flush=True)
+    rejected_by_reason: dict[str, int] = {}
+    for _case, reason in filter_rejections:
+        rejected_by_reason[reason] = rejected_by_reason.get(reason, 0) + 1
+    total_candidates = generated_count + len(filter_rejections)
+    if filter_rejections:
+        breakdown = ", ".join(f"{count} {reason}" for reason, count in sorted(rejected_by_reason.items()))
+        log_progress(
+            update_job_fn,
+            f"Filter: {total_candidates} generated, {generated_count} persisted ({breakdown})",
+            80,
+        )
 
     log_progress(update_job_fn, "Persisting normalized and deduplicated test cases", 82)
     cases_new = cases_reused = steps_new = steps_reused = 0
@@ -1904,6 +1958,15 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         "discovered_api_count": len(api_surface),
         "rag_gap_count": len(gaps),
         "errors": errors,
+        # #64: generated/persisted/rejected summary for the exemplar/grounding/dedup
+        # filters above, so the UI can show why a run produced fewer cases than
+        # candidates without anyone having to read container logs.
+        "testgen_filter": {
+            "generated": total_candidates,
+            "persisted": generated_count,
+            "rejected": len(filter_rejections),
+            "rejected_by_reason": rejected_by_reason,
+        },
     }
     # "Either generate only what the evidence supports, or say the evidence was
     # insufficient" -- this is that second branch made visible. An empty suite on the job
