@@ -1,7 +1,7 @@
 {
   "name": "wardeniq-frontend",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.3",
   "type": "module",
   "description": "WardenIQ production frontend — React + Vite + Tailwind with feature-based architecture.",
   "scripts": {

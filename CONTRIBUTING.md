@@ -121,7 +121,7 @@ reason.
   model, update the `_ensure_*` helpers in `app/store/base.py` so fresh
   installs and existing databases converge, and document the change in
   `CHANGELOG.md`.
-- **Keep diffs small and compatible.** wardenIQ is `v0.1.0-beta`; users are
+- **Keep diffs small and compatible.** wardenIQ is `v0.2.3`; users are
   running it. Prefer additive changes over breaking ones.
 - **Do not commit generated artifacts, `.env` files, credentials, or
   vendored model weights.**

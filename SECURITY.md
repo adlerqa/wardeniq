@@ -58,7 +58,7 @@ Out of scope:
 
 ## Supported versions
 
-wardenIQ is `v0.1.0-beta`. Security fixes are made against the `main` branch
+wardenIQ is `v0.2.3`. Security fixes are made against the `main` branch
 and shipped in the next release. Please upgrade to the latest release before
 reporting an issue if you can.
 
