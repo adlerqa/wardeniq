@@ -83,6 +83,34 @@ jobs:
           MONGO_TEST_URI: mongodb://localhost:27017
         run: pytest -m dbintegration -v
 
+  # frontend/package.json defines test/lint/check scripts; nothing ran them in
+  # CI before this job, so a regression in frontend/src or frontend/tests
+  # could merge green. Node version matches the app/Dockerfile build stage
+  # (node:20-slim) so this catches the same failures that stage would hit.
+  frontend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
   # Flags dependencies with known CVEs. Informational: some transitive deps
   # (e.g. boto3's own dependency tree) may carry advisories with no upstream
   # fix yet, so this doesn't block merges — but it's visible in every run.
