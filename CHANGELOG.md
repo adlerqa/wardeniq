@@ -28,6 +28,47 @@
   exist. Empty-user password attempts report recovery instructions instead of
   invalid credentials. Raw driver exceptions are never exposed by the public
   boot-status endpoint; healthy sign-in keeps its existing appearance.
+
+## v0.2.3 — 2026-08-26
+
+_No changelog-worthy entries were recorded for this release; see the commit range `v0.2.2..v0.2.3`._
+
+## v0.2.2 — 2026-08-25
+
+### Added
+
+- **The Mind Map is now an interactive coverage MAP that stays legible at enterprise
+  scale.** The old view was expandable feature cards — no structure, no priority. It is
+  now a node map over the same `/api/projects/{pid}/mindmap` payload:
+  **PROJECT → REPOSITORY → FEATURE → STATUS → test cases**, hand-rolled SVG + vanilla JS
+  (no CDN/D3, so it still works air-gapped).
+  - **Two layouts, auto-selected so the map can never crowd.** *Radial* is used for small
+    projects (≤9 features, single repo) and its ring radius is derived from the real node
+    widths — needed circumference ÷ 2π — so boxes are mathematically incapable of
+    overlapping. Anything larger switches to a *tidy tree* whose row for every node comes
+    from its subtree's leaf count, giving a fixed 30px pitch for 22px nodes at any size;
+    the canvas grows and the stage scrolls instead of blurring. A radial map with 40+
+    features would have to shrink text below legibility, which is why the switch exists.
+    An `auto / radial / tree` toggle lets the user override.
+  - **Repositories are a real layer**, not a tooltip footnote: in tree mode features are
+    grouped under the repo they were reviewed against (a feature spanning several repos
+    appears under each), with a column header showing the repo count.
+  - Each feature node carries a wrapped label, version, case count, coverage % and a
+    covered/partial/uncovered bar; edge thickness scales with case count. Clicking a
+    feature expands its cases inline (tree) or re-roots the map on it (radial); clicking a
+    status cluster jumps straight to those cases. Large features cap at 48 drawn cases
+    with a `+N more` node so the canvas can't explode.
+  - Selecting a feature opens the **evidence panel**: each case with the reviewer's
+    rationale and the **source files cited as proof**, filterable by status; cases with no
+    implementing file say so explicitly. With nothing selected the panel ranks **evidence
+    hotspots** — the files cited most often, i.e. the riskiest places to change.
+  Duplicate feature names are numbered ("… (2/3)") since several features previously
+  truncated to the same label. Interim Sankey-flow, feature/file-matrix and ranked-bar
+  views were built during this work and removed: with features that share most of their
+  files those degrade to a single blob, a uniform grid, and a table respectively.
+
+### Fixed
+
 - **A saved Jira (or LLM/SMTP) integration could silently disappear later, with
   no error at save time and no sign-out in between.** `app/store/base.py`
   connected to MongoDB with pymongo's default write concern (`w=1`,
@@ -48,36 +89,49 @@
   making a save durable across a primary failover instead of appearing to
   succeed and quietly reverting.
 
-### Security
-- **Stronger encryption-key derivation for secrets at rest.** `app/crypto.py` now
-  derives the Fernet key from `ENCRYPTION_KEY`/`APP_SECRET` with PBKDF2-HMAC-SHA256
-  (200k iterations, fixed application salt) instead of a single unsalted SHA-256.
-  Decryption uses a `MultiFernet` that falls back to the legacy SHA-256 key, so
-  secrets stored by older versions keep decrypting; anything re-saved is written
-  with the strong key. No data migration or re-entry of tokens is required.
-- **`.env` writes are hardened against newline injection.** `_write_env_var`
-  (`app/main.py`) now rejects any key/value containing CR, LF, or NUL, closing a
-  path where an admin-supplied value (e.g. the MongoDB URI via `/api/db-config`
-  or `/api/db-migrate`) could smuggle additional `KEY=value` lines into `.env`.
-- **SSRF DNS-rebinding (TOCTOU) closed in the document link-follower.**
-  `app/weblinks.py` now resolves each URL's host once, validates every resolved
-  address is public, and connects to that pinned IP literal for the actual fetch
-  (preserving the `Host` header and, for HTTPS, SNI/cert verification against the
-  real hostname). Previously the safety check and the fetch resolved DNS
-  independently, so a low-TTL attacker domain could pass the check with a public
-  IP and then be fetched at an internal IP.
-- **Malformed Mongo ids now return HTTP 400 instead of 500.** A single
-  `bson.errors.InvalidId` exception handler (`app/main.py`) converts invalid id
-  path params / body fields into a clean `400 invalid id format` across all
-  routes, rather than the previous uncaught 500.
-- **Note (accepted risk, no code change):** admin-configurable outbound endpoints
-  (`llm_base_url`, `ollama_url`, `jira_base_url`) remain unrestricted by design —
-  wardenIQ is single-tenant/on-prem and must be able to target self-hosted
-  Ollama, custom LLM endpoints, and on-prem Jira. This is an admin-only,
-  admin-trusted capability; egress allowlisting would break the product's core
-  use case and is left to the operator's network policy.
+## v0.2.1 — 2026-07-23
+
+### Added
+
+- **Repo "kind" is now selectable everywhere and includes a dedicated `test`
+  badge.** The kind classification (a display badge, independent of the app/test
+  `repo_type` that governs webhooks) gained a `test` value and dropped `other` from
+  the UI (canonical set is now `BE | FE | test | infra`; `other` is retained only as
+  a legacy value so pre-existing repos still render). The create-project wizard now
+  shows a per-repo **Kind** dropdown beside the display-name box (defaulting to
+  Backend for app repos and Test for test repos) instead of hard-coding every repo to
+  `BE`/`other`; the project-settings **Connect repository** panel's Kind dropdown adds
+  Test in place of Other. Badges render via a shared label map (`test`→"Test",
+  `infra`→"Infra", legacy `other`→"Other") in the repositories list, Change impact
+  analysis, and the Implementation coverage map / Mind Map. Backend `POST /repos`
+  normalizes incoming kinds case-insensitively (`_normalize_repo_kind`), and a
+  one-time `store._converge_repo_kinds()` promotes existing test-type repos that were
+  defaulted to `other` up to `test` so their badge reflects the new value without
+  manual re-tagging. In the **Mind Map** and **Change impact analysis** repo pickers,
+  `infra`-kind repos are now listed but left **unchecked by default** (infrastructure
+  code, so you opt it in rather than out); backend, frontend, and test-kind repos stay
+  pre-selected. Test-*type* repos remain excluded from these views entirely, as before.
+
+- **The GitHub poll interval is now configurable in the UI (Configuration → Sync
+  & polling) and defaults to 30 minutes.** Previously the poller cadence was fixed
+  at import from `POLL_INTERVAL_SECONDS` (default 120s) and could only be changed by
+  editing `.env` and restarting. Now `current_poll_interval()` resolves it live on
+  every poll loop with precedence: the frontend-saved `settings.poll_interval_s`
+  wins, else `POLL_INTERVAL_SECONDS` in `.env` (seed default), else a built-in
+  1800s (30 min). Saved values are floored at `MIN_POLL_INTERVAL` (30s) so a stray
+  small value can't hammer the GitHub API, and a change applies on the next loop
+  with no restart. `.env`/`.env.example` defaults bumped 120 → 1800. Exposed via
+  `GET /api/settings` (`poll_interval_s`, `poll_interval_s_effective`,
+  `poll_interval_min_s`), settable via `PUT /api/settings` (`poll_interval_s`), and
+  reflected in `GET /api/sync/status`. GitLab (webhook-driven) is unaffected.
+  Saving from the UI also mirrors the value into `.env`
+  (`POLL_INTERVAL_SECONDS`, via the existing `_write_env_var` helper used for
+  `MONGO_URI`/`APP_SECRET`) so the config file never diverges from what's running;
+  this is best-effort, so when `.env` isn't writable (not bind-mounted) the value
+  still applies live from the `settings` doc and the UI says so.
 
 ### Changed
+
 - **Installs now track the `latest` image tag so `docker compose pull` delivers new
   releases.** The installer previously pinned `adlerqa/wardeniq:beta`, but the publish
   workflow only updates `:beta` on a manual run — a version release (`vX.Y.Z`) publishes
@@ -89,34 +143,7 @@
   "Updating to a new release" section documents the pull + recreate flow (no re-install).
 
 ### Fixed
-- **Docs: the bring-your-own-MongoDB pre-seed examples piped the installer without a
-  mode, which now defaults to the bundled stack and ignores `MONGO_URI`.** Updated those
-  examples to pass `WARDENIQ_MODE=byo` (macOS/Linux) / `$env:WARDENIQ_MODE='byo'`
-  (Windows) so a piped bring-your-own install actually uses the supplied database.
-- **`install.ps1` could misreport "Docker daemon isn't running" when Docker was
-  actually fine, then crash outright once that was "fixed."** The pre-flight
-  check wrapped `docker info` in `try/catch`. Under this script's
-  `$ErrorActionPreference = "Stop"`, any stderr output from a native command —
-  even benign `WARNING:` lines `docker info` prints on success (blkio throttle
-  support, cgroup v1 deprecation, etc.) — becomes a terminating error. This is
-  general PowerShell native-command behavior, not a PS7-only
-  `$PSNativeCommandUseErrorActionPreference` thing (reproduced on Windows
-  PowerShell 5.1). First attempt removed the `try/catch` and checked
-  `$LASTEXITCODE` instead, but that alone doesn't help — the stderr line still
-  throws before the `$LASTEXITCODE` line is ever reached, so it just turned a
-  misleading "daemon isn't running" message into an unhandled
-  `NativeCommandError` crash, confirmed live on the same Windows machine.
-  Fixed properly with a `RunNative` helper that temporarily sets
-  `$ErrorActionPreference = "SilentlyContinue"` around each native `docker`/
-  `docker compose` call (restoring it afterward) so stderr output no longer
-  terminates the script, then checks `$LASTEXITCODE` for the real result.
-  Applied to the pre-flight `docker compose version`/`docker info` checks and,
-  proactively, to every other unguarded native call later in the script
-  (`docker compose down`, `docker pull`, `docker compose pull`,
-  `docker compose up`) since they were equally exposed and just hadn't been
-  hit yet.
 
-### Fixed
 - **Usage & Cost mispriced every provider because the default price table was stale
   and its keys didn't match the models the UI actually offers.** Most visibly,
   `claude-opus-4-8` used the old Opus rate of $15/$75 per 1M tokens, so a job billed
@@ -150,71 +177,40 @@
   calls, so base rates match). Any model can still be overridden in Configuration →
   LLM pricing; when new models are added to the dropdown, add their rates here too.
 
+### Security
+
+- **Stronger encryption-key derivation for secrets at rest.** `app/crypto.py` now
+  derives the Fernet key from `ENCRYPTION_KEY`/`APP_SECRET` with PBKDF2-HMAC-SHA256
+  (200k iterations, fixed application salt) instead of a single unsalted SHA-256.
+  Decryption uses a `MultiFernet` that falls back to the legacy SHA-256 key, so
+  secrets stored by older versions keep decrypting; anything re-saved is written
+  with the strong key. No data migration or re-entry of tokens is required.
+- **`.env` writes are hardened against newline injection.** `_write_env_var`
+  (`app/main.py`) now rejects any key/value containing CR, LF, or NUL, closing a
+  path where an admin-supplied value (e.g. the MongoDB URI via `/api/db-config`
+  or `/api/db-migrate`) could smuggle additional `KEY=value` lines into `.env`.
+- **SSRF DNS-rebinding (TOCTOU) closed in the document link-follower.**
+  `app/weblinks.py` now resolves each URL's host once, validates every resolved
+  address is public, and connects to that pinned IP literal for the actual fetch
+  (preserving the `Host` header and, for HTTPS, SNI/cert verification against the
+  real hostname). Previously the safety check and the fetch resolved DNS
+  independently, so a low-TTL attacker domain could pass the check with a public
+  IP and then be fetched at an internal IP.
+- **Malformed Mongo ids now return HTTP 400 instead of 500.** A single
+  `bson.errors.InvalidId` exception handler (`app/main.py`) converts invalid id
+  path params / body fields into a clean `400 invalid id format` across all
+  routes, rather than the previous uncaught 500.
+- **Note (accepted risk, no code change):** admin-configurable outbound endpoints
+  (`llm_base_url`, `ollama_url`, `jira_base_url`) remain unrestricted by design —
+  wardenIQ is single-tenant/on-prem and must be able to target self-hosted
+  Ollama, custom LLM endpoints, and on-prem Jira. This is an admin-only,
+  admin-trusted capability; egress allowlisting would break the product's core
+  use case and is left to the operator's network policy.
+
+## v0.2.0 — 2026-07-20
+
 ### Added
-- **The Mind Map is now an interactive coverage MAP that stays legible at enterprise
-  scale.** The old view was expandable feature cards — no structure, no priority. It is
-  now a node map over the same `/api/projects/{pid}/mindmap` payload:
-  **PROJECT → REPOSITORY → FEATURE → STATUS → test cases**, hand-rolled SVG + vanilla JS
-  (no CDN/D3, so it still works air-gapped).
-  - **Two layouts, auto-selected so the map can never crowd.** *Radial* is used for small
-    projects (≤9 features, single repo) and its ring radius is derived from the real node
-    widths — needed circumference ÷ 2π — so boxes are mathematically incapable of
-    overlapping. Anything larger switches to a *tidy tree* whose row for every node comes
-    from its subtree's leaf count, giving a fixed 30px pitch for 22px nodes at any size;
-    the canvas grows and the stage scrolls instead of blurring. A radial map with 40+
-    features would have to shrink text below legibility, which is why the switch exists.
-    An `auto / radial / tree` toggle lets the user override.
-  - **Repositories are a real layer**, not a tooltip footnote: in tree mode features are
-    grouped under the repo they were reviewed against (a feature spanning several repos
-    appears under each), with a column header showing the repo count.
-  - Each feature node carries a wrapped label, version, case count, coverage % and a
-    covered/partial/uncovered bar; edge thickness scales with case count. Clicking a
-    feature expands its cases inline (tree) or re-roots the map on it (radial); clicking a
-    status cluster jumps straight to those cases. Large features cap at 48 drawn cases
-    with a `+N more` node so the canvas can't explode.
-  - Selecting a feature opens the **evidence panel**: each case with the reviewer's
-    rationale and the **source files cited as proof**, filterable by status; cases with no
-    implementing file say so explicitly. With nothing selected the panel ranks **evidence
-    hotspots** — the files cited most often, i.e. the riskiest places to change.
-  Duplicate feature names are numbered ("… (2/3)") since several features previously
-  truncated to the same label. Interim Sankey-flow, feature/file-matrix and ranked-bar
-  views were built during this work and removed: with features that share most of their
-  files those degrade to a single blob, a uniform grid, and a table respectively.
-- **Repo "kind" is now selectable everywhere and includes a dedicated `test`
-  badge.** The kind classification (a display badge, independent of the app/test
-  `repo_type` that governs webhooks) gained a `test` value and dropped `other` from
-  the UI (canonical set is now `BE | FE | test | infra`; `other` is retained only as
-  a legacy value so pre-existing repos still render). The create-project wizard now
-  shows a per-repo **Kind** dropdown beside the display-name box (defaulting to
-  Backend for app repos and Test for test repos) instead of hard-coding every repo to
-  `BE`/`other`; the project-settings **Connect repository** panel's Kind dropdown adds
-  Test in place of Other. Badges render via a shared label map (`test`→"Test",
-  `infra`→"Infra", legacy `other`→"Other") in the repositories list, Change impact
-  analysis, and the Implementation coverage map / Mind Map. Backend `POST /repos`
-  normalizes incoming kinds case-insensitively (`_normalize_repo_kind`), and a
-  one-time `store._converge_repo_kinds()` promotes existing test-type repos that were
-  defaulted to `other` up to `test` so their badge reflects the new value without
-  manual re-tagging. In the **Mind Map** and **Change impact analysis** repo pickers,
-  `infra`-kind repos are now listed but left **unchecked by default** (infrastructure
-  code, so you opt it in rather than out); backend, frontend, and test-kind repos stay
-  pre-selected. Test-*type* repos remain excluded from these views entirely, as before.
-- **The GitHub poll interval is now configurable in the UI (Configuration → Sync
-  & polling) and defaults to 30 minutes.** Previously the poller cadence was fixed
-  at import from `POLL_INTERVAL_SECONDS` (default 120s) and could only be changed by
-  editing `.env` and restarting. Now `current_poll_interval()` resolves it live on
-  every poll loop with precedence: the frontend-saved `settings.poll_interval_s`
-  wins, else `POLL_INTERVAL_SECONDS` in `.env` (seed default), else a built-in
-  1800s (30 min). Saved values are floored at `MIN_POLL_INTERVAL` (30s) so a stray
-  small value can't hammer the GitHub API, and a change applies on the next loop
-  with no restart. `.env`/`.env.example` defaults bumped 120 → 1800. Exposed via
-  `GET /api/settings` (`poll_interval_s`, `poll_interval_s_effective`,
-  `poll_interval_min_s`), settable via `PUT /api/settings` (`poll_interval_s`), and
-  reflected in `GET /api/sync/status`. GitLab (webhook-driven) is unaffected.
-  Saving from the UI also mirrors the value into `.env`
-  (`POLL_INTERVAL_SECONDS`, via the existing `_write_env_var` helper used for
-  `MONGO_URI`/`APP_SECRET`) so the config file never diverges from what's running;
-  this is best-effort, so when `.env` isn't writable (not bind-mounted) the value
-  still applies live from the `settings` doc and the UI says so.
+
 - **Installer validates the bring-your-own `MONGO_URI` instead of accepting
   anything.** Previously the "Bring your own DB" prompt in `install.sh`/`install.ps1`
   saved whatever was typed verbatim — a typo or placeholder (e.g. pasting a random
@@ -239,7 +235,133 @@
   Non-interactive runs (`WARDENIQ_MONGO_URI` / `-MongoUri`) only get the format
   check, with a clear warning if it fails, since there's no one to re-prompt.
 
+- **Real password change for the local admin account, and safer admin hand-off.**
+  The local `admin` / `admin123` bootstrap login previously had no way to actually
+  change its password — `login-password` compared against the literal string
+  `"admin123"` forever, so a "changed" password never persisted. Added a
+  `password_hash` field on the user doc (PBKDF2-HMAC-SHA256, stdlib-only, per-user
+  salt; see `auth.hash_password`/`password_matches`) plus a new
+  `POST /api/auth/change-password` endpoint; `login-password` now checks the stored
+  hash once one exists, falling back to the shipped default only until it's set.
+  The UI now shows a mandatory "change your password" prompt on first local-admin
+  login (only relevant while SMTP isn't configured, i.e. while password login is
+  active), and a "Change password" action in the profile menu afterwards.
+  Separately, the Users page no longer shows "Disable" on your own row when you're
+  the only active admin (backend already refused this via
+  `count_active_admins() <= 1`, but the button was still shown, so clicking it just
+  produced a raw error) — it's replaced with an "Add another admin to unlock"
+  action that explains why and jumps to the existing invite form (preset to the
+  Admin role). Once a second admin accepts and signs in, the Disable option
+  reappears normally. No new collections; existing users are unaffected (no
+  `password_hash` field = OTP-only / still on the default local password).
+  Documented in the README under "Signing in the very first time" and
+  Troubleshooting.
+
+- **Shorter Windows one-liner using `irm | iex`.** The documented Windows command was
+  a two-step download-then-run (`iwr ... -OutFile install.ps1; .\install.ps1`).
+  Switched to PowerShell's `irm <url> | iex` idiom — the direct equivalent of
+  `curl | bash` — which downloads and executes in one step, no intermediate file.
+  Since a piped `iex` can't bind a `-Bundled` switch parameter the way running a
+  saved `.ps1` file can, `install.ps1`'s `param()` block now also reads
+  `$env:WARDENIQ_BUNDLED` as a fallback default, so the bundled variant is
+  `$env:WARDENIQ_BUNDLED=1; irm ... | iex` instead. The old
+  download-then-run-as-a-file form still works unchanged for anyone who'd rather
+  inspect the script before running it, or re-run it with different flags.
+
+- **Windows install commands now work from Command Prompt without a separate `.bat`
+  file.** `install.ps1`/`run.ps1` need PowerShell; a Command Prompt user typing
+  `iwr ...` or `.\install.ps1` gets "not recognized" errors, and many Windows users
+  default to `cmd.exe` without knowing PowerShell exists or how to switch. First
+  attempt added `install.bat`/`run.bat` wrapper files, but that meant three installer
+  scripts to keep in sync (`.sh`/`.ps1`/`.bat`) for what's really only two platforms.
+  Replaced with a single documented command per Windows path:
+  `powershell -ExecutionPolicy Bypass -File run.ps1` (build from source) and
+  `powershell -Command "iwr .../install.ps1 -OutFile install.ps1; .\install.ps1"`
+  (published image) — both work unchanged whether typed into Command Prompt or
+  PowerShell, since they explicitly invoke `powershell.exe` rather than relying on
+  the calling shell to understand PowerShell syntax. No extra files to maintain.
+  `install.bat`/`run.bat` removed.
+
+- **Multi-arch Docker Hub image (`linux/amd64` + `linux/arm64`).** The published
+  `adlerqa/wardeniq` image was initially built by `docker-publish.yml` on GitHub's
+  standard `ubuntu-latest` runner, which only produces `linux/amd64` — fine for most
+  cloud VMs, but not native on ARM hosts (Apple Silicon without emulation, AWS
+  Graviton, Raspberry Pi). Added a `docker/setup-qemu-action@v3` step and
+  `platforms: linux/amd64,linux/arm64` to the existing `docker/build-push-action@v6`
+  step, so both architectures are built and pushed under the same tag in one run;
+  Docker automatically pulls the right one for the host. No Dockerfile changes needed
+  — both base images (`node:20-slim`, `python:3.11-slim`) already publish official
+  `arm64` variants. First build under QEMU emulation will be noticeably slower than a
+  native `amd64`-only build; subsequent builds benefit from the existing `type=gha`
+  layer cache.
+
+- **README "Option B" rewritten as an explicit numbered walkthrough.** Previously the
+  install-script command and the rationale were interleaved as prose; now it's a
+  literal Step 1–5 sequence (pull → one-time `install.sh` setup → set `MONGO_URI` →
+  start → watch logs and sign in), plus a separate "day to day" block (`up -d` /
+  `down` / `pull`) making clear Steps 1–3 are one-time only. The `--bundled` zero-cloud
+  variant and the fully-manual fallback (now shown as exactly what `install.sh` does,
+  for transparency) are both kept, just reorganized under the same step numbering.
+  No code changes — README only.
+
+- **`install.sh` / `install.ps1` — one-command installer for the pre-built image.**
+  The previous "no source needed" flow required 3-5 manual `curl`/`cp` steps, which
+  felt heavy for what's supposed to be the easy path. Added `install.sh` (bash) and
+  `install.ps1` (PowerShell) at the repo root: `curl ... | bash` downloads
+  `docker-compose.app.yml` + `.env.example`, creates `.env`, sets `APP_IMAGE`, and
+  prints the one remaining manual step (`MONGO_URI`, since this flow brings your own
+  database). A `--bundled` / `-Bundled` flag also grabs the demo stack's compose
+  files + `config/` folder and starts it immediately, for a true zero-cloud-accounts
+  trial. Verified both modes end-to-end against the real repo files (network calls
+  stubbed to local copies since the script isn't published yet) — correct file sets,
+  `.env` created with `APP_IMAGE` set exactly once (no duplicate lines on re-run
+  logic), and `config/pwfile`/`setup-replica-set.sh`/`mongot-entrypoint.sh`
+  permissions matching what `run.sh` already sets. README's "Option B" now leads with
+  the one-liner, with the previous manual steps kept in a collapsible `<details>` for
+  anyone who wants to see exactly what it does before piping to `bash`.
+
+- **README repositioned around cloud deployment, not the bundled local stack.**
+  Previous wording led with the bundled 3-node MongoDB + local Ollama setup as if it
+  were the default, with the cloud/lightweight path mentioned as an aside — several
+  rounds of review feedback flagged this as misleading, since MongoDB/the LLM are
+  upstream dependencies wardenIQ connects to, not part of the product, and aren't
+  expected to run locally for real use. Reworked: the top pitch, the Requirements
+  table (cloud row now first and labeled "recommended", bundled row now explicitly
+  "optional"), and section order (moved "Cloud / lightweight deployment" up to
+  directly follow Requirements, ahead of "Quick start", which is now titled "local
+  trial / all-in-one demo" to make clear it's a trial convenience, not the
+  recommended shape). Added a similar framing note to "High availability &
+  production". No functional/code changes — README only.
+
+- **Zero-config `APP_SECRET` on first boot.** New `app/main.py::_ensure_app_secret()`,
+  called at the top of `bootstrap()` (before the existing `_check_app_secret()` hard
+  gate). If the effective secret is still unset/the shipped placeholder and no split
+  `SESSION_SECRET`/`ENCRYPTION_KEY` is in progress, and `.env` is writable (the bind
+  mount from `docker-compose.app.yml`), it generates a `secrets.token_urlsafe(32)`
+  value, persists it via the existing `_write_env_var` upsert, sets it into
+  `os.environ` for the current process, and logs once that it did so. If `.env` isn't
+  writable, it does nothing and the existing `_check_app_secret()` fail-closed
+  behavior is unchanged — this only removes a manual step, it never runs on a
+  known/weak secret. README Quick start updated to reflect that `.env` no longer
+  needs manual editing for a first local run (MongoDB/Ollama already had bundled
+  fallbacks; `APP_SECRET` was the last manual requirement).
+
+- **Published Docker image + CI publishing workflow.** Added
+  `.github/workflows/docker-publish.yml`, which builds `app/Dockerfile` (repo-root
+  context, so it also compiles `frontend/`) and pushes to Docker Hub as
+  `adlerqa/wardeniq` — manual dispatch with any tag (defaults to `beta`), or a
+  `vX.Y.Z` git tag for a version + `latest`. No app changes; `docker-compose.app.yml`
+  already supported pulling via `APP_IMAGE` instead of building. README gained a
+  "Prefer a pre-built image?" section documenting `docker pull adlerqa/wardeniq:beta`,
+  the no-build/no-clone compose flow (curl just `docker-compose.app.yml` +
+  `.env.example`), and a new "Cloud / lightweight deployment" section clarifying that
+  MongoDB/the LLM don't need to run locally (cloud MongoDB Atlas M10+, or self-managed
+  + mongot, plus any hosted LLM provider) — in which case only the app container runs
+  (~2–4 GB RAM) instead of the full bundled demo stack (~8–10 GB). `Requirements`
+  table updated to reflect both scenarios.
+
 ### Changed
+
 - **README install: `.env` configuration options documented for both platforms.** The
   published-image install section now shows the `--bundled` (macOS/Linux) and
   `WARDENIQ_BUNDLED=1` (Windows) variants directly next to the base install command
@@ -256,7 +378,59 @@
   Includes both Bash (`<<'EOF'`) and PowerShell (`@'…'@` + `-Encoding ASCII`)
   examples with notes on why single-quoted heredocs matter (no `$` expansion).
 
+- **README install made client-ready.** The published-image ("Option B") flow now
+  spells out that it bundles neither MongoDB nor Ollama, and adds an explicit
+  two-step setup: (1) database via `MONGO_URI`, (2) an AI backend — a hosted provider
+  (recommended for clients) *or* your own host Ollama with the exact `ollama pull`
+  commands — stressing that **both** a generation and an embedding model are required
+  (embeddings drive the RAG store / dedup / PR mapping). The bundled stack is reframed
+  as the zero-config evaluation path. The "Bring your own LLM" section now clarifies
+  that the pre-pulled Ollama exists only in the bundled stack. Added a **"Using the
+  bundled Ollama"** section covering how to confirm the models finished pulling
+  (`ollama list` / `warden-ollama-pull` logs), pull and switch to a bigger model, and
+  the CPU-only performance caveat.
+
+- **README "Option B" simplified.** Had grown to ~125 lines across a 5-step numbered
+  walkthrough, three separate Windows command blocks, a "day to day" aside, a
+  collapsible manual-steps fallback, and a maintainers note — too much for what's a
+  one-command flow. Condensed to: one command per OS, the `MONGO_URI` edit, the start
+  command, a single callout for the `--bundled`/`$env:WARDENIQ_BUNDLED` local-demo
+  variant, and a one-line day-to-day/maintainers note. All the same facts (image
+  name, `MONGO_URI` requirement, auto-generated `APP_SECRET`, multi-arch build,
+  required secrets) still present, just stated once. The collapsible "what does
+  install.sh do" walkthrough was replaced with direct links to the script source
+  instead of duplicating its contents in prose. No functional changes.
+
 ### Fixed
+
+- **Docs: the bring-your-own-MongoDB pre-seed examples piped the installer without a
+  mode, which now defaults to the bundled stack and ignores `MONGO_URI`.** Updated those
+  examples to pass `WARDENIQ_MODE=byo` (macOS/Linux) / `$env:WARDENIQ_MODE='byo'`
+  (Windows) so a piped bring-your-own install actually uses the supplied database.
+
+- **`install.ps1` could misreport "Docker daemon isn't running" when Docker was
+  actually fine, then crash outright once that was "fixed."** The pre-flight
+  check wrapped `docker info` in `try/catch`. Under this script's
+  `$ErrorActionPreference = "Stop"`, any stderr output from a native command —
+  even benign `WARNING:` lines `docker info` prints on success (blkio throttle
+  support, cgroup v1 deprecation, etc.) — becomes a terminating error. This is
+  general PowerShell native-command behavior, not a PS7-only
+  `$PSNativeCommandUseErrorActionPreference` thing (reproduced on Windows
+  PowerShell 5.1). First attempt removed the `try/catch` and checked
+  `$LASTEXITCODE` instead, but that alone doesn't help — the stderr line still
+  throws before the `$LASTEXITCODE` line is ever reached, so it just turned a
+  misleading "daemon isn't running" message into an unhandled
+  `NativeCommandError` crash, confirmed live on the same Windows machine.
+  Fixed properly with a `RunNative` helper that temporarily sets
+  `$ErrorActionPreference = "SilentlyContinue"` around each native `docker`/
+  `docker compose` call (restoring it afterward) so stderr output no longer
+  terminates the script, then checks `$LASTEXITCODE` for the real result.
+  Applied to the pre-flight `docker compose version`/`docker info` checks and,
+  proactively, to every other unguarded native call later in the script
+  (`docker compose down`, `docker pull`, `docker compose pull`,
+  `docker compose up`) since they were equally exposed and just hadn't been
+  hit yet.
+
 - **`scripts/enable-mongo-auth.sh` could enforce MongoDB auth before the app/root
   users actually existed, breaking the app.** `config/setup-replica-set.sh` created
   its admin users by connecting directly to `mongod1` with no check that it was
@@ -288,6 +462,7 @@
     re-run) instead of a stack trace. Verified with a mocked `mongosh` covering the
     normal (auth off), fresh-auth-enabled, and this stuck-state path — all now exit 0
     with actionable output instead of crashing.
+
 - **App-only install no longer points at a non-existent Ollama container.** The
   plain installer (`irm ... | iex` / `curl ... | bash`, no `-Bundled`/`--bundled`)
   downloads only `docker-compose.app.yml` — there is no bundled `ollama` service —
@@ -307,30 +482,6 @@
   The bundled Ollama option is unchanged and still pulls models via `ollama-pull`;
   only the app-only default was broken.
 
-### Changed
-- **README install made client-ready.** The published-image ("Option B") flow now
-  spells out that it bundles neither MongoDB nor Ollama, and adds an explicit
-  two-step setup: (1) database via `MONGO_URI`, (2) an AI backend — a hosted provider
-  (recommended for clients) *or* your own host Ollama with the exact `ollama pull`
-  commands — stressing that **both** a generation and an embedding model are required
-  (embeddings drive the RAG store / dedup / PR mapping). The bundled stack is reframed
-  as the zero-config evaluation path. The "Bring your own LLM" section now clarifies
-  that the pre-pulled Ollama exists only in the bundled stack. Added a **"Using the
-  bundled Ollama"** section covering how to confirm the models finished pulling
-  (`ollama list` / `warden-ollama-pull` logs), pull and switch to a bigger model, and
-  the CPU-only performance caveat.
-- **README "Option B" simplified.** Had grown to ~125 lines across a 5-step numbered
-  walkthrough, three separate Windows command blocks, a "day to day" aside, a
-  collapsible manual-steps fallback, and a maintainers note — too much for what's a
-  one-command flow. Condensed to: one command per OS, the `MONGO_URI` edit, the start
-  command, a single callout for the `--bundled`/`$env:WARDENIQ_BUNDLED` local-demo
-  variant, and a one-line day-to-day/maintainers note. All the same facts (image
-  name, `MONGO_URI` requirement, auto-generated `APP_SECRET`, multi-arch build,
-  required secrets) still present, just stated once. The collapsible "what does
-  install.sh do" walkthrough was replaced with direct links to the script source
-  instead of duplicating its contents in prose. No functional changes.
-
-### Fixed
 - **`install.ps1` failed to parse on real Windows machines** with `Missing closing
   ')' in expression` / `Missing closing '}' in statement block`, even though the
   script was syntactically valid. Cause: the file contained em dashes (`—`) with no
@@ -344,125 +495,6 @@
   the top of each file so it isn't reintroduced) — sidesteps the encoding question
   entirely rather than depending on a BOM surviving every possible transfer path.
 
-### Added
-- **Real password change for the local admin account, and safer admin hand-off.**
-  The local `admin` / `admin123` bootstrap login previously had no way to actually
-  change its password — `login-password` compared against the literal string
-  `"admin123"` forever, so a "changed" password never persisted. Added a
-  `password_hash` field on the user doc (PBKDF2-HMAC-SHA256, stdlib-only, per-user
-  salt; see `auth.hash_password`/`password_matches`) plus a new
-  `POST /api/auth/change-password` endpoint; `login-password` now checks the stored
-  hash once one exists, falling back to the shipped default only until it's set.
-  The UI now shows a mandatory "change your password" prompt on first local-admin
-  login (only relevant while SMTP isn't configured, i.e. while password login is
-  active), and a "Change password" action in the profile menu afterwards.
-  Separately, the Users page no longer shows "Disable" on your own row when you're
-  the only active admin (backend already refused this via
-  `count_active_admins() <= 1`, but the button was still shown, so clicking it just
-  produced a raw error) — it's replaced with an "Add another admin to unlock"
-  action that explains why and jumps to the existing invite form (preset to the
-  Admin role). Once a second admin accepts and signs in, the Disable option
-  reappears normally. No new collections; existing users are unaffected (no
-  `password_hash` field = OTP-only / still on the default local password).
-  Documented in the README under "Signing in the very first time" and
-  Troubleshooting.
-- **Shorter Windows one-liner using `irm | iex`.** The documented Windows command was
-  a two-step download-then-run (`iwr ... -OutFile install.ps1; .\install.ps1`).
-  Switched to PowerShell's `irm <url> | iex` idiom — the direct equivalent of
-  `curl | bash` — which downloads and executes in one step, no intermediate file.
-  Since a piped `iex` can't bind a `-Bundled` switch parameter the way running a
-  saved `.ps1` file can, `install.ps1`'s `param()` block now also reads
-  `$env:WARDENIQ_BUNDLED` as a fallback default, so the bundled variant is
-  `$env:WARDENIQ_BUNDLED=1; irm ... | iex` instead. The old
-  download-then-run-as-a-file form still works unchanged for anyone who'd rather
-  inspect the script before running it, or re-run it with different flags.
-- **Windows install commands now work from Command Prompt without a separate `.bat`
-  file.** `install.ps1`/`run.ps1` need PowerShell; a Command Prompt user typing
-  `iwr ...` or `.\install.ps1` gets "not recognized" errors, and many Windows users
-  default to `cmd.exe` without knowing PowerShell exists or how to switch. First
-  attempt added `install.bat`/`run.bat` wrapper files, but that meant three installer
-  scripts to keep in sync (`.sh`/`.ps1`/`.bat`) for what's really only two platforms.
-  Replaced with a single documented command per Windows path:
-  `powershell -ExecutionPolicy Bypass -File run.ps1` (build from source) and
-  `powershell -Command "iwr .../install.ps1 -OutFile install.ps1; .\install.ps1"`
-  (published image) — both work unchanged whether typed into Command Prompt or
-  PowerShell, since they explicitly invoke `powershell.exe` rather than relying on
-  the calling shell to understand PowerShell syntax. No extra files to maintain.
-  `install.bat`/`run.bat` removed.
-- **Multi-arch Docker Hub image (`linux/amd64` + `linux/arm64`).** The published
-  `adlerqa/wardeniq` image was initially built by `docker-publish.yml` on GitHub's
-  standard `ubuntu-latest` runner, which only produces `linux/amd64` — fine for most
-  cloud VMs, but not native on ARM hosts (Apple Silicon without emulation, AWS
-  Graviton, Raspberry Pi). Added a `docker/setup-qemu-action@v3` step and
-  `platforms: linux/amd64,linux/arm64` to the existing `docker/build-push-action@v6`
-  step, so both architectures are built and pushed under the same tag in one run;
-  Docker automatically pulls the right one for the host. No Dockerfile changes needed
-  — both base images (`node:20-slim`, `python:3.11-slim`) already publish official
-  `arm64` variants. First build under QEMU emulation will be noticeably slower than a
-  native `amd64`-only build; subsequent builds benefit from the existing `type=gha`
-  layer cache.
-- **README "Option B" rewritten as an explicit numbered walkthrough.** Previously the
-  install-script command and the rationale were interleaved as prose; now it's a
-  literal Step 1–5 sequence (pull → one-time `install.sh` setup → set `MONGO_URI` →
-  start → watch logs and sign in), plus a separate "day to day" block (`up -d` /
-  `down` / `pull`) making clear Steps 1–3 are one-time only. The `--bundled` zero-cloud
-  variant and the fully-manual fallback (now shown as exactly what `install.sh` does,
-  for transparency) are both kept, just reorganized under the same step numbering.
-  No code changes — README only.
-- **`install.sh` / `install.ps1` — one-command installer for the pre-built image.**
-  The previous "no source needed" flow required 3-5 manual `curl`/`cp` steps, which
-  felt heavy for what's supposed to be the easy path. Added `install.sh` (bash) and
-  `install.ps1` (PowerShell) at the repo root: `curl ... | bash` downloads
-  `docker-compose.app.yml` + `.env.example`, creates `.env`, sets `APP_IMAGE`, and
-  prints the one remaining manual step (`MONGO_URI`, since this flow brings your own
-  database). A `--bundled` / `-Bundled` flag also grabs the demo stack's compose
-  files + `config/` folder and starts it immediately, for a true zero-cloud-accounts
-  trial. Verified both modes end-to-end against the real repo files (network calls
-  stubbed to local copies since the script isn't published yet) — correct file sets,
-  `.env` created with `APP_IMAGE` set exactly once (no duplicate lines on re-run
-  logic), and `config/pwfile`/`setup-replica-set.sh`/`mongot-entrypoint.sh`
-  permissions matching what `run.sh` already sets. README's "Option B" now leads with
-  the one-liner, with the previous manual steps kept in a collapsible `<details>` for
-  anyone who wants to see exactly what it does before piping to `bash`.
-- **README repositioned around cloud deployment, not the bundled local stack.**
-  Previous wording led with the bundled 3-node MongoDB + local Ollama setup as if it
-  were the default, with the cloud/lightweight path mentioned as an aside — several
-  rounds of review feedback flagged this as misleading, since MongoDB/the LLM are
-  upstream dependencies wardenIQ connects to, not part of the product, and aren't
-  expected to run locally for real use. Reworked: the top pitch, the Requirements
-  table (cloud row now first and labeled "recommended", bundled row now explicitly
-  "optional"), and section order (moved "Cloud / lightweight deployment" up to
-  directly follow Requirements, ahead of "Quick start", which is now titled "local
-  trial / all-in-one demo" to make clear it's a trial convenience, not the
-  recommended shape). Added a similar framing note to "High availability &
-  production". No functional/code changes — README only.
-- **Zero-config `APP_SECRET` on first boot.** New `app/main.py::_ensure_app_secret()`,
-  called at the top of `bootstrap()` (before the existing `_check_app_secret()` hard
-  gate). If the effective secret is still unset/the shipped placeholder and no split
-  `SESSION_SECRET`/`ENCRYPTION_KEY` is in progress, and `.env` is writable (the bind
-  mount from `docker-compose.app.yml`), it generates a `secrets.token_urlsafe(32)`
-  value, persists it via the existing `_write_env_var` upsert, sets it into
-  `os.environ` for the current process, and logs once that it did so. If `.env` isn't
-  writable, it does nothing and the existing `_check_app_secret()` fail-closed
-  behavior is unchanged — this only removes a manual step, it never runs on a
-  known/weak secret. README Quick start updated to reflect that `.env` no longer
-  needs manual editing for a first local run (MongoDB/Ollama already had bundled
-  fallbacks; `APP_SECRET` was the last manual requirement).
-- **Published Docker image + CI publishing workflow.** Added
-  `.github/workflows/docker-publish.yml`, which builds `app/Dockerfile` (repo-root
-  context, so it also compiles `frontend/`) and pushes to Docker Hub as
-  `adlerqa/wardeniq` — manual dispatch with any tag (defaults to `beta`), or a
-  `vX.Y.Z` git tag for a version + `latest`. No app changes; `docker-compose.app.yml`
-  already supported pulling via `APP_IMAGE` instead of building. README gained a
-  "Prefer a pre-built image?" section documenting `docker pull adlerqa/wardeniq:beta`,
-  the no-build/no-clone compose flow (curl just `docker-compose.app.yml` +
-  `.env.example`), and a new "Cloud / lightweight deployment" section clarifying that
-  MongoDB/the LLM don't need to run locally (cloud MongoDB Atlas M10+, or self-managed
-  + mongot, plus any hosted LLM provider) — in which case only the app container runs
-  (~2–4 GB RAM) instead of the full bundled demo stack (~8–10 GB). `Requirements`
-  table updated to reflect both scenarios.
-
-### Fixed
 - Loaders in **Test Case Generation**, **Mind Map**, and **Step Library**
   no longer spin forever.
   - **Backend (`app/store.py`, `app/main.py`)**
@@ -486,6 +518,7 @@
       replaced with a retry-able error state.
 
 ### Schema
+
 - New indexes (created by `store.ensure_indexes` on next boot; safe on
   existing installs):
   - `cases.step_ids` — backs the step-library usage count.

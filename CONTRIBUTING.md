@@ -167,7 +167,11 @@ Guidelines:
    `git checkout -b fix/short-description`.
 2. Make your change. Keep unrelated changes out of the same PR.
 3. Run the tests locally and update `CHANGELOG.md` if the change is
-   user-visible.
+   user-visible — add an entry under `## Unreleased` (create the relevant
+   `### Added`/`### Changed`/`### Fixed`/`### Security` subsection if it
+   doesn't exist yet). When a version is tagged, `## Unreleased` gets renamed
+   to that version and a fresh `## Unreleased` opens above it — never left
+   for later, since that's exactly how it went unversioned for four releases.
 4. Push and open a PR against `main`. In the description, cover:
    - What the change does and why.
    - Any migration or config implications.
