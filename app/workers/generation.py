@@ -40,6 +40,13 @@ def _gen_worker(jid, params):
             fid = params.get("feature_id")
             feature = store.get_feature(fid) if fid else None
             if feature and feature.get("project_id"):
+                # Coverage trend history (issue #45): a completed generation run
+                # is one of the events worth a point-in-time snapshot.
+                try:
+                    store.save_coverage_snapshot(feature["project_id"], "generation",
+                                                 job_id=jid)
+                except Exception as snap_e:  # noqa: BLE001
+                    print(f"[coverage-snapshot] skipped: {snap_e}", flush=True)
                 test_repos = store.repos_for_project(
                     feature["project_id"], repo_type="test")
                 for tr in test_repos:
