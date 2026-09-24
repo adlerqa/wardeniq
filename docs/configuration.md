@@ -246,6 +246,7 @@ startup and secrets.
 | `GEN_MODEL` | `qwen2.5:3b` | Ollama generation model (swap in a bigger/hosted model for quality) |
 | `EMBED_MODEL` / `EMBED_DIM` | `nomic-embed-text` / `768` | Embedding model + dimensions |
 | `GITHUB_TOKEN` | _(empty)_ | Fine-grained PAT (PR + contents read); also settable in-app |
+| `GITLAB_BASE_URL` | `https://gitlab.com` | Point at a self-hosted GitLab instance (e.g. `https://gitlab.example.com`). Repo URLs, the API, and generated blob/commit links all follow this |
 | `POLL_INTERVAL_SECONDS` | `1800` | How often watched repos are polled for new PRs/commits (30 min). Seed default only — also settable live in **Configuration → Sync & polling**, which overrides this |
 | `WEBHOOK_SECRET` | _(empty)_ | Required only if you expose the Jira/GitHub webhook receiver |
 | `GEN_TOTAL` | `16` | Baseline test-case count at "Standard" depth |

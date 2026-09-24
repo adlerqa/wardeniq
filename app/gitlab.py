@@ -4,7 +4,13 @@ import re
 import urllib.parse
 import httpx
 
-_URL_RE = re.compile(r"gitlab\.com[:/]+([^?#\s]+?)(?:\.git)?(?:[/?#]|$)")
+from core.config import GITLAB_BASE_URL
+
+# Host to accept in parse_repo_url(), derived from the configured instance
+# (GITLAB_BASE_URL) rather than a literal "gitlab.com" — so a self-hosted
+# instance's URLs parse the same way gitlab.com's always have.
+_GITLAB_HOST = urllib.parse.urlparse(GITLAB_BASE_URL).netloc or "gitlab.com"
+_URL_RE = re.compile(rf"{re.escape(_GITLAB_HOST)}[:/]+([^?#\s]+?)(?:\.git)?(?:[/?#]|$)")
 
 
 def parse_repo_url(url: str):
@@ -19,7 +25,7 @@ def parse_repo_url(url: str):
 
 
 class GitLab:
-    def __init__(self, token: str, api_base: str = "https://gitlab.com/api/v4"):
+    def __init__(self, token: str, api_base: str = f"{GITLAB_BASE_URL}/api/v4"):
         self.token = token
         self.api = api_base.rstrip("/")
 
