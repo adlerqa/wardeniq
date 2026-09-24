@@ -52,6 +52,7 @@ async function showFeatureCreate() {
   $("#f-status").textContent = "";
   $("#f-log").textContent = "";
   $("#f-log").style.display = "none";
+  if ($("#f-cost-estimate")) $("#f-cost-estimate").textContent = "";
   if ($("#f-match-key")) $("#f-match-key").value = "";
   await loadFeatureTicketOptions();
   updateBackbar();
@@ -65,7 +66,48 @@ $("#f-file").onchange = (e) => {
   $("#f-filelist").textContent = fs.length
     ? `${fs.length} file(s): ${fs.join(", ")}`
     : "";
+  scheduleCostEstimate();
 };
+if ($("#f-text")) $("#f-text").addEventListener("input", scheduleCostEstimate);
+
+// ---- pre-run cost estimate (issue #22) ----
+// Uses File.size as a rough stand-in for extracted character count (files aren't
+// parsed until the real /api/features upload) — an order-of-magnitude estimate,
+// not an exact one; the backend estimate itself is explicitly labelled as rough.
+let costEstimateTimer = null;
+function scheduleCostEstimate() {
+  clearTimeout(costEstimateTimer);
+  costEstimateTimer = setTimeout(updateCostEstimate, 400);
+}
+async function updateCostEstimate() {
+  const el = $("#f-cost-estimate");
+  if (!el) return;
+  const fileEl = $("#f-file");
+  const textEl = $("#f-text");
+  const textLen = (textEl && textEl.value ? textEl.value.length : 0);
+  const fileBytes = fileEl
+    ? [...fileEl.files].reduce((sum, f) => sum + (f.size || 0), 0)
+    : 0;
+  const textLength = textLen + fileBytes;
+  if (!textLength) {
+    el.textContent = "";
+    return;
+  }
+  el.textContent = "Estimating cost…";
+  try {
+    const r = await api("/api/usage/estimate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text_length: textLength }),
+    });
+    el.textContent =
+      r.low != null && r.high != null
+        ? `Estimated cost: ${fmtUsd(r.low)}–${fmtUsd(r.high)} (${r.note})`
+        : r.note || "";
+  } catch (e) {
+    el.textContent = "";
+  }
+}
 const FOCUS_TYPES = ["functional", "ui", "e2e", "api", "nfr"];
 function focusVals() {
   return FOCUS_TYPES.reduce((o, t) => {

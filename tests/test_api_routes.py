@@ -125,6 +125,56 @@ def test_logout_clears_cookie():
     assert r.json() == {"ok": True}
 
 
+# --------------------------------------------------------------- usage estimate
+def _authed_cookie():
+    import auth as auth_mod
+    user = {"id": "u1", "email": "u1@example.com", "role": "admin",
+            "active": True, "session_version": 0, "all_projects": True}
+    main.store.get_user = lambda uid: user
+    return {auth_mod.SESSION_COOKIE: auth_mod.sign_session("u1", 0)}
+
+
+def test_estimate_cost_requires_auth():
+    r = client.post("/api/usage/estimate", json={"text_length": 4000})
+    assert r.status_code == 401
+
+
+def test_estimate_cost_local_model_has_no_dollar_figure(monkeypatch):
+    monkeypatch.setattr(main.store, "get_settings",
+                        lambda: {"llm_provider": "ollama", "llm_model": "qwen2.5:7b"})
+    r = client.post("/api/usage/estimate", json={"text_length": 4000},
+                    cookies=_authed_cookie())
+    assert r.status_code == 200
+    body = r.json()
+    assert body["low"] is None
+    assert body["high"] is None
+    assert "local" in body["note"].lower()
+
+
+def test_estimate_cost_hosted_model_returns_a_range(monkeypatch):
+    monkeypatch.setattr(main.store, "get_settings",
+                        lambda: {"llm_provider": "openai", "llm_model": "gpt-4o"})
+    r = client.post("/api/usage/estimate", json={"text_length": 4000, "total": 16},
+                    cookies=_authed_cookie())
+    assert r.status_code == 200
+    body = r.json()
+    assert body["low"] is not None and body["high"] is not None
+    assert body["low"] <= body["high"]
+    assert body["currency"] == "USD"
+
+
+def test_estimate_cost_defaults_total_to_gen_total(monkeypatch):
+    from core.config import GEN_TOTAL
+    monkeypatch.setattr(main.store, "get_settings",
+                        lambda: {"llm_provider": "openai", "llm_model": "gpt-4o"})
+    with_default = client.post("/api/usage/estimate", json={"text_length": 4000},
+                               cookies=_authed_cookie())
+    explicit = client.post("/api/usage/estimate",
+                           json={"text_length": 4000, "total": GEN_TOTAL},
+                           cookies=_authed_cookie())
+    assert with_default.json() == explicit.json()
+
+
 # ------------------------------------------------------------------- OpenAPI
 def test_openapi_schema_is_served_in_dev_mode():
     # main.py only disables docs/openapi when APP_ENV=production; the test

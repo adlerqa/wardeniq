@@ -13,11 +13,13 @@ _ext_error, Embedder, and crypto were all already centralized in earlier phases)
 import json
 
 import crypto
+import usage
 from embeddings import Embedder
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from core.config import GEN_TOTAL
 from core.deps import _ext_error, current_ollama_url
 from core.security import _allowed_project_ids, _current_user, _require_job_project
 from core.state import store
@@ -43,6 +45,28 @@ def usage_dashboard(project_id: str | None = None):
     recent processes. Cost is priced live from the current Settings price table."""
     prices = store.get_settings().get("llm_prices") or {}
     return store.usage_summary(project_id=project_id, prices=prices)
+
+
+class CostEstimateIn(BaseModel):
+    text_length: int = 0
+    total: int | None = None
+
+
+@router.post("/api/usage/estimate")
+def estimate_cost(body: CostEstimateIn):
+    """Pre-run cost estimate for a generation run (issue #22): a rough USD range
+    (or an explanatory note when a dollar figure isn't meaningful) computed from
+    the extracted document length and the target case count, using the same
+    provider/model/pricing a real run would use right now."""
+    s = store.get_settings()
+    provider = s.get("llm_provider", "ollama")
+    model = s.get("llm_model", "")
+    prices = s.get("llm_prices") or {}
+    total = body.total if body.total is not None else GEN_TOTAL
+    return usage.estimate_generation_cost(
+        text_length=max(0, body.text_length), total=total,
+        provider=provider, model=model, prices=prices,
+    )
 
 
 class EmbeddingIn(BaseModel):
