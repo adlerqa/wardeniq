@@ -2,9 +2,12 @@
 import threading
 
 import usage
+from core.logging_setup import get_logger
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
                                               # mutated, never rebound)
 from workers.heartbeat import heartbeat
+
+log = get_logger("jobs")
 
 JOB_WORKERS = {}   # job type -> worker(jid, params)
 
@@ -34,7 +37,7 @@ def launch_job(jtype, params, label="", project_id=None, feature_id=None):
                 prices = store.get_settings().get("llm_prices") or {}
                 store.set_job_usage(jid, usage.summarize(usage.stop(), prices))
             except Exception as ue:  # noqa: BLE001
-                print(f"[usage] failed to record job {jid}: {ue}", flush=True)
+                log.warning("[usage] failed to record job %s: %s", jid, ue)
 
     threading.Thread(target=run, daemon=True).start()
     return jid
@@ -69,5 +72,5 @@ def run_tracked(jtype, fn, *, label="", project_id=None, feature_id=None):
             prices = store.get_settings().get("llm_prices") or {}
             store.set_job_usage(jid, usage.summarize(usage.stop(), prices))
         except Exception as ue:  # noqa: BLE001
-            print(f"[usage] failed to record tracked {jtype} {jid}: {ue}", flush=True)
+            log.warning("[usage] failed to record tracked %s %s: %s", jtype, jid, ue)
     return result

@@ -5,6 +5,7 @@ import re
 import time
 
 import usage
+from core.logging_setup import get_logger
 
 from testgen.prompt_builder import (
     build_api_agent_prompt,
@@ -36,6 +37,8 @@ from testgen.lineage import (
     scenario_kinds_incompatible,
     token_set_similarity,
 )
+log = get_logger("testgen")
+
 SYSTEM = (
     "You are a meticulous senior QA engineer. Read the supplied evidence and produce "
     "grounded, concrete, non-redundant test cases. Respond with one valid JSON object."
@@ -55,7 +58,7 @@ REQUIREMENT_MARKERS = re.compile(
 
 def log_progress(update_fn, stage: str, progress: int | None = None):
     suffix = f" ({progress}%)" if progress is not None else ""
-    print(f"[TestGen] {stage}{suffix}", flush=True)
+    log.info("%s%s", stage, suffix)
     if update_fn:
         try:
             update_fn(stage=stage, progress=progress)
@@ -124,7 +127,7 @@ def _json_object(raw):
         if isinstance(parsed, dict) and parsed:
             return parsed
     except Exception as repair_exc:
-        print(f"[TestGen] json-repair failed to parse raw text: {repair_exc}", flush=True)
+        log.debug("json-repair failed to parse raw text: %s", repair_exc)
 
     start, end = text.find("{"), text.rfind("}")
     candidate = text[start:end + 1] if start >= 0 and end > start else text
@@ -167,7 +170,7 @@ def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=4000,
             return _json_object(raw_text)
         except Exception as exc:  # noqa: BLE001
             last_error = exc
-            print(f"[TestGen] LLM attempt {attempt}/{attempts} failed: {exc}", flush=True)
+            log.warning("LLM attempt %d/%d failed: %s", attempt, attempts, exc)
             if (raw_text or "").strip():
                 repair_prompt = (
                     "Repair the following malformed or truncated JSON. Preserve all recoverable "
@@ -175,7 +178,7 @@ def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=4000,
                     f"PARSE ERROR:\n{last_error}\n\nINVALID RESPONSE:\n{raw_text}"
                 )
                 try:
-                    print(f"[TestGen] Attempting to repair malformed JSON (length {len(raw_text)})...", flush=True)
+                    log.info("Attempting to repair malformed JSON (length %d)...", len(raw_text))
                     repaired = _raw_llm_call(
                         llm,
                         "You repair JSON syntax and output JSON only.",
@@ -187,7 +190,7 @@ def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=4000,
                     )
                     return _json_object(repaired)
                 except Exception as repair_exc:  # noqa: BLE001
-                    print(f"[TestGen] Repair attempt failed: {repair_exc}", flush=True)
+                    log.warning("Repair attempt failed: %s", repair_exc)
                     last_error = repair_exc
             if attempt < attempts:
                 time.sleep(min(2 ** (attempt - 1), 4))
@@ -1428,11 +1431,8 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         top_k = _category_top_k(category, is_ollama)
         query_text = (query_text or "").strip()
         if not query_text:
-            print(
-                f"[TestGen][rag] category={category} feature_id={feature_id} "
-                f"k={top_k} query_chars=0 results=0 note=empty_query_no_retrieval",
-                flush=True,
-            )
+            log.debug("[rag] category=%s feature_id=%s k=%s query_chars=0 results=0 "
+                     "note=empty_query_no_retrieval", category, feature_id, top_k)
             return _to_rag_context(rag_context.get("summary", ""), [])
         # Retrieval degrades, it never crashes generation. Store.search_feature_chunks()
         # already has this posture internally for its own two paths (a mongot outage
@@ -1452,21 +1452,16 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                 query_embedding, feature_id, limit=top_k, category=category
             )
         except Exception as exc:  # noqa: BLE001
-            print(
-                f"[TestGen][rag] category={category} feature_id={feature_id} k={top_k} "
-                f"query_chars={len(query_text)} results=0 "
-                f"note=retrieval_failed_degraded_to_empty error={exc}",
-                flush=True,
-            )
+            log.warning("[rag] category=%s feature_id=%s k=%s query_chars=%d results=0 "
+                      "note=retrieval_failed_degraded_to_empty error=%s",
+                      category, feature_id, top_k, len(query_text), exc)
             return _to_rag_context(rag_context.get("summary", ""), [])
-        print(
-            f"[TestGen][rag] category={category} feature_id={feature_id} k={top_k} "
-            f"query_chars={len(query_text)} results={len(chunks)} "
-            f"chunk_ids={[c.get('chunk_id') for c in chunks]} "
-            f"chunk_indexes={[c.get('chunk_index') for c in chunks]} "
-            f"scores={[c.get('score') for c in chunks]}",
-            flush=True,
-        )
+        log.debug("[rag] category=%s feature_id=%s k=%s query_chars=%d results=%d "
+                 "chunk_ids=%s chunk_indexes=%s scores=%s",
+                 category, feature_id, top_k, len(query_text), len(chunks),
+                 [c.get("chunk_id") for c in chunks],
+                 [c.get("chunk_index") for c in chunks],
+                 [c.get("score") for c in chunks])
         return _to_rag_context(rag_context.get("summary", ""), chunks)
 
     api_query_text = _build_api_retrieval_query(entities, api_surface, context.get("businessContext"))

@@ -8,7 +8,10 @@ was in main.py (not hoisted to module level), so this diff is a pure move.
 """
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 
+from core.logging_setup import get_logger
 from core.state import store
+
+log = get_logger("documents")
 
 router = APIRouter()
 
@@ -46,7 +49,7 @@ async def upload_document_endpoint(
             meta["presigned_url"] = None
         return meta
     except Exception as e:
-        print(f"[wardenIQ][s3-upload-error] {e!r}", flush=True)
+        log.error("[s3-upload-error] %r", e)
         raise HTTPException(500, detail=f"Failed to upload document to AWS S3: {e}")
 
 
@@ -94,7 +97,7 @@ def download_document_endpoint(doc_id: str):
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     except Exception as e:
-        print(f"[wardenIQ][s3-download-error] {e!r}", flush=True)
+        log.error("[s3-download-error] %r", e)
         raise HTTPException(500, detail=f"Failed to download document from AWS S3: {e}")
 
 

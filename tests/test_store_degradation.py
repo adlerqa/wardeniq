@@ -5,6 +5,8 @@ fallback cap, so `find_similar_cases` returns `[]`. To a caller that is indistin
 from "no similar cases exist", and a generation run therefore creates near-duplicates and
 reports itself as clean. A log line in an untailed container is not an alert.
 """
+import logging
+
 from store import Store
 
 
@@ -30,16 +32,25 @@ class TestFallbackGate:
         assert s._numpy_fallback_ok("dedup") is True
         assert s.search_degraded("dedup") is None
 
-    def test_large_store_skips_and_records_it(self, capsys):
+    def test_large_store_skips_and_records_it(self, caplog):
         s = _store(50_000)
-        assert s._numpy_fallback_ok("dedup") is False
+        # The "wardeniq" logger tree doesn't propagate to the root logger (see
+        # core/logging_setup.py), so attach caplog's handler directly to the
+        # specific logger rather than relying on caplog's default root-based capture.
+        store_logger = logging.getLogger("wardeniq.store")
+        store_logger.addHandler(caplog.handler)
+        try:
+            with caplog.at_level("WARNING", logger="wardeniq.store"):
+                assert s._numpy_fallback_ok("dedup") is False
+        finally:
+            store_logger.removeHandler(caplog.handler)
         rec = s.search_degraded("dedup")
         assert rec is not None
         assert rec["docs"] == 50_000
         assert rec["count"] == 1
         assert "mongot unavailable" in rec["reason"]
         # the original operator-facing log line is still emitted
-        assert "skipping exact numpy fallback" in capsys.readouterr().out
+        assert "skipping exact numpy fallback" in caplog.text
 
     def test_repeated_degradation_increments_rather_than_overwrites(self):
         s = _store(50_000)

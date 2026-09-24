@@ -36,8 +36,11 @@ from core.config import (
     MIN_POLL_INTERVAL, OLLAMA_URL_BUNDLED, POLL_INTERVAL_FALLBACK,
     PROVIDER_LOCK, _ENV_OLLAMA, _ENV_POLL,
 )
+from core.logging_setup import get_logger
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
                                               # mutated, never rebound)
+
+log = get_logger("deps")
 
 
 def current_ollama_url() -> str:
@@ -209,8 +212,8 @@ def _fetch_repo_snapshot_files(repo: dict, ref: str = "") -> list:
         files, _stats = extractmod.source_files_from_tar(data, return_stats=True)
         return [{"path": p, "text": t} for p, t in files]
     except Exception as e:  # noqa: BLE001
-        print(f"[wardenIQ][contracts] repo snapshot fetch failed for "
-              f"{repo.get('full_name')}: {e}", flush=True)
+        log.warning("[contracts] repo snapshot fetch failed for %s: %s",
+                  repo.get("full_name"), e)
         return []
 
 
@@ -510,10 +513,10 @@ def _smtp_cfg_from_env():
         # Gmail App Passwords are exactly 16 chars. A wrong length is a config error
         # that would otherwise surface as an opaque "535 BadCredentials" — warn early.
         if password and len(password) != 16:
-            print(f"[wardenIQ][SMTP][WARNING] SMTP_PASS is {len(password)} chars after "
-                  "removing spaces, but a Gmail App Password must be exactly 16. "
-                  "Gmail will reject this with 535 BadCredentials. Re-copy the 16-char "
-                  "App Password from Google → Security → App passwords.", flush=True)
+            log.warning("[SMTP] SMTP_PASS is %d chars after removing spaces, but a "
+                      "Gmail App Password must be exactly 16. Gmail will reject this "
+                      "with 535 BadCredentials. Re-copy the 16-char App Password from "
+                      "Google → Security → App passwords.", len(password))
     else:
         password = raw_pass
     return {
@@ -581,7 +584,7 @@ def _svc_error(prefix, e, code=500):
     Prevents raw stack/exception text (which can reveal internals) reaching clients."""
     if isinstance(e, HTTPException):
         return e   # already a clean, intentional status/message — pass through
-    print(f"[wardenIQ][{prefix}] {e!r}", flush=True)
+    log.error("[%s] %r", prefix, e)
     return HTTPException(code, f"{prefix} failed — please try again or check the logs")
 
 
@@ -604,6 +607,6 @@ def _ext_error(prefix, e):
     else:
         # Never reflect a raw exception (may carry internal URLs, hostnames, provider
         # errors, or credential hints). Log the detail server-side; return a safe message.
-        print(f"[wardenIQ][ext-error] {prefix}: {e!r}", flush=True)
+        log.error("[ext-error] %s: %r", prefix, e)
         code, msg = 502, "the request failed unexpectedly — see server logs for details"
     return HTTPException(code, f"{prefix}: {msg}")
