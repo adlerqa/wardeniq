@@ -63,6 +63,21 @@ def log_progress(update_fn, stage: str, progress: int | None = None):
             update_fn(stage)
 
 
+def stage_durations(marks: list[tuple[str, float]]) -> dict[str, float]:
+    """Wall-clock duration (seconds) of each named stage, from a list of
+    (name, time.perf_counter() timestamp) tuples where the first entry is the
+    "_start" sentinel `generate_fresh_testcases_pipeline` appends on entry.
+
+    Pure/consecutive-delta math, no side effects — safe to call on a PARTIAL
+    list (e.g. after an exception cut a run short partway through): whatever
+    stages finished before the failure are still reported; nothing raises for
+    the ones that didn't (issue #48 — "capture timing data even when a stage
+    fails where practical").
+    """
+    return {name: round(t - prev_t, 3)
+            for (_, prev_t), (name, t) in zip(marks, marks[1:])}
+
+
 def _as_list(value):
     return value if isinstance(value, list) else []
 
@@ -1293,7 +1308,18 @@ def _persist_case(store, embedder, feature_id, project_id, case: dict, test_type
     return case_id, False, steps_new, steps_reused
 
 
-def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_fn=None) -> dict:
+def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_fn=None,
+                                      timing_sink: list | None = None) -> dict:
+    # Wall-clock profiling (issue #48, profiling only -- no behavior/algorithm
+    # change). `timing_sink`, when passed, is a list the CALLER already holds a
+    # reference to, so partial marks survive even if this function raises
+    # partway through -- see stage_durations()'s docstring.
+    _marks = timing_sink if timing_sink is not None else []
+    _marks.append(("_start", time.perf_counter()))
+
+    def _mark(name):
+        _marks.append((name, time.perf_counter()))
+
     feature_id = params["feature_id"]
     feature = store.get_feature(feature_id)
     if not feature:
@@ -1343,6 +1369,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         f"Pass 0 complete: {len(spec_apis)} verbatim API endpoint(s) found",
         9,
     )
+    _mark("discovery_pass_1")
 
     log_progress(update_job_fn, "Pass 1: grounded entity and API extraction", 12)
     grounded = call_llm_json_with_repair(
@@ -1376,6 +1403,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         f"{len(ui_components)} UI components survived sanitization",
         17,
     )
+    _mark("discovery_pass_2")
 
     log_progress(update_job_fn, "Pass 2: constrained CRUD inference", 20)
     inferred = []
@@ -1393,6 +1421,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         f"Discovery complete: {len(api_surface)} grounded API endpoint(s)",
         24,
     )
+    _mark("discovery_pass_3")
 
     # Per-category evidence verdict (see _category_evidence_sufficiency' block comment):
     # computed once, from what Pass 0/1/2 already extracted, and consulted below wherever
@@ -1485,6 +1514,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     # once here and reused by both call sites -- same "retrieve once per category per
     # run" rule as api/ui/e2e above.
     business_rag_context = _retrieve_category_context("business", business_query_text)
+    _mark("retrieval_setup")
 
     log_progress(update_job_fn, "Fusion: analyzing previous and project test coverage", 28)
     project_tests = _project_existing_tests(store, project_id)
@@ -1586,6 +1616,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                 inherited_rebuilt += 1
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"Inherited test repair failed: {exc}")
+    _mark("fusion")
 
     log_progress(update_job_fn, "DAG layer 1: generating API and UI tests", 38)
     api_chunks = _chunks(api_surface, 8) or [[]]
@@ -1687,6 +1718,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         f"{len(ui_tests)} UI validations",
         53,
     )
+    _mark("dag_layer_1")
 
     log_progress(update_job_fn, "DAG layer 2: generating E2E, edge, and business tests", 58)
     e2e_result = {}
@@ -1780,6 +1812,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         f"{len(suites['business_tests'])} business tests",
         66,
     )
+    _mark("dag_layer_2")
 
     log_progress(update_job_fn, "RAG validation: checking requirement coverage", 70)
     gaps = _requirement_gaps(raw_text, suites)
@@ -1862,6 +1895,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     generated_count = sum(len(values) for values in suites.values())
     if generated_count == 0 and inherited_reused + inherited_rebuilt == 0:
         raise RuntimeError("EmptyGenerationError: no valid test cases survived normalization and evidence guards")
+    _mark("rag_validation")
 
     log_progress(update_job_fn, "Persisting normalized and deduplicated test cases", 82)
     cases_new = cases_reused = steps_new = steps_reused = 0
@@ -1891,6 +1925,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
             "new": by_type.get(type_map[suite_name], {}).get("new", 0) + new_for_type,
             "reused": by_type.get(type_map[suite_name], {}).get("reused", 0) + reused_for_type,
         }
+    _mark("persistence")
 
     log_progress(update_job_fn, "Generation complete", 100)
     out = {
@@ -1904,6 +1939,11 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         "discovered_api_count": len(api_surface),
         "rag_gap_count": len(gaps),
         "errors": errors,
+        # Wall-clock profiling (issue #48): per-stage seconds, plus the sum of all
+        # of them as a convenience total. Purely observational -- nothing here
+        # changes what gets generated or how.
+        "stage_timings": {**stage_durations(_marks),
+                          "total_seconds": round(_marks[-1][1] - _marks[0][1], 3)},
     }
     # "Either generate only what the evidence supports, or say the evidence was
     # insufficient" -- this is that second branch made visible. An empty suite on the job

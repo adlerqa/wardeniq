@@ -13,13 +13,17 @@ from core.deps import (
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
                                # mutated, never rebound)
 from extract import chunk as chunk_doc
-from testgen.service import generate_fresh_testcases_pipeline
+from testgen.service import generate_fresh_testcases_pipeline, stage_durations
 
 from workers.registry import JOB_WORKERS, launch_job
 from workers.repo_scan_worker import _apply_import_overlays, _rescan_pool_for_feature
 
 
 def _gen_worker(jid, params):
+    # Declared outside the try so a mid-pipeline exception still leaves whatever
+    # stages DID complete available below (issue #48 — capture timing data even
+    # when a stage fails, "where practical").
+    _timing_sink: list = []
     try:
         def update_fn(stage, progress=None):
             store.update_job_progress(jid, stage, progress)
@@ -29,7 +33,8 @@ def _gen_worker(jid, params):
             llm=current_llm(),
             embedder=state.embedder,
             params=params,
-            update_job_fn=update_fn
+            update_job_fn=update_fn,
+            timing_sink=_timing_sink,
         )
         store.merge_job_result(jid, **res)
 
@@ -62,6 +67,8 @@ def _gen_worker(jid, params):
         except Exception as re_e:  # noqa: BLE001
             print(f"[import-recheck] skipped: {re_e}", flush=True)
     except Exception as e:
+        if len(_timing_sink) > 1:   # more than just the "_start" sentinel
+            store.merge_job_result(jid, stage_timings=stage_durations(_timing_sink))
         store.update_job(jid, status="failed", stage="error", error=str(e))
         raise e
 
