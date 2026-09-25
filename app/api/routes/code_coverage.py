@@ -412,7 +412,25 @@ def project_mindmap(pid: str):
                     "cases": cases, "repos": (cc or {}).get("repos", []),
                     "reviewed_files": (cc or {}).get("result", {}).get("reviewed_files", []),
                     "analyzed": bool(cc), "updated_at": (cc or {}).get("updated_at")})
-    return {"project_id": pid, "features": out}
+    # #21: the codeanalysis job's own diagnostics (which branch was read, how many
+    # source files survived test/spec exclusion, and why a run found nothing) only
+    # existed for as long as the live watchJob() poll that started it was open — a
+    # plain page load or a later visit to Mind Map had no way to see them. Surfacing
+    # the latest job's result here lets the UI explain an empty/stale result instead
+    # of just showing "not analyzed" with no reason.
+    last_job = store.latest_job(pid, "codeanalysis")
+    last_analysis = None
+    if last_job and last_job.get("status") != "running":
+        r = last_job.get("result") or {}
+        last_analysis = {
+            "at": last_job.get("updated_at"),
+            "status": last_job.get("status"),
+            "note": r.get("note"),
+            "features_mapped": r.get("features_mapped", 0),
+            "per_repo": r.get("per_repo", []),
+            "errors": r.get("errors", []),
+        }
+    return {"project_id": pid, "features": out, "last_analysis": last_analysis}
 
 
 class AnalyzeIn(BaseModel):
