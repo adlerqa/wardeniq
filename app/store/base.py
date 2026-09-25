@@ -88,6 +88,8 @@ class BaseStore:
         self.coverage = self.db["pr_coverage"]
         self.commit_analysis = self.db["commit_analysis"]
         self.users = self.db["users"]
+        self.api_tokens = self.db["api_tokens"]
+        self.api_token_failures = self.db["api_token_failures"]
         self.validator_runs = self.db["validator_runs"]
         self.validator_questions = self.db["validator_questions"]
         self.validator_answers = self.db["validator_answers"]
@@ -107,7 +109,8 @@ class BaseStore:
     def ensure_indexes(self):
         for name in ["projects", "features", "feature_chunks", "code_chunks", "code_coverage",
                      "test_steps", "test_cases", "associations", "repos", "pull_requests",
-                     "pr_coverage", "users", "validator_runs", "validator_questions",
+                     "pr_coverage", "users", "api_tokens", "api_token_failures",
+                     "validator_runs", "validator_questions",
                      "validator_answers", "test_plan_runs", "test_cycles", "counters",
                      "feature_imports", "project_imported_rows",
                      "project_imported_row_sources", "project_imported_row_feature_map",
@@ -119,6 +122,7 @@ class BaseStore:
         self.documents.create_index([("project_id", 1), ("created_at", -1)])
         self.documents.create_index([("feature_id", 1)])
         self.users.create_index([("email", 1)], unique=True)
+        self.api_tokens.create_index([("token_hash", 1)], unique=True)
         self.assoc.create_index([("feature_id", 1), ("test_case_id", 1)], unique=True)
         self.repos.create_index([("project_id", 1), ("full_name", 1)], unique=True)
         self.prs.create_index([("repo_id", 1), ("number", 1)], unique=True)
