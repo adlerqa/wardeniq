@@ -14,20 +14,20 @@ export default function EmbeddingSettingsCard() {
         <b>⚠ Switching affects the whole system — read before changing:</b>
         <ul style={{ margin: "6px 0 0", paddingLeft: "18px", lineHeight: "1.6" }}>
           <li>
-            This is a
-            <b>global, one-time migration</b>
-            — it re-embeds
-            <b>every project&apos;s</b>
+            This is a{" "}
+            <b>global, one-time migration</b>{" "}
+            — it re-embeds{" "}
+            <b>every project&apos;s</b>{" "}
             vectors (features, documents, test steps &amp; cases) and rebuilds the search indexes at the new model&apos;s dimension.
           </li>
           <li>
-            <b>Search, dedup and Mind-Map are degraded until it finishes</b>
+            <b>Search, dedup and Mind-Map are degraded until it finishes</b>{" "}
             — run it when the system is idle.
           </li>
           <li>Time and token cost scale with your total corpus size; hosted models spend tokens on the new provider (see Usage &amp; Cost).</li>
           <li>
-            Your test cases, steps, documents and coverage are
-            <b>not changed</b>
+            Your test cases, steps, documents and coverage are{" "}
+            <b>not changed</b>{" "}
             — only their numeric embedding vectors are recomputed.
           </li>
           <li>Pick once at setup if you can; avoid switching repeatedly.</li>

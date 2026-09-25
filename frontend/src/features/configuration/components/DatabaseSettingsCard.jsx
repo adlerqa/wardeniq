@@ -10,8 +10,8 @@ export default function DatabaseSettingsCard() {
         <span className="cfg-badge glob">Global</span>
       </div>
       <div className="sub">
-        Connect wardenIQ to a search-capable MongoDB (Atlas, or self-managed with mongot). Enter the connection string below. It is saved to
-        <code>.env</code>
+        Connect wardenIQ to a search-capable MongoDB (Atlas, or self-managed with mongot). Enter the connection string below. It is saved to{" "}
+        <code>.env</code>{" "}
         and never shown again.
       </div>
       <div id="cfg-db-body" className="db-panel">

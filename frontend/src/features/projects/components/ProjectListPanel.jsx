@@ -40,8 +40,8 @@ export default function ProjectListPanel() {
               <span className="muted">(optional)</span>
             </div>
             <div className="sub" style={{ margin: "0 0 8px" }}>
-              Pick from the Jira projects this workspace can see. Configure Jira in
-              <b>Settings → Jira &amp; Confluence</b>
+              Pick from the Jira projects this workspace can see. Configure Jira in{" "}
+              <b>Settings → Jira &amp; Confluence</b>{" "}
               first to populate this dropdown.
             </div>
             <div className="cp-jira-row">

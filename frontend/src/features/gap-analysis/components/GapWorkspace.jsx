@@ -26,7 +26,7 @@ export default function GapWorkspace() {
           </div>
           <div className="sub" style={{ margin: "6px 0 12px" }}>Webhooks register on App repos at project setup. Each PR open/sync/reopen creates a run. You can also trigger a one-off run by PR number below.</div>
           <div id="gap-pr-list" className="muted">
-            No runs yet — connect a repo on this project and open a PR (or click
+            No runs yet — connect a repo on this project and open a PR (or click{" "}
             <b>+ Run on a PR</b>
             ).
           </div>
@@ -52,8 +52,8 @@ export default function GapWorkspace() {
             </div>
           </div>
           <div className="sub" style={{ margin: "6px 0 12px" }}>
-            For each generated test case, wardenIQ finds the best-matching test in your connected
-            <b>Test</b>
+            For each generated test case, wardenIQ finds the best-matching test in your connected{" "}
+            <b>Test</b>{" "}
             repos (Playwright, Cypress, Cucumber, Jest, Pytest, Markdown, JSON, etc.) using a Jaccard prefilter + LLM verifier. Covered tests link to the exact file at the scanned commit.
           </div>
           <div id="gap-auto-repos" style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "14px" }}></div>

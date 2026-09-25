@@ -10,7 +10,7 @@ export default function AtlassianSettingsCard() {
         <span className="cfg-badge opt">Optional</span>
       </div>
       <div className="sub">
-        One Atlassian account for the whole workspace. wardenIQ uses it to read issues, list Jira projects/Confluence spaces when you create a project, and write coverage updates as comments. Create an API token at
+        One Atlassian account for the whole workspace. wardenIQ uses it to read issues, list Jira projects/Confluence spaces when you create a project, and write coverage updates as comments. Create an API token at{" "}
         <code>id.atlassian.com → Security → API tokens</code>
         .
       </div>
@@ -40,8 +40,8 @@ export default function AtlassianSettingsCard() {
         <button className="go" id="cfg-jira-save">Save</button>
       </div>
       <div className="muted" style={{ fontSize: "11px", marginTop: "10px" }}>
-        Webhook:
-        <code>/api/integrations/jira/webhook?token=&lt;WEBHOOK_SECRET&gt;</code>
+        Webhook:{" "}
+        <code>/api/integrations/jira/webhook?token=&lt;WEBHOOK_SECRET&gt;</code>{" "}
         auto-creates features from new issues.
       </div>
     </div>
