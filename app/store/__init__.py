@@ -28,6 +28,7 @@ No duplicate method/property name exists across any mixin (see
 picking one implementation and shadowing another, which would be undetectable at import
 time).
 """
+from store.api_tokens import ApiTokensMixin
 from store.audit import AuditMixin
 from store.base import BaseStore
 from store.code_coverage import CodeCoverageMixin
@@ -54,6 +55,7 @@ class Store(
     JobsMixin,
     UsageMixin,
     UsersAuthMixin,
+    ApiTokensMixin,
     ReposPrsMixin,
     CodeCoverageMixin,
     ValidatorRunsMixin,
