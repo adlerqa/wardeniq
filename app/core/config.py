@@ -57,6 +57,9 @@ CASE_AUTO = float(os.getenv("CASE_AUTO_REUSE", "0.93"))
 SUGGEST = float(os.getenv("SUGGEST_THRESHOLD", "0.85"))
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GITHUB_API = os.getenv("GITHUB_API", "https://api.github.com")
+# Self-hosted GitLab support: point this at your instance (e.g. https://gitlab.example.com).
+# Defaults to gitlab.com so nothing changes for the common case.
+GITLAB_BASE_URL = (os.getenv("GITLAB_BASE_URL") or "https://gitlab.com").strip().rstrip("/")
 # GitHub poller cadence. The frontend-saved value (settings.poll_interval_s) WINS;
 # POLL_INTERVAL_SECONDS in .env is only the seed default for fresh installs; else the
 # built-in 30-minute default. Resolved live per loop via current_poll_interval() so an

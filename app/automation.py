@@ -8,6 +8,8 @@ import re
 import tarfile
 from typing import Iterable
 
+from core.config import GITLAB_BASE_URL
+
 # ---------------------------------------------------------------- framework detect
 _TEST_FILE_RE = re.compile(
     r"(?:^|/)(?:tests?|__tests__|spec|specs|e2e|cypress|cy|playwright|features?|stories|scenarios)/"
@@ -470,7 +472,7 @@ def build_blob_url(git_provider: str, repo_full_name: str, default_branch: str,
         return ""
     p = file_path.lstrip("/")
     if (git_provider or "").lower() == "gitlab":
-        url = f"https://gitlab.com/{repo_full_name}/-/blob/{default_branch}/{p}"
+        url = f"{GITLAB_BASE_URL}/{repo_full_name}/-/blob/{default_branch}/{p}"
         if line:
             url += f"#L{line}"
         return url
@@ -485,7 +487,7 @@ def build_commit_url(git_provider: str, repo_full_name: str, sha: str,
     if not (repo_full_name and sha):
         return ""
     if (git_provider or "").lower() == "gitlab":
-        base = f"https://gitlab.com/{repo_full_name}/-/commit/{sha}"
+        base = f"{GITLAB_BASE_URL}/{repo_full_name}/-/commit/{sha}"
     else:
         base = f"https://github.com/{repo_full_name}/commit/{sha}"
     if file_path:
