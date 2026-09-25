@@ -229,6 +229,13 @@ class TestCyclesMixin(_Base):
                 )},
             },
         )
+        if cycle_status == "completed":
+            # Coverage trend history (issue #45): a cycle reaching completion is
+            # one of the events worth a point-in-time snapshot.
+            try:
+                self.save_coverage_snapshot(c.get("project_id"), "cycle_completion")
+            except Exception as snap_e:  # noqa: BLE001
+                print(f"[coverage-snapshot] skipped: {snap_e}", flush=True)
         return target
 
     def batch_cycle_item_status(self, cycle_id, item_ids, status, executed_by=None):

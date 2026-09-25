@@ -31,6 +31,7 @@ time).
 from store.audit import AuditMixin
 from store.base import BaseStore
 from store.code_coverage import CodeCoverageMixin
+from store.coverage_snapshots import CoverageSnapshotsMixin
 from store.dashboard import DashboardMixin
 from store.documents import DocumentsMixin
 from store.features import FeaturesMixin
@@ -64,6 +65,7 @@ class Store(
     SheetImportMixin,
     AuditMixin,
     DashboardMixin,
+    CoverageSnapshotsMixin,
     BaseStore,
 ):
     """Composes every domain mixin. `BaseStore` is last so its `__init__` (the only

@@ -113,7 +113,7 @@ class BaseStore:
                      "project_imported_row_sources", "project_imported_row_feature_map",
                      "project_imported_row_promotions",
                      "project_imported_row_corrections", "import_analysis_status",
-                     "stored_documents"]:
+                     "stored_documents", "coverage_snapshots"]:
             if name not in self.db.list_collection_names():
                 self.db.create_collection(name)
         self.documents.create_index([("project_id", 1), ("created_at", -1)])
@@ -160,6 +160,8 @@ class BaseStore:
             ("import_batch_id", 1), ("project_imported_row_id", 1)
         ])
         self.project_imported_row_corrections.create_index([("import_batch_id", 1)])
+        self.db["coverage_snapshots"].create_index([("project_id", 1), ("at", -1)])
+        self.db["coverage_snapshots"].create_index([("project_id", 1), ("event", 1), ("at", -1)])
         self._backfill_case_display_ids()
         self.cases.create_index([("display_id", 1)], unique=True, sparse=True)
         self._renumber_display_ids()   # one-time: per-feature numbering (1..N)

@@ -293,6 +293,12 @@ def _codeanalysis_worker(jid, params):
         mapped += 1
         store.merge_job_result(jid, features_mapped=mapped)
     store.merge_job_result(jid, features_mapped=mapped)
+    # Coverage trend history (issue #45): a completed Mind Map run is one of
+    # the events worth a point-in-time snapshot.
+    try:
+        store.save_coverage_snapshot(project_id, "mindmap", job_id=jid)
+    except Exception as snap_e:  # noqa: BLE001
+        print(f"[coverage-snapshot] skipped: {snap_e}", flush=True)
 
 
 JOB_WORKERS["codeanalysis"] = _codeanalysis_worker
