@@ -12,11 +12,14 @@ from core.bootstrap import BOOT
 from core.config import (
     STALE_JOB_SWEEP_INTERVAL_SECONDS, STALE_JOB_TTL_SECONDS,
 )
+from core.logging_setup import get_logger
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
                                # mutated, never rebound)
 
 from workers.registry import run_tracked
 from workers.repo_scan_worker import _rescan_pool_for_feature
+
+log = get_logger("schedulers")
 
 
 def _stale_job_sweeper():
@@ -31,7 +34,7 @@ def _stale_job_sweeper():
                 continue
             store.sweep_stale_jobs(ttl_seconds=STALE_JOB_TTL_SECONDS)
         except Exception as e:  # noqa: BLE001
-            print(f"[stale-sweeper] {e}", flush=True)
+            log.error("[stale-sweeper] %s", e)
 
 
 def _import_reanalysis_scheduler(interval_s: int = 300):
@@ -44,7 +47,7 @@ def _import_reanalysis_scheduler(interval_s: int = 300):
         try:
             pids = store.list_projects_with_pending_import_rows()
         except Exception as e:  # noqa: BLE001
-            print(f"[import-scheduler] list failed: {e}", flush=True)
+            log.error("[import-scheduler] list failed: %s", e)
             continue
         for pid in pids:
             def _sweep(pid=pid):
@@ -59,4 +62,4 @@ def _import_reanalysis_scheduler(interval_s: int = 300):
                 run_tracked("import_reanalysis", _sweep,
                             label="Imported-library re-analysis", project_id=pid)
             except Exception as e:  # noqa: BLE001
-                print(f"[import-scheduler] project {pid}: {e}", flush=True)
+                log.error("[import-scheduler] project %s: %s", pid, e)

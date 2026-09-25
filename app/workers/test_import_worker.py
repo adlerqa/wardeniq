@@ -1,5 +1,6 @@
 
 from core.deps import current_llm
+from core.logging_setup import get_logger
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
                                # mutated, never rebound)
 import sheet_import as sheet_mod
@@ -12,6 +13,8 @@ from workers.repo_scan_worker import (
     _reuse_existing_import_rows,
     _sheet_steps_preview,
 )
+
+log = get_logger("import")
 
 
 def _test_import_worker(jid, params):
@@ -113,7 +116,7 @@ def _test_import_worker(jid, params):
                 current_llm(), rows, feat_name, feat_desc,
                 batch_size=8, max_workers=6, progress_fn=_polish_progress)
         except Exception as e:  # noqa: BLE001
-            print(f"[import] polish failed (using parser output): {e}", flush=True)
+            log.warning("polish failed (using parser output): %s", e)
 
     if not rows:
         store.set_import_analysis_status(feature_import_id, "COMPLETED",

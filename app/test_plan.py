@@ -4,6 +4,10 @@ import re
 import time
 from bson import ObjectId
 
+from core.logging_setup import get_logger
+
+log = get_logger("test_plan")
+
 # ─── String-level cleaners ────────────────────────────────────────────────────
 def strip_urls(text: str) -> str:
     return re.sub(r'https?://[^\s"\',)\]>]+', '[link removed]', text)
@@ -606,7 +610,7 @@ def generate_test_plan_job(store, llm, run_id, feature_id):
         try:
             plan_json = call_llm_json_with_repair(llm, system_prompt, prompt, max_tokens=8000)
         except Exception as e:
-            print(f"[TestPlan] LLM call failed, using fallback: {e}", flush=True)
+            log.warning("LLM call failed, using fallback: %s", e)
             plan_json = fallback_plan
             plan_json["meta"]["source"] = "fallback"
             
@@ -631,7 +635,7 @@ def generate_test_plan_job(store, llm, run_id, feature_id):
             
         store.update_test_plan_run(run_id, status="COMPLETED", content=plan_json)
     except Exception as e:
-        print(f"[TestPlan] Job error: {e}", flush=True)
+        log.error("Job error: %s", e)
         store.update_test_plan_run(run_id, status="FAILED", error=str(e))
 
 # ─── PDF / CSV Exporters ─────────────────────────────────────────────────────

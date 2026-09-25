@@ -10,6 +10,7 @@ from core.deps import (
     _gather_external, _generate_feature_summary, _oid, _write_env_var,
     current_embedder, current_llm, gh_client,
 )
+from core.logging_setup import get_logger
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
                                # mutated, never rebound)
 from extract import chunk as chunk_doc
@@ -17,6 +18,8 @@ from testgen.service import generate_fresh_testcases_pipeline
 
 from workers.registry import JOB_WORKERS, launch_job
 from workers.repo_scan_worker import _apply_import_overlays, _rescan_pool_for_feature
+
+log = get_logger("generation")
 
 
 def _gen_worker(jid, params):
@@ -50,7 +53,7 @@ def _gen_worker(jid, params):
                         label=f"Auto-scan · {tr.get('full_name')}",
                         project_id=feature["project_id"], feature_id=fid)
         except Exception as auto_e:  # noqa: BLE001
-            print(f"[auto-scan] skipped: {auto_e}", flush=True)
+            log.warning("[auto-scan] skipped: %s", auto_e)
         # GAP4: a freshly (re)generated feature may now match rows sitting in the
         # imported pool — rescan and promote the evidence-backed ones.
         try:
@@ -60,7 +63,7 @@ def _gen_worker(jid, params):
                 _rescan_pool_for_feature(feat2)     # GAP4
                 _apply_import_overlays(feat2)         # GAP3
         except Exception as re_e:  # noqa: BLE001
-            print(f"[import-recheck] skipped: {re_e}", flush=True)
+            log.warning("[import-recheck] skipped: %s", re_e)
     except Exception as e:
         store.update_job(jid, status="failed", stage="error", error=str(e))
         raise e

@@ -19,6 +19,10 @@ from bson import ObjectId
 from pymongo import MongoClient
 from pymongo.operations import SearchIndexModel
 
+from core.logging_setup import get_logger
+
+log = get_logger("store")
+
 
 VECTOR_INDEX = "vector_index"
 TEXT_INDEX = "text_index"
@@ -365,10 +369,10 @@ class BaseStore:
         except Exception:  # noqa: BLE001
             n = 0
         if n > NUMPY_FALLBACK_MAX_DOCS:
-            print(f"[store] mongot unavailable and case store is large ({n} > "
-                  f"{NUMPY_FALLBACK_MAX_DOCS}); skipping exact numpy fallback for {what} "
-                  f"(degraded) to avoid OOM. Restore mongot to resume full search.",
-                  flush=True)
+            log.warning("mongot unavailable and case store is large (%d > %d); "
+                      "skipping exact numpy fallback for %s (degraded) to avoid OOM. "
+                      "Restore mongot to resume full search.",
+                      n, NUMPY_FALLBACK_MAX_DOCS, what)
             # Make it inspectable, not just printed: a log line in a container nobody is
             # tailing is not an alert. Callers turn this into a job warning / health flag.
             rec = self._degraded.setdefault(what, {"count": 0, "first_at": time.time()})

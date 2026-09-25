@@ -39,8 +39,11 @@ from core.deps import (
     _ext_error, _smtp_cfg, _write_env_var,
     current_llm, current_ollama_url, current_poll_interval,
 )
+from core.logging_setup import get_logger
 from core.state import store
 from workers.registry import launch_job
+
+log = get_logger("settings")
 
 router = APIRouter()
 
@@ -386,8 +389,8 @@ def put_settings(body: SettingsIn, request: Request):
         if _env_file_writable():
             ok, err = _write_env_var(ENV_FILE_PATH, "POLL_INTERVAL_SECONDS", str(pv))
             if not ok:
-                print(f"[settings] could not persist POLL_INTERVAL_SECONDS to "
-                      f"{ENV_FILE_PATH}: {err}", flush=True)
+                log.warning("could not persist POLL_INTERVAL_SECONDS to %s: %s",
+                          ENV_FILE_PATH, err)
     if body.llm_prices is not None:
         # keep only well-formed {model: {in, out}} entries
         clean = {}
@@ -422,7 +425,7 @@ def ollama_models():
         models = sorted(m.get("name") for m in r.json().get("models", []) if m.get("name"))
         return {"ok": True, "models": models, "url": url}
     except Exception as e:  # noqa: BLE001
-        print(f"[wardenIQ][ollama-tags] {url}: {e!r}", flush=True)
+        log.warning("[ollama-tags] %s: %r", url, e)
         return {"ok": False, "models": [], "url": url,
                 "error": "could not reach Ollama at this URL"}
 
@@ -567,7 +570,7 @@ def db_migrate(body: DbMigrateIn, request: Request):
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001
-        print(f"[wardenIQ][db-config] target inspection failed: {e!r}", flush=True)
+        log.error("[db-config] target inspection failed: %r", e)
         raise HTTPException(400, "Couldn't inspect the target database — check the "
                                  "connection string, credentials and network access "
                                  "(details in the server logs)")
@@ -584,7 +587,7 @@ def smtp_test(body: OtpRequestIn):
         raise HTTPException(400, "SMTP is not configured — add email settings to send sign-in codes")
     ok, err = email_send.send_otp(cfg, (body.email or "").strip(), auth.gen_otp())
     if not ok:
-        print(f"[wardenIQ][smtp-test] send failed: {err}", flush=True)
+        log.warning("[smtp-test] send failed: %s", err)
         raise HTTPException(502, "could not send the test email — check the SMTP host, "
                                  "port, credentials and TLS/SSL settings")
     return {"ok": True, "sent_to": body.email}

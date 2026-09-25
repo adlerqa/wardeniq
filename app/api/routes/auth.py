@@ -31,8 +31,11 @@ from core.config import (
     OTP_WINDOW_SECONDS,
 )
 from core.deps import _smtp_cfg, _user_public
+from core.logging_setup import get_logger
 from core.security import _current_user
 from core.state import store
+
+log = get_logger("auth")
 
 router = APIRouter()
 
@@ -63,21 +66,20 @@ def _deliver_otp(email, code, recipient_name="", is_admin=False):
         # who can hit the sign-in endpoint on this host is trusted at this point:
         # a public deployment must configure SMTP before exposing wardenIQ.
         role_hint = "admin" if is_admin else "user"
-        print("\n" + "=" * 64 +
-              f"\n[wardenIQ] SMTP is not configured — one-time sign-in code"
-              f"\n[wardenIQ]   {email} ({role_hint}): {code}"
-              f"\n[wardenIQ] The code is also shown on the sign-in screen. Set up"
-              f"\n[wardenIQ] email under Configuration → Email to disable this"
-              f"\n[wardenIQ] demo path (codes will then only be emailed).\n"
-              + "=" * 64 + "\n",
-              flush=True)
+        log.info("\n" + "=" * 64 +
+                "\nSMTP is not configured — one-time sign-in code"
+                "\n  %s (%s): %s"
+                "\nThe code is also shown on the sign-in screen. Set up"
+                "\nemail under Configuration → Email to disable this"
+                "\ndemo path (codes will then only be emailed).\n"
+                + "=" * 64 + "\n", email, role_hint, code)
         return "logged", code
 
     ok, err = email_send.send_otp(cfg, email, code, recipient_name)
     if ok:
         return "sent", ""
 
-    print(f"[wardenIQ][OTP send failed for {email}: {err}]", flush=True)
+    log.warning("OTP send failed for %s: %s", email, err)
     return "error", err
 
 
@@ -91,7 +93,7 @@ def _deliver_reset_code(target_name: str, email: str, code: str):
         ok, err = email_send.send_otp(cfg, email, code, recipient_name=target_name)
         if ok:
             return "sent", ""
-        print(f"[wardenIQ][Password Reset send failed for {email}: {err}]", flush=True)
+        log.warning("Password Reset send failed for %s: %s", email, err)
         return "error", err
     else:
         return "no_email", "User has no valid email address configured"
@@ -134,8 +136,8 @@ def request_otp(body: OtpRequestIn):
     # as above, no email is sent for this request, so the message must not claim
     # one was.
     if store.otp_recent_issue_count(user["id"], OTP_WINDOW_SECONDS) > OTP_MAX_PER_WINDOW:
-        print(f"[wardenIQ][OTP throttled] {email} exceeded "
-              f"{OTP_MAX_PER_WINDOW}/{OTP_WINDOW_SECONDS}s", flush=True)
+        log.warning("OTP throttled: %s exceeded %d/%ds", email, OTP_MAX_PER_WINDOW,
+                  OTP_WINDOW_SECONDS)
         return {"sent": True, "message": OTP_MASKED_MESSAGE}
     code = auth.gen_otp()
     store.set_otp(user["id"], auth.hash_otp(code), time.time() + auth.OTP_TTL)
