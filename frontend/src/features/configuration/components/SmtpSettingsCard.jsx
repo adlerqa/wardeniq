@@ -10,23 +10,23 @@ export default function SmtpSettingsCard() {
         <span className="cfg-badge opt">Optional</span>
       </div>
       <div className="sub">
-        Used to deliver sign-in codes. Until this is configured, the first admin&apos;s one-time code is printed to the server log (e.g.
+        Used to deliver sign-in codes. Until this is configured, the first admin&apos;s one-time code is printed to the server log (e.g.{" "}
         <code>docker logs wardeniq</code>
         ) so you can sign in and set it up here. Password stored encrypted.
       </div>
       <div className="sub" style={{ marginTop: "-2px" }}>
-        <b>Gmail:</b>
-        host
+        <b>Gmail:</b>{" "}
+        host{" "}
         <code>smtp.gmail.com</code>
-        , port
-        <code>587</code>
-        (STARTTLS)
-        <i>or</i>
-        <code>465</code>
-        (SSL), username = your full Gmail address, password = a 16-character
-        <b>App Password</b>
-        (needs 2-Step Verification; spaces are optional). Save first, then use
-        <b>Send test email</b>
+        , port{" "}
+        <code>587</code>{" "}
+        (STARTTLS){" "}
+        <i>or</i>{" "}
+        <code>465</code>{" "}
+        (SSL), username = your full Gmail address, password = a 16-character{" "}
+        <b>App Password</b>{" "}
+        (needs 2-Step Verification; spaces are optional). Save first, then use{" "}
+        <b>Send test email</b>{" "}
         to confirm.
       </div>
       <div className="cfg-row">

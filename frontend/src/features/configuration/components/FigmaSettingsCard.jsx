@@ -10,9 +10,9 @@ export default function FigmaSettingsCard() {
         <span className="cfg-badge opt">Optional</span>
       </div>
       <div className="sub">
-        A Figma
-        <b>personal access token</b>
-        lets features extract design screens &amp; text from a Figma link (Figma&apos;s API requires a token).
+        A Figma{" "}
+        <b>personal access token</b>{" "}
+        lets features extract design screens &amp; text from a Figma link (Figma&apos;s API requires a token).{" "}
         <a href="https://www.figma.com/developers/api#access-tokens" target="_blank" rel="noopener noreferrer">Create one</a>
         . Stored encrypted.
       </div>

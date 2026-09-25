@@ -297,7 +297,7 @@ export default function ValidatorModal() {
                 <span className="validator-version-dot new" />
 
                 <p>
-                  <strong>New version</strong>
+                  <strong>New version</strong>{" "}
                   keeps valid cases, retires obsolete cases and adds new ones
                   while preserving history.
                 </p>
@@ -307,7 +307,7 @@ export default function ValidatorModal() {
                 <span className="validator-version-dot replace" />
 
                 <p>
-                  <strong>Replace</strong>
+                  <strong>Replace</strong>{" "}
                   regenerates the current version from scratch.
                 </p>
               </div>
