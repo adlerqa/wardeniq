@@ -7,6 +7,9 @@ this codebase" so you don't have to guess.
 wardenIQ is MIT-licensed. By submitting a contribution you agree it will be
 released under the same license.
 
+This project follows the [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
+By participating you are expected to uphold it.
+
 ---
 
 ## Ways to contribute
