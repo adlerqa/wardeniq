@@ -1899,7 +1899,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     for case, reason in filter_rejections:
         case_id = case.get("id") or case.get("test_slug") or "?"
         title = case.get("title") or ""
-        print(f'[TestGen][filter] rejected id={case_id} reason={reason} title="{title}"', flush=True)
+        log.info('[TestGen][filter] rejected id=%s reason=%s title="%s"', case_id, reason, title)
     rejected_by_reason: dict[str, int] = {}
     for _case, reason in filter_rejections:
         rejected_by_reason[reason] = rejected_by_reason.get(reason, 0) + 1
