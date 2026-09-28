@@ -301,7 +301,7 @@ def _codeanalysis_worker(jid, params):
     try:
         store.save_coverage_snapshot(project_id, "mindmap", job_id=jid)
     except Exception as snap_e:  # noqa: BLE001
-        print(f"[coverage-snapshot] skipped: {snap_e}", flush=True)
+        log.warning("[coverage-snapshot] skipped: %s", snap_e)
 
 
 JOB_WORKERS["codeanalysis"] = _codeanalysis_worker

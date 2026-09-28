@@ -49,7 +49,7 @@ def _gen_worker(jid, params):
                     store.save_coverage_snapshot(feature["project_id"], "generation",
                                                  job_id=jid)
                 except Exception as snap_e:  # noqa: BLE001
-                    print(f"[coverage-snapshot] skipped: {snap_e}", flush=True)
+                    log.warning("[coverage-snapshot] skipped: %s", snap_e)
                 test_repos = store.repos_for_project(
                     feature["project_id"], repo_type="test")
                 for tr in test_repos:

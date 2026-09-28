@@ -31,10 +31,13 @@ from core.deps import (
     _fetch_repo_snapshot_files, _oid, current_llm, jira_client,
     project_github_token, project_gitlab_token,
 )
+from core.logging_setup import get_logger
 from core.state import SYNC, store  # noqa: F401  (bare name-imports are safe:
                                      # both are mutated in place, never rebound)
 
 from workers.registry import JOB_WORKERS, run_tracked
+
+log = get_logger("code_coverage")
 
 
 def _pr_coverage(pr_id, pr_doc, files, fid):
@@ -329,7 +332,7 @@ def ingest_pr(repo: dict, pr: dict, feature_id_override: str | None = None):
         store.save_coverage_snapshot(repo["project_id"], "code_analysis",
                                      commit_sha=head_sha or None)
     except Exception as snap_e:  # noqa: BLE001
-        print(f"[coverage-snapshot] skipped: {snap_e}", flush=True)
+        log.warning("[coverage-snapshot] skipped: %s", snap_e)
     return pr_id
 
 
