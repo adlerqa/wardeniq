@@ -1,7 +1,7 @@
 # Percona Search for MongoDB (mongot fork) — validation config for issue #41.
 # OVERRIDES the image's shipped default at /etc/mongot/mongot.yml. Schema
 # confirmed by reading that shipped default directly (percona/percona-search-mongodb:1.70.4)
-# — see docs/validation/percona-search-validation.md for the exact commands used.
+# — see docs/percona-search-validation.md for the exact commands used.
 #
 # Percona's schema nests auth under syncSource.replicaSet.scramAuth, unlike
 # MongoDB Community mongot's config (config/mongot.conf), which puts

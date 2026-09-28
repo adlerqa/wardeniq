@@ -18,7 +18,7 @@
 # `warden-net` without a naming collision, per issue #41's "alongside the
 # existing one" scope.
 #
-# Real, verified image names (see docs/validation/percona-search-validation.md
+# Real, verified image names (see docs/percona-search-validation.md
 # for exactly how these were confirmed — Percona's own docs currently name a
 # `percona/percona-server-mongodb-mongot` image that has zero published tags;
 # the actually-published image is `percona/percona-search-mongodb`):
