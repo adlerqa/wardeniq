@@ -22,8 +22,11 @@ import time
 
 import auth
 from core.config import ADMIN_EMAIL, ADMIN_PASSWORD, ALLOW_WEAK_SECRET, AUTO_SETUP, ENV_FILE_PATH, IS_PRODUCTION
+from core.logging_setup import get_logger
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
                                               # mutated, never rebound)
+
+log = get_logger("bootstrap")
 
 BOOT = {"stage": "starting", "ready": False, "detail": ""}
 
@@ -77,14 +80,12 @@ def _ensure_app_secret():
     generated = secrets.token_urlsafe(32)
     ok, err = _write_env_var(ENV_FILE_PATH, "APP_SECRET", generated)
     if not ok:
-        print(f"[wardenIQ][WARNING] could not persist an auto-generated APP_SECRET: {err}",
-              flush=True)
+        log.warning("could not persist an auto-generated APP_SECRET: %s", err)
         return
     os.environ["APP_SECRET"] = generated
-    print("[wardenIQ] No APP_SECRET was set — generated a strong one automatically and "
-          "saved it to .env. This key signs sessions and encrypts stored secrets: back "
-          "up your .env file, and set your own APP_SECRET explicitly before going to "
-          "production.", flush=True)
+    log.info("No APP_SECRET was set — generated a strong one automatically and saved it "
+             "to .env. This key signs sessions and encrypts stored secrets: back up your "
+             ".env file, and set your own APP_SECRET explicitly before going to production.")
 
 
 def _bootstrap_password_targets():
@@ -139,13 +140,13 @@ def _seed_bootstrap_password():
     if reset_env_pw:
         errs = auth.password_policy_errors(reset_env_pw)
         if errs:
-            print("[wardenIQ][WARNING] RESET_ADMIN_PASSWORD does not meet policy "
-                  f"({', '.join(errs)}); ignoring it.", flush=True)
+            log.warning("RESET_ADMIN_PASSWORD does not meet policy (%s); ignoring it.",
+                       ", ".join(errs))
             return
         for row in _bootstrap_password_targets():
             store.set_user_password(row["id"], auth.hash_password(reset_env_pw))
-            print(f"[wardenIQ] Force-reset the password for {row['email']!r} from "
-                  "RESET_ADMIN_PASSWORD environment variable.", flush=True)
+            log.info("Force-reset the password for %r from RESET_ADMIN_PASSWORD "
+                    "environment variable.", row["email"])
         return
 
     if not ADMIN_PASSWORD:
@@ -155,16 +156,15 @@ def _seed_bootstrap_password():
 
     errs = auth.password_policy_errors(ADMIN_PASSWORD)
     if errs:
-        print("[wardenIQ][WARNING] ADMIN_PASSWORD does not meet the policy "
-              f"({', '.join(errs)}); ignoring it — the bootstrap admin keeps "
-              "the default until changed.", flush=True)
+        log.warning("ADMIN_PASSWORD does not meet the policy (%s); ignoring it — the "
+                   "bootstrap admin keeps the default until changed.", ", ".join(errs))
         return
 
     for row in _bootstrap_password_targets():
         if not row.get("password_hash"):
             store.set_user_password(row["id"], auth.hash_password(ADMIN_PASSWORD))
-            print(f"[wardenIQ] Seeded the password for {row['email']!r} from "
-                  "ADMIN_PASSWORD (the shipped default is disabled).", flush=True)
+            log.info("Seeded the password for %r from ADMIN_PASSWORD (the shipped "
+                    "default is disabled).", row["email"])
 
 
 def _check_app_secret():
@@ -186,8 +186,7 @@ def _check_app_secret():
                     detail=f"insecure APP_SECRET: {msg} Set a strong APP_SECRET "
                            "(or ALLOW_WEAK_SECRET=true for a trusted local run).")
         raise RuntimeError(f"[wardenIQ] refusing to start — {msg}")
-    print(f"[wardenIQ][WARNING] {msg} (allowed because ALLOW_WEAK_SECRET=true)",
-          flush=True)
+    log.warning("%s (allowed because ALLOW_WEAK_SECRET=true)", msg)
 
 
 def _check_production_posture():
@@ -286,7 +285,7 @@ def bootstrap():
                 detail = _SEARCH_REQUIRED_MSG
                 reason = "Vector Search unavailable"
             BOOT.update(stage="error", ready=False, detail=detail, public_detail=detail)
-            print(f"[wardenIQ] refusing to serve — {reason}: {idx_err}", flush=True)
+            log.error("refusing to serve — %s: %s", reason, idx_err)
             return
     # Adopt features created before project_id existed into a default project.
     try:
@@ -299,9 +298,9 @@ def bootstrap():
     try:
         if ADMIN_EMAIL:
             if not auth.is_valid_email(ADMIN_EMAIL):
-                print(f"[wardenIQ][WARNING] ADMIN_EMAIL is not a valid email "
-                      f"({ADMIN_EMAIL!r}); skipping admin seed. Fix ADMIN_EMAIL in "
-                      f".env (no inline comments on the value line).", flush=True)
+                log.warning("ADMIN_EMAIL is not a valid email (%r); skipping admin seed. "
+                          "Fix ADMIN_EMAIL in .env (no inline comments on the value "
+                          "line).", ADMIN_EMAIL)
             elif not store.get_user_by_email(ADMIN_EMAIL):
                 store.create_user(ADMIN_EMAIL, ADMIN_EMAIL.split("@")[0], "admin")
     except Exception as e:  # noqa: BLE001

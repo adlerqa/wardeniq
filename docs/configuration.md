@@ -249,6 +249,7 @@ startup and secrets.
 | `GITLAB_BASE_URL` | `https://gitlab.com` | Point at a self-hosted GitLab instance (e.g. `https://gitlab.example.com`). Repo URLs, the API, and generated blob/commit links all follow this |
 | `POLL_INTERVAL_SECONDS` | `1800` | How often watched repos are polled for new PRs/commits (30 min). Seed default only — also settable live in **Configuration → Sync & polling**, which overrides this |
 | `WEBHOOK_SECRET` | _(empty)_ | Required only if you expose the Jira/GitHub webhook receiver |
+| `LOG_LEVEL` | `INFO` | Backend log verbosity (`DEBUG`/`INFO`/`WARNING`/`ERROR`). Raise it to `DEBUG` for per-request retrieval detail when troubleshooting; lower it to `WARNING` to quiet routine progress output |
 | `GEN_TOTAL` | `16` | Baseline test-case count at "Standard" depth |
 | `ADMIN_EMAIL` | _(empty)_ | Seeds the first admin; if blank, the first code-requester becomes admin |
 | `ADMIN_PASSWORD` | _(empty)_ | Bootstrap password for the local `admin` login (the installer prompts for it). Set ⇒ replaces the `admin123` default. Blank ⇒ `admin123` with forced change on first login |

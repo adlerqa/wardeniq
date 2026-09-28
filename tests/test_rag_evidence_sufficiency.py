@@ -824,8 +824,6 @@ class RetrievalFailureDegradesGracefullyTests(unittest.TestCase):
     def test_a_failed_retrieval_is_visible_in_the_logs(self):
         """Degrading silently is indistinguishable from 'this category genuinely had no
         chunks' -- the failure must stay diagnosable after the fact."""
-        import io
-        import contextlib
 
         class AlwaysFailingEmbedder(FakeEmbedder):
             def embed(self, text, task="document"):
@@ -833,10 +831,9 @@ class RetrievalFailureDegradesGracefullyTests(unittest.TestCase):
                     raise RuntimeError("embedding provider unavailable")
                 return super().embed(text, task=task)
 
-        buffer = io.StringIO()
-        with contextlib.redirect_stdout(buffer):
+        with self.assertLogs("wardeniq.testgen", level="WARNING") as cm:
             _run(_delivery_store(), ScenarioLLM(), embedder=AlwaysFailingEmbedder())
-        output = buffer.getvalue()
+        output = "\n".join(cm.output)
         self.assertIn("retrieval_failed_degraded_to_empty", output)
         self.assertIn("embedding provider unavailable", output)
 

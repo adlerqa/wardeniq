@@ -12,11 +12,14 @@ from core.deps import (
     _fetch_repo_snapshot_files, _implementation_repo_docs, _repo_branch_sha,
     _repo_get_archive, _repo_get_commit, _repo_list_commits, current_llm,
 )
+from core.logging_setup import get_logger
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
                                # mutated, never rebound)
 
 from workers.heartbeat import heartbeat
 from workers.registry import JOB_WORKERS
+
+log = get_logger("mindmap")
 
 
 def _codeanalysis_worker(jid, params):
@@ -77,8 +80,8 @@ def _codeanalysis_worker(jid, params):
                     paths.add(d["path"]); total += 1
                 per_repo.append({"repo": repo["full_name"], "branch": ref or "default",
                                  "impl_files": len(paths), "reused": True, "git_provider": provider})
-                print(f"[wardenIQ][mindmap] {repo['full_name']}@{ref}: reused index "
-                      f"({len(paths)} impl files, head {head[:7]})", flush=True)
+                log.info("%s@%s: reused index (%d impl files, head %s)",
+                        repo["full_name"], ref, len(paths), head[:7])
                 # `mem` above only has stored function chunks for a reused repo, not whole-file
                 # text — fetch a best-effort whole-repo snapshot separately so contract-break
                 # detection sees full file contents even when this repo's index was reused as-is.
@@ -142,10 +145,10 @@ def _codeanalysis_worker(jid, params):
                              "extensions": stats["top_ext"],
                              "impl_sample": repo_paths[:40],
                              "sample": stats["sample"] if not files else []})
-            print(f"[wardenIQ][mindmap] {repo['full_name']}@{ref or 'default'}: "
-                  f"{len(repo_paths)} impl files, {repo_tests} tests skipped, "
-                  f"{repo_non_impl} non-implementation skipped, "
-                  f"{stats['total_files']} total. files={repo_paths[:60]}", flush=True)
+            log.info("%s@%s: %d impl files, %d tests skipped, %d non-implementation "
+                    "skipped, %d total. files=%s",
+                    repo["full_name"], ref or "default", len(repo_paths), repo_tests,
+                    repo_non_impl, stats["total_files"], repo_paths[:60])
             store.update_job(jid, stage=f"indexed {repo['full_name']} — {len(repo_paths)} impl files, "
                                          f"{repo_tests} tests skipped, "
                                          f"{repo_non_impl} non-implementation skipped "
@@ -281,15 +284,15 @@ def _codeanalysis_worker(jid, params):
         res["reviewed_files"] = reviewed_files
         store.save_code_coverage(fid, project_id, res, repo_names)
         g = res.get("grounding") or {}
-        print(f"[wardenIQ][mindmap] feature '{f['name']}': reviewed {len(reviewed_files)} "
-              f"implementation files (hybrid retrieval); files={reviewed_files}", flush=True)
+        log.info("feature '%s': reviewed %d implementation files (hybrid retrieval); "
+                "files=%s", f["name"], len(reviewed_files), reviewed_files)
         # Grounding is the accuracy signal - log it so a bad run is visible in the logs
         # rather than only discoverable by clicking through the UI.
-        print(f"[wardenIQ][mindmap] feature '{f['name']}': grounding - "
-              f"{g.get('needs_review_count', 0)} case(s) need review, "
-              f"{g.get('citations_rejected_total', 0)} fabricated citation(s) rejected, "
-              f"{g.get('downgraded_count', 0)} verdict(s) downgraded, "
-              f"samples={g.get('samples', 1)}", flush=True)
+        log.info("feature '%s': grounding - %d case(s) need review, %d fabricated "
+                "citation(s) rejected, %d verdict(s) downgraded, samples=%s",
+                f["name"], g.get("needs_review_count", 0),
+                g.get("citations_rejected_total", 0), g.get("downgraded_count", 0),
+                g.get("samples", 1))
         mapped += 1
         store.merge_job_result(jid, features_mapped=mapped)
     store.merge_job_result(jid, features_mapped=mapped)

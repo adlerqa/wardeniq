@@ -4,6 +4,10 @@ import random
 import time
 from bson import ObjectId
 
+from core.logging_setup import get_logger
+
+log = get_logger("validator")
+
 VALID_CATEGORIES = {
     'business_rules',
     'state_transitions',
@@ -235,7 +239,7 @@ def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=7000) 
             if res is not None:
                 return res
         except Exception as repair_exc:
-            print(f"[Validator] json-repair failed to parse raw text: {repair_exc}", flush=True)
+            log.debug("json-repair failed to parse raw text: %s", repair_exc)
 
         first_array, last_array = text.find("["), text.rfind("]")
         first_object, last_object = text.find("{"), text.rfind("}")
@@ -285,13 +289,13 @@ def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=7000) 
         raw_text = llm._raw_chat(system_prompt, user_prompt, 8192, 0.1, max_tokens)
         return parse_questions(raw_text)
     except Exception as e:
-        print(f"[Self-Repair MCQ] JSON parse failed: {e}. Attempting self-repair...", flush=True)
+        log.warning("[Self-Repair MCQ] JSON parse failed: %s. Attempting self-repair...", e)
         if not (raw_text or "").strip():
             # Only retry original chat if the first call failed completely (e.g. timeout/network error)
             try:
                 raw_text = llm._raw_chat(system_prompt, user_prompt, 8192, 0.2, max_tokens)
             except Exception as retry_err:
-                print(f"[Self-Repair MCQ] Retry chat failed: {retry_err}", flush=True)
+                log.warning("[Self-Repair MCQ] Retry chat failed: %s", retry_err)
                 raise e
         try:
             repair_user = f"""The previous response failed JSON parsing with this error: {e}
@@ -303,7 +307,7 @@ Repair this JSON array so it is valid and contains ONLY valid JSON objects. Outp
             repaired_raw = llm._raw_chat("You are a JSON repair agent. Output ONLY a valid JSON array.", repair_user, 8192, 0.1, max_tokens)
             return parse_questions(repaired_raw)
         except Exception as repair_err:
-            print(f"[Self-Repair MCQ] Repair failed: {repair_err}.", flush=True)
+            log.warning("[Self-Repair MCQ] Repair failed: %s.", repair_err)
             raise e
 
 def normalize_question_key(text: str) -> str:
@@ -645,7 +649,7 @@ def generate_validator_run(store, llm, feature_id, run_id=None, progress_fn=None
 
     def progress(stage, percent):
         suffix = f" ({percent}%)" if percent is not None else ""
-        print(f"[Validator] {stage}{suffix}", flush=True)
+        log.info("%s%s", stage, suffix)
         store.update_validator_run_status(
             run_id, "generating", stage=stage, progress=percent
         )

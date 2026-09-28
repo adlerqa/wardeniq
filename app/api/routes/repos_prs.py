@@ -35,7 +35,10 @@ from core.deps import (
     _ext_error, _oid, _repo_list_branches, _webhook_base_url,
     project_github_token, project_gitlab_token,
 )
+from core.logging_setup import get_logger
 from core.state import store
+
+log = get_logger("repos_prs")
 
 router = APIRouter()
 
@@ -214,13 +217,13 @@ def add_repo(pid: str, body: RepoIn, request: Request):
                             existing = hook
                             break
                 except Exception as e:  # noqa: BLE001
-                    print(f"[webhook] list failed (continuing): {e}", flush=True)
+                    log.warning("[webhook] list failed (continuing): %s", e)
                 if existing:
                     webhook_id = existing.get("id")
                     try:
                         client.update_pr_webhook(owner, name, webhook_id, webhook_url, secret)
                     except Exception as e:  # noqa: BLE001
-                        print(f"[webhook] patch failed: {e}", flush=True)
+                        log.warning("[webhook] patch failed: %s", e)
                 else:
                     hook = client.register_pr_webhook(owner, name, webhook_url, secret)
                     webhook_id = hook.get("id")
@@ -238,7 +241,7 @@ def add_repo(pid: str, body: RepoIn, request: Request):
         except Exception as e:  # noqa: BLE001
             # Don't fail the whole connect; persist the repo without webhook so the
             # user can retry later from the UI.
-            print(f"[webhook] register failed: {e}", flush=True)
+            log.warning("[webhook] register failed: %s", e)
 
     rid = store.add_repo(pid, owner, name,
                          (body.url or f"https://{provider}.com/{full_name}"),
@@ -330,5 +333,5 @@ def delete_repo(rid: str):
                     github.GitHub(token, GITHUB_API).delete_webhook(
                         repo["owner"], repo["name"], repo["webhook_id"])
         except Exception as e:  # noqa: BLE001
-            print(f"[webhook] delete failed (continuing): {e}", flush=True)
+            log.warning("[webhook] delete failed (continuing): %s", e)
     return store.delete_repo(rid)
