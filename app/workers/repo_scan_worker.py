@@ -5,7 +5,7 @@ import time
 
 from core import state
 from core.config import (
-    GITHUB_API, IMPORT_SEMANTIC_MATCH, IMPORT_SEMANTIC_THRESHOLD, STEP_AUTO,
+    GITHUB_API, GITLAB_BASE_URL, IMPORT_SEMANTIC_MATCH, IMPORT_SEMANTIC_THRESHOLD, STEP_AUTO,
 )
 from core.deps import current_llm, project_github_token, project_gitlab_token
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
@@ -67,7 +67,8 @@ def _test_repo_scan_worker(jid, params):
             import httpx as _httpx
             import urllib.parse as _up
             store.update_job_progress(jid, "Downloading GitLab archive…", 18)
-            url = (f"https://gitlab.com/api/v4/projects/"
+            gitlab_api = f"{GITLAB_BASE_URL}/api/v4"
+            url = (f"{gitlab_api}/projects/"
                    f"{_up.quote(repo['full_name'], safe='')}"
                    f"/repository/archive.tar.gz")
             r = _httpx.get(url, headers={"PRIVATE-TOKEN": token},
@@ -77,7 +78,7 @@ def _test_repo_scan_worker(jid, params):
                 # Try the repo's default branch from /projects endpoint.
                 try:
                     proj = _httpx.get(
-                        f"https://gitlab.com/api/v4/projects/"
+                        f"{gitlab_api}/projects/"
                         f"{_up.quote(repo['full_name'], safe='')}",
                         headers={"PRIVATE-TOKEN": token}, timeout=30.0).json()
                     db = proj.get("default_branch") or "main"
@@ -93,7 +94,7 @@ def _test_repo_scan_worker(jid, params):
             # Capture HEAD SHA for the chosen branch so commit links work.
             try:
                 commits = _httpx.get(
-                    f"https://gitlab.com/api/v4/projects/"
+                    f"{gitlab_api}/projects/"
                     f"{_up.quote(repo['full_name'], safe='')}/repository/commits",
                     headers={"PRIVATE-TOKEN": token},
                     params={"ref_name": default_branch, "per_page": 1},
