@@ -10,8 +10,8 @@ export default function SyncSettingsCard() {
         <span className="cfg-badge glob">Global</span>
       </div>
       <div className="sub">
-        How often wardenIQ polls your watched GitHub repositories for new commits &amp; pull requests. GitLab is webhook-driven and unaffected. Applies on the next poll — no restart needed — and is also written to
-        <code>.env</code>
+        How often wardenIQ polls your watched GitHub repositories for new commits &amp; pull requests. GitLab is webhook-driven and unaffected. Applies on the next poll — no restart needed — and is also written to{" "}
+        <code>.env</code>{" "}
         (
         <code>POLL_INTERVAL_SECONDS</code>
         ) so the config file stays in sync.
