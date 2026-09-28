@@ -323,6 +323,13 @@ def ingest_pr(repo: dict, pr: dict, feature_id_override: str | None = None):
                                        tests_total=0, tests_covered=0,
                                        result={"unmatched": True,
                                                "mapping_score": score})
+    # Coverage trend history (issue #45): a completed PR ingestion ("code
+    # analysis") is one of the events worth a point-in-time snapshot.
+    try:
+        store.save_coverage_snapshot(repo["project_id"], "code_analysis",
+                                     commit_sha=head_sha or None)
+    except Exception as snap_e:  # noqa: BLE001
+        print(f"[coverage-snapshot] skipped: {snap_e}", flush=True)
     return pr_id
 
 
