@@ -1,0 +1,76 @@
+# wardenIQ — alternative datastore for validation: Percona Server for MongoDB +
+# Percona Search (mongot fork), technical preview. Added for issue #41.
+#
+# THIS IS NOT THE DEFAULT. The default bundled database remains MongoDB
+# Community + mongot (docker-compose.mongodb.yml, included by docker-compose.yml).
+# This file is never included automatically — you must opt in explicitly:
+#
+#   1. Generate a mongot password (same convention as the default stack):
+#        ( LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 ) > config/pwfile-percona
+#        chmod 400 config/pwfile-percona
+#   2. Bring up the app against THIS database instead of the default one:
+#        docker compose -f docker-compose.app.yml -f docker-compose.mongodb-percona.yml up -d
+#
+# Single-node replica set (the default stack runs a 3-node HA set — see
+# docker-compose.mongodb.yml) — this validates search behavior, not HA, and a
+# single node is all mongot's oplog-tailing requires. Runs on its own
+# `warden-net-percona` network so it can coexist alongside the default stack's
+# `warden-net` without a naming collision, per issue #41's "alongside the
+# existing one" scope.
+#
+# Real, verified image names (see docs/validation/percona-search-validation.md
+# for exactly how these were confirmed — Percona's own docs currently name a
+# `percona/percona-server-mongodb-mongot` image that has zero published tags;
+# the actually-published image is `percona/percona-search-mongodb`):
+#   mongod : percona/percona-server-mongodb
+#   mongot : percona/percona-search-mongodb
+services:
+  mongod-percona:
+    image: ${MONGO_IMAGE_PERCONA:-percona/percona-server-mongodb:8.3}
+    container_name: warden-mongod-percona
+    command: ["--config", "/etc/mongod.conf", "--replSet", "rs0"]
+    volumes:
+      - ./config/mongod-percona.conf:/etc/mongod.conf:ro
+      - mongod_percona_data:/data/db
+    networks:
+      warden-net-percona: { aliases: [mongod-percona.warden-net-percona] }
+    healthcheck:
+      test: mongosh --quiet --eval "db.adminCommand('ping')" || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+    restart: unless-stopped
+
+  mongod-percona-setup:
+    image: ${MONGO_IMAGE_PERCONA:-percona/percona-server-mongodb:8.3}
+    container_name: warden-percona-setup
+    depends_on:
+      mongod-percona: { condition: service_healthy }
+    command: bash /setup-replica-set-percona.sh
+    volumes:
+      - ./config/setup-replica-set-percona.sh:/setup-replica-set-percona.sh:ro
+      - ./config/pwfile-percona:/run/secrets/mongot-pw:ro
+    networks: [warden-net-percona]
+    restart: "no"
+
+  mongot-percona:
+    image: ${MONGOT_IMAGE_PERCONA:-percona/percona-search-mongodb:1.70.4}
+    container_name: warden-mongot-percona
+    depends_on:
+      mongod-percona-setup: { condition: service_completed_successfully }
+    volumes:
+      - mongot_percona_data:/var/lib/mongot
+      - ./config/mongot-percona.yml:/etc/mongot/mongot.yml:ro
+      - ./config/pwfile-percona:/etc/mongot/secrets/passwordFile:ro
+    networks:
+      warden-net-percona: { aliases: [mongot-percona.warden-net-percona] }
+    restart: unless-stopped
+
+volumes:
+  mongod_percona_data:
+  mongot_percona_data:
+
+networks:
+  warden-net-percona:
+    name: warden-net-percona
