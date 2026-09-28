@@ -120,6 +120,19 @@ Then open **http://localhost:8001**.
 > **First launch takes a few minutes** — it initializes the MongoDB replica set and
 > downloads the local models. Grab a coffee; it's a one-time cost.
 
+> **Docker Desktop on a Linux kernel ≥ 6.19?** The bundled MongoDB/mongot stack
+> cannot start — MongoDB's `tcmalloc` allocator has a known incompatibility with
+> kernel ≥ 6.19, and there is currently no bundled MongoDB/mongot version
+> combination that avoids it. This is an upstream limitation, not a wardenIQ bug
+> (tracked in [#27](https://github.com/adlerqa/wardeniq/issues/27)); `run.sh`
+> detects it and refuses to start with an explanation rather than failing silently.
+> Check your kernel with `docker info --format '{{.KernelVersion}}'`. If you're
+> affected, the supported path is an **external MongoDB** (Atlas M10+ or
+> self-managed with `mongot`) instead of the bundled stack — see
+> [Installation & deployment](docs/installation.md#cloud--lightweight-deployment-recommended-for-real-use).
+> See [Troubleshooting](docs/troubleshooting.md) if you're already running the
+> affected stack and need to recover admin access.
+
 ### Signing in the very first time
 
 wardenIQ always requires a login. When SMTP (email delivery) is not yet set up, there's
