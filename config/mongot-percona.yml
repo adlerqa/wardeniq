@@ -10,7 +10,7 @@
 # Community file.
 syncSource:
   replicaSet:
-    hostAndPort: "mongod-percona.warden-net-percona:27017"
+    hostAndPort: "mongod-percona:27017"
     scramAuth:
       username: mongotUser
       passwordFile: "/etc/mongot/secrets/passwordFile"
@@ -21,7 +21,7 @@ storage:
   dataPath: "/var/lib/mongot"
 server:
   grpc:
-    address: "mongot-percona.warden-net-percona:27028"
+    address: "mongot-percona:27028"
     tls:
       mode: "disabled"
 metrics:

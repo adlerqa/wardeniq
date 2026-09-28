@@ -13,10 +13,24 @@
 #
 # Single-node replica set (the default stack runs a 3-node HA set — see
 # docker-compose.mongodb.yml) — this validates search behavior, not HA, and a
-# single node is all mongot's oplog-tailing requires. Runs on its own
-# `warden-net-percona` network so it can coexist alongside the default stack's
-# `warden-net` without a naming collision, per issue #41's "alongside the
-# existing one" scope.
+# single node is all mongot's oplog-tailing requires. Also joins `warden-net` —
+# the network docker-compose.app.yml hardcodes for the `wardeniq` app service —
+# so the app can actually reach this stack when both are composed together (the
+# app has no per-deployment network override). Service names stay distinct from
+# the default stack's (mongod-percona vs mongod1/2/3, mongot-percona vs mongot),
+# so both can coexist on warden-net without a naming collision; warden-net-percona
+# remains too, for host-side debugging isolated from the default stack.
+#
+# mongod's replica-set member is identified by config/setup-replica-set-percona.sh's
+# SEED — a *bare* service name (mongod-percona), not a network-qualified alias.
+# Once a client discovers the replica-set topology it reconnects using that exact
+# member hostname (standard MongoDB driver behavior), so it must resolve from
+# wherever the app is running. A bare Compose service name resolves on every
+# network a container is attached to; a custom per-network alias
+# (mongod-percona.warden-net-percona) does not, which is what the app hit as a real
+# ServerSelectionTimeoutError the first time this was actually run end-to-end
+# (docker-compose.app.yml + this file together) rather than validated by connecting
+# straight to a published host port with directConnection=true.
 #
 # Real, verified image names (see docs/percona-search-validation.md
 # for exactly how these were confirmed — Percona's own docs currently name a
@@ -32,8 +46,7 @@ services:
     volumes:
       - ./config/mongod-percona.conf:/etc/mongod.conf:ro
       - mongod_percona_data:/data/db
-    networks:
-      warden-net-percona: { aliases: [mongod-percona.warden-net-percona] }
+    networks: [warden-net-percona, warden-net]
     healthcheck:
       test: mongosh --quiet --eval "db.adminCommand('ping')" || exit 1
       interval: 5s
@@ -63,8 +76,7 @@ services:
       - mongot_percona_data:/var/lib/mongot
       - ./config/mongot-percona.yml:/etc/mongot/mongot.yml:ro
       - ./config/pwfile-percona:/etc/mongot/secrets/passwordFile:ro
-    networks:
-      warden-net-percona: { aliases: [mongot-percona.warden-net-percona] }
+    networks: [warden-net-percona, warden-net]
     restart: unless-stopped
 
 volumes:
@@ -74,3 +86,5 @@ volumes:
 networks:
   warden-net-percona:
     name: warden-net-percona
+  warden-net:
+    name: warden-net

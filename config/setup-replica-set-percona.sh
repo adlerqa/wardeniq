@@ -4,7 +4,14 @@
 # Single-node mirrors config/setup-replica-set.sh's user-provisioning logic but
 # skips the 3-member wiring — this stack validates search behavior, not HA.
 set -e
-SEED="mongod-percona.warden-net-percona:27017"
+# Bare service name, not a network-qualified alias: MongoDB clients reconnect
+# using the exact hostname the replica set was initiated with once they've
+# discovered the topology, so it must resolve from every network a client might
+# connect from (the app connects over warden-net; this script and host-side
+# debugging connect over warden-net-percona). A bare Compose service name
+# resolves on every network its container is attached to; a per-network alias
+# does not.
+SEED="mongod-percona:27017"
 
 echo "[setup-percona] waiting for $SEED ..."
 until mongosh "mongodb://$SEED/" --quiet --eval "db.adminCommand('ping')" >/dev/null 2>&1; do

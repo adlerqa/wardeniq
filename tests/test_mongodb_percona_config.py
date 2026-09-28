@@ -12,24 +12,41 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_percona_compose_does_not_touch_the_default_stack():
-    """The Percona compose file must be additive-only: it must not redefine any
-    service/network name the default MongoDB Community stack
-    (docker-compose.mongodb.yml) uses, so the two can never collide if both are
-    referenced on the same `docker compose -f ... -f ...` command line."""
+def _services_block(compose_text: str) -> str:
+    """Slice out just the top-level `services:` section (up to the next top-level
+    `volumes:`/`networks:` key), so service-name collision checks don't get
+    confused by `networks:`/`volumes:` entries that legitimately share a name
+    (warden-net) across files."""
+    match = re.search(r"^services:\n(.*?)(?=^\S)", compose_text, re.MULTILINE | re.DOTALL)
+    assert match, "could not locate a top-level services: block"
+    return match.group(1)
+
+
+def test_percona_compose_does_not_touch_the_default_stacks_services():
+    """The Percona compose file must not redefine any *service* name the default
+    MongoDB Community stack (docker-compose.mongodb.yml) uses, so the two can
+    never collide if both are referenced on the same
+    `docker compose -f ... -f ...` command line. It DOES intentionally share the
+    `warden-net` *network* with the default stack (and with docker-compose.app.yml,
+    which hardcodes that network for the app service) — that's required for the
+    app to actually reach this stack; see the compose file's own comments for why
+    a plain "no shared names at all" rule doesn't apply to networks here."""
     default_compose = (ROOT / "docker-compose.mongodb.yml").read_text(encoding="utf-8")
     percona_compose = (ROOT / "docker-compose.mongodb-percona.yml").read_text(encoding="utf-8")
 
-    default_services = set(re.findall(r"^  ([\w-]+):\s*$", default_compose, re.MULTILINE))
-    percona_services = set(re.findall(r"^  ([\w-]+):\s*$", percona_compose, re.MULTILINE))
+    default_services = set(re.findall(r"^  ([\w-]+):\s*$", _services_block(default_compose), re.MULTILINE))
+    percona_services = set(re.findall(r"^  ([\w-]+):\s*$", _services_block(percona_compose), re.MULTILINE))
     assert default_services, "sanity check: should have found the default stack's services"
     assert percona_services, "sanity check: should have found the Percona stack's services"
     assert not (default_services & percona_services), (
         f"service name collision: {default_services & percona_services}"
     )
 
-    assert 'name: warden-net-percona' in percona_compose
-    assert 'name: warden-net-percona' not in default_compose
+    # The app (docker-compose.app.yml) only joins warden-net, so this file must
+    # share it for the app to reach Percona at all — confirmed by actually
+    # running the app against this stack (see docs/percona-search-validation.md).
+    assert "name: warden-net-percona" in percona_compose
+    assert "name: warden-net\n" in percona_compose
     assert "name: warden-net\n" in default_compose
 
     # The Percona file must not expose host ports by default (matches the default
@@ -78,6 +95,36 @@ def test_mongod_and_mongot_percona_agree_on_the_grpc_address():
         "mongod's mongotHost/searchIndexManagementHostAndPort must match mongot's own "
         "advertised gRPC address, or mongod can't reach it"
     )
+
+
+def test_replica_set_member_hostnames_are_bare_service_names():
+    """Regression guard for a real bug found by actually running the app against
+    this stack (docker-compose.app.yml + docker-compose.mongodb-percona.yml): the
+    replica-set member hostname (in setup-replica-set-percona.sh's SEED, and the
+    mongod<->mongot addresses) must be a BARE Compose service name, not a
+    network-qualified alias like `mongod-percona.warden-net-percona`. MongoDB
+    clients reconnect using the exact hostname the replica set was initiated
+    with once they've discovered the topology (standard driver behavior) — a
+    bare service name resolves on every network its container joins; a
+    per-network alias only resolves on that one network, which broke the app
+    (on warden-net) talking to a replica set initiated with a warden-net-percona
+    -only alias. See docs/percona-search-validation.md."""
+    setup_script = (ROOT / "config" / "setup-replica-set-percona.sh").read_text(encoding="utf-8")
+    mongod_config = (ROOT / "config" / "mongod-percona.conf").read_text(encoding="utf-8")
+    mongot_config = (ROOT / "config" / "mongot-percona.yml").read_text(encoding="utf-8")
+
+    for label, text in [
+        ("setup-replica-set-percona.sh", setup_script),
+        ("mongod-percona.conf", mongod_config),
+        ("mongot-percona.yml", mongot_config),
+    ]:
+        assert ".warden-net-percona" not in text, (
+            f"{label} references a network-qualified alias instead of a bare "
+            "service name — this is the exact bug that broke the app reaching "
+            "Percona over warden-net"
+        )
+
+    assert 'SEED="mongod-percona:27017"' in setup_script
 
 
 def test_percona_images_are_pinned_not_floating_latest():
