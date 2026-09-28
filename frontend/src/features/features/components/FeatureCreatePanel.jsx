@@ -97,6 +97,7 @@ https://www.figma.com/design/<key>/…`}></textarea>
             </span>
           </div>
         </div>
+        <div className="muted" id="f-cost-estimate" style={{ fontSize: "11px", marginTop: "10px" }}></div>
         <button className="go" id="f-go" style={{ marginTop: "12px" }}>Generate test cases</button>
         <div className="feature-create-live">
           <div className="muted" id="f-status"></div>

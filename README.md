@@ -49,7 +49,9 @@ is also available if you just want to try it out first — see
 
 - **Generate test cases from docs** — upload PRD/HLD/LLD files (PDF, DOCX, Markdown);
   get **Functional, E2E, API, and Non-functional** cases. A *depth* dial sets how
-  many; *focus sliders* set the mix.
+  many; *focus sliders* set the mix. Before you confirm, a rough **cost estimate**
+  (based on document size and case count) shows what a hosted model would charge —
+  local Ollama runs show no dollar figure since cost isn't meaningful there.
 - **Keep them clean & reusable** — cases are built from atomic **steps**; edit a step
   once and it updates everywhere. Duplicates are merged across features automatically.
 - **Version safely** — re-upload changed docs as a new **version**; still-valid cases
