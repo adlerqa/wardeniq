@@ -8,6 +8,8 @@ import time
 
 from bson import ObjectId
 
+from core.logging_setup import get_logger
+
 
 from typing import TYPE_CHECKING
 
@@ -21,6 +23,8 @@ if TYPE_CHECKING:
     from store.base import BaseStore as _Base
 else:
     _Base = object
+
+log = get_logger("store.test_cycles")
 
 
 class TestCyclesMixin(_Base):
@@ -235,7 +239,7 @@ class TestCyclesMixin(_Base):
             try:
                 self.save_coverage_snapshot(c.get("project_id"), "cycle_completion")
             except Exception as snap_e:  # noqa: BLE001
-                print(f"[coverage-snapshot] skipped: {snap_e}", flush=True)
+                log.warning("[coverage-snapshot] skipped: %s", snap_e)
         return target
 
     def batch_cycle_item_status(self, cycle_id, item_ids, status, executed_by=None):
