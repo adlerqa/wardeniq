@@ -40,7 +40,7 @@ from core.deps import (
     current_llm, current_ollama_url, current_poll_interval,
 )
 from core.logging_setup import get_logger
-from core.state import store
+from core.state import SYNC, store
 from workers.registry import launch_job
 
 log = get_logger("settings")
@@ -539,6 +539,10 @@ def set_db_config(body: DbConfigIn, request: Request):
 class DbMigrateIn(BaseModel):
     target_uri: str | None = None
     overwrite: bool | None = False
+    # #111: start anyway despite something else currently running (see the
+    # busy check below) — a separate override from `overwrite`, which answers
+    # a different question (is the TARGET's existing data ok to replace).
+    override_busy: bool | None = False
 
 
 @router.post("/api/db-migrate")
@@ -554,6 +558,20 @@ def db_migrate(body: DbMigrateIn, request: Request):
     if not _env_file_writable():
         raise HTTPException(500, f"Cannot write to the config file ({ENV_FILE_PATH}); the ./.env "
                                  "bind-mount in docker-compose.app.yml must be present and writable.")
+    # Idle/quiescence check (#111): migrate_to() streams the live source database
+    # with no isolation, so a concurrently-running job could see a partial capture.
+    # Refuse (unless explicitly overridden) rather than silently race with it.
+    if not body.override_busy:
+        if SYNC.get("running"):
+            raise HTTPException(409, "A GitHub/GitLab sync is currently running. Wait for it to "
+                                     "finish, or re-run with 'override_busy' to start anyway "
+                                     "(best-effort snapshot, not guaranteed-consistent).")
+        busy = store.has_running_job()
+        if busy:
+            what = busy.get("label") or busy.get("type") or "a job"
+            raise HTTPException(409, f"wardenIQ is currently busy ({what}). Wait for it to finish, "
+                                     "or re-run with 'override_busy' to start anyway (best-effort "
+                                     "snapshot, not guaranteed-consistent).")
     # The target must be reachable AND search-capable — otherwise the copy would land
     # in a database the app can't actually run on.
     reachable, search_ok, detail = _probe_mongo(uri)

@@ -150,19 +150,50 @@ JOB_WORKERS["reembed"] = _reembed_worker
 def _migrate_worker(jid, params):
     """Copy the whole database to a target MongoDB, then point MONGO_URI at it (.env).
     The app keeps running on the CURRENT database until the user restarts, so a failed
-    or partial copy never strands them — the source stays authoritative."""
+    or partial copy never strands them — the source stays authoritative.
+
+    KNOWN GAP (#111, documented rather than fixed here — sizing it as its own
+    follow-up rather than folding it silently into this pass): progress
+    (update_job_progress, above) is written only to the SOURCE database's `jobs`
+    collection. If the app process restarts mid-migration, that progress record
+    is not visible on the target and is not resumable from there. The idle check
+    in api/routes/settings.py's db_migrate() makes this rare in practice (nothing
+    else should be running while a migration is in flight), but it is not
+    impossible — an operator-initiated restart mid-copy would still hit this.
+    """
     target = params["target_uri"]
     overwrite = bool(params.get("overwrite"))
     store.update_job_progress(jid, "Starting migration", 2)
     counts = store.migrate_to(
         target, overwrite=overwrite,
         progress=lambda s, p: store.update_job_progress(jid, s, p))
+    # Post-migration verification (#111): don't just trust migrate_to()'s own
+    # count bookkeeping — re-check the target for real. A mismatch doesn't fail
+    # the job (the copy already happened; failing now wouldn't undo it) but is
+    # surfaced loudly so the user knows before they restart onto the target.
+    store.update_job_progress(jid, "Verifying copied data", 95)
+    verification = store.verify_migration(target, counts)
+    if not verification["ok"]:
+        mismatched = [nm for nm, r in verification["collections"].items() if not r["match"]]
+        log.warning("[migrate] job=%s post-copy count mismatch in %s: %s",
+                   jid, mismatched, verification["collections"])
+        store.update_job_progress(
+            jid, f"Warning: count mismatch after copy in {', '.join(mismatched)} — "
+                f"review before restarting", 96)
     store.update_job_progress(jid, "Pointing wardenIQ at the new database (.env)", 97)
     ok, err = _write_env_var(ENV_FILE_PATH, "MONGO_URI", target)
     if not ok:
         raise RuntimeError(f"data was copied, but writing the config file failed: {err}")
-    store.merge_job_result(jid, copied=counts, total_docs=sum(counts.values()),
-                           restart_required=True, apply_cmd="docker compose up -d")
+    store.merge_job_result(
+        jid, copied=counts, total_docs=sum(counts.values()),
+        restart_required=True, apply_cmd="docker compose up -d",
+        verification=verification,
+        # Index rebuilding on the target happens for free via ensure_indexes() on
+        # the next boot (no separate migration logic needed for it) — but that
+        # only actually happens once the user restarts. This is the documented,
+        # not-yet-automated way to confirm it actually succeeded (#111):
+        post_restart_check="After restarting, check /api/db-status — all 6 search "
+                          "indexes should report queryable: true.")
     store.update_job_progress(jid, "done", 100)
 
 
