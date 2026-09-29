@@ -848,6 +848,24 @@
   color: var(--muted);
   margin-top: 6px;
 }
+.f-file-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  padding: 2px 0;
+}
+.f-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.f-file-row .iconbtn {
+  flex: none;
+  font-size: 14px;
+  line-height: 1;
+}
 .feature-create-live {
   margin-top: 16px;
   padding-top: 12px;

@@ -61,11 +61,39 @@ if ($("#feature-new-btn"))
   $("#feature-new-btn").onclick = () => showFeatureCreate();
 if ($("#feature-create-back"))
   $("#feature-create-back").onclick = showFeatureList;
-$("#f-file").onchange = (e) => {
-  const fs = [...e.target.files].map((f) => f.name);
-  $("#f-filelist").textContent = fs.length
-    ? `${fs.length} file(s): ${fs.join(", ")}`
+$("#f-file").onchange = () => {
+  renderFeatureFileList();
+  scheduleCostEstimate();
+};
+// Renders the selected files as individually removable rows (issue #108: there was
+// previously no way to drop one unwanted file short of reselecting all of them).
+// A native <input type="file"> FileList is read-only, so removal works by rebuilding
+// it via DataTransfer and reassigning input.files -- the existing upload path (further
+// below, `for (const f of $("#f-file").files) ...`) already reads from that same
+// input element, so it picks up the change with no other code path touched.
+function renderFeatureFileList() {
+  const files = [...$("#f-file").files];
+  $("#f-filelist").innerHTML = files.length
+    ? `<div>${files.length} file(s):</div>` +
+      files
+        .map(
+          (f, i) => `
+      <div class="f-file-row">
+        <span class="f-file-name">${esc(f.name)}</span>
+        <button class="iconbtn" type="button" title="Remove ${esc(f.name)}" aria-label="Remove ${esc(f.name)}" onclick="rmUploadFile(${i})">×</button>
+      </div>`,
+        )
+        .join("")
     : "";
+}
+window.rmUploadFile = (i) => {
+  const input = $("#f-file");
+  const dt = new DataTransfer();
+  [...input.files].forEach((f, idx) => {
+    if (idx !== i) dt.items.add(f);
+  });
+  input.files = dt.files;
+  renderFeatureFileList();
   scheduleCostEstimate();
 };
 if ($("#f-text")) $("#f-text").addEventListener("input", scheduleCostEstimate);
