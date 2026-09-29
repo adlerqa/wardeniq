@@ -4,14 +4,20 @@ The two offline sections (adversarial grounding probes, dedup pairs) run in CI w
 model and no database. They are expected to score 1.0 — they measure deterministic logic,
 so any drop is a real regression rather than model noise.
 """
+import argparse
+import json
+
 from testgen.lineage import lineage_token_set, token_set_similarity
 
-from tests.eval import dataset
+from tests.eval import dataset, run_eval
 from tests.eval.run_eval import (
     _confusion,
+    _dataset_fingerprint,
     _overclaim_rate,
     _reuse_same,
+    _run_metadata,
     main,
+    run_coverage,
     run_dedup,
     run_probes,
 )
@@ -146,3 +152,131 @@ class TestDatasetIntegrity:
             assert ex.get("note"), f"{ex['id']} has no rationale for its labels"
         for p in dataset.HALLUCINATION_PROBES:
             assert p.get("note"), f"{p['id']} has no rationale"
+
+
+class TestRunMetadata:
+    """Reproducibility metadata (#43 needs to be able to compare runs across models
+    later, which requires knowing exactly what corpus and when a run scored)."""
+
+    def test_fingerprint_is_stable_across_calls(self):
+        assert _dataset_fingerprint() == _dataset_fingerprint()
+
+    def test_fingerprint_changes_if_the_scored_content_changes(self, monkeypatch):
+        before = _dataset_fingerprint()
+        patched = list(dataset.HALLUCINATION_PROBES)
+        patched[0] = dict(patched[0], expected_status="uncovered")
+        monkeypatch.setattr(dataset, "HALLUCINATION_PROBES", patched)
+        assert _dataset_fingerprint() != before
+
+    def test_fingerprint_ignores_note_text_only_changes(self, monkeypatch):
+        # A wording fix to the audit-trail note must not look like a corpus change.
+        before = _dataset_fingerprint()
+        patched = list(dataset.HALLUCINATION_PROBES)
+        patched[0] = dict(patched[0], note="reworded, same claim/expectation")
+        monkeypatch.setattr(dataset, "HALLUCINATION_PROBES", patched)
+        assert _dataset_fingerprint() == before
+
+    def test_metadata_never_labels_offline_sections_with_a_model(self):
+        args = argparse.Namespace(coverage=False, provider="ollama", model="qwen2.5:7b")
+        meta = _run_metadata(args, [run_probes()])
+        assert meta["provider"] is None
+        assert meta["model"] is None
+        assert meta["sections_run"] == ["hallucination_probes"]
+
+    def test_metadata_labels_the_model_only_when_coverage_ran(self):
+        args = argparse.Namespace(coverage=True, provider="openai", model="gpt-4o-mini")
+        meta = _run_metadata(args, [])
+        assert meta["provider"] == "openai"
+        assert meta["model"] == "gpt-4o-mini"
+
+    def test_metadata_has_no_api_key_or_ollama_url_field(self):
+        # Locks in the "never include secrets" requirement structurally, not just by
+        # inspection -- these two fields must never exist on the metadata dict at all.
+        args = argparse.Namespace(coverage=True, provider="openai", model="gpt-4o-mini",
+                                  api_key="sk-should-never-appear", ollama_url="http://x")
+        meta = _run_metadata(args, [])
+        assert "api_key" not in meta
+        assert "ollama_url" not in meta
+        assert "sk-should-never-appear" not in json.dumps(meta)
+
+
+class TestJsonPayloadIncludesMetadata:
+    def test_json_payload_has_a_meta_block(self, capsys):
+        assert main(["--probes", "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["meta"]["dataset_fingerprint"]
+        assert payload["meta"]["timestamp"]
+        # Existing shape (already relied on elsewhere) must still be present.
+        assert payload["failures"] == []
+        assert payload["reports"][0]["section"] == "hallucination_probes"
+
+    def test_no_secret_ever_appears_in_json_output_even_with_an_api_key_passed(self, capsys):
+        assert main(["--probes", "--json", "--api-key", "sk-super-secret-value"]) == 0
+        out = capsys.readouterr().out
+        assert "sk-super-secret-value" not in out
+
+
+class TestOutFile:
+    def test_out_writes_the_same_payload_json_can_parse(self, tmp_path, capsys):
+        out_path = tmp_path / "result.json"
+        assert main(["--probes", "--out", str(out_path)]) == 0
+        capsys.readouterr()  # human-readable output on stdout, not under test here
+        payload = json.loads(out_path.read_text())
+        assert payload["meta"]["dataset_fingerprint"]
+        assert payload["reports"][0]["section"] == "hallucination_probes"
+
+    def test_out_is_written_even_without_the_json_flag(self, tmp_path):
+        out_path = tmp_path / "result.json"
+        assert main(["--probes", "--out", str(out_path)]) == 0
+        assert out_path.exists()
+
+    def test_out_never_contains_a_passed_api_key(self, tmp_path):
+        out_path = tmp_path / "result.json"
+        main(["--probes", "--out", str(out_path), "--api-key", "sk-super-secret-value"])
+        assert "sk-super-secret-value" not in out_path.read_text()
+
+
+class TestCoverageWiring:
+    """run_coverage()'s own wiring (pairs/rows construction, confusion matrix,
+    overclaim rate) has no test today unless a real LLM is reachable -- this covers
+    it with a mocked review_code_coverage() call instead, per the ground rule that
+    eval-infra tests must not require real paid API credentials."""
+
+    def test_perfect_verdicts_score_1_0_with_no_overclaim(self, monkeypatch):
+        def fake_review(llm, feature_name, requirement, cases, code_excerpts,
+                        samples=1, progress=None, contract_findings=None):
+            ex = next(e for e in dataset.COVERAGE_EXAMPLES if e["cases"] == cases)
+            return {"cases": [{"test_case_id": cid, "status": status, "confidence": 0.9,
+                              "needs_review": False, "files_rejected": []}
+                             for cid, status in ex["expected"].items()]}
+
+        monkeypatch.setattr(run_eval.cov, "review_code_coverage", fake_review)
+        r = run_coverage(llm=object())
+        assert r["section"] == "coverage"
+        assert r["score"] == 1.0
+        assert r["overclaim_rate"] == 0.0
+
+    def test_overclaiming_verdicts_are_detected(self, monkeypatch):
+        def fake_review_overclaims(llm, feature_name, requirement, cases, code_excerpts,
+                                   samples=1, progress=None, contract_findings=None):
+            ex = next(e for e in dataset.COVERAGE_EXAMPLES if e["cases"] == cases)
+            # Claim everything is "covered" regardless of ground truth -- the
+            # dangerous direction (see run_eval._overclaim_rate's own docstring).
+            return {"cases": [{"test_case_id": cid, "status": "covered", "confidence": 0.9,
+                              "needs_review": False, "files_rejected": []}
+                             for cid in ex["expected"]]}
+
+        monkeypatch.setattr(run_eval.cov, "review_code_coverage", fake_review_overclaims)
+        r = run_coverage(llm=object())
+        assert r["overclaim_rate"] > 0
+        assert r["score"] < 1.0
+
+    def test_missing_case_id_in_the_response_counts_as_uncovered_not_a_crash(self, monkeypatch):
+        def fake_review_empty(llm, feature_name, requirement, cases, code_excerpts,
+                              samples=1, progress=None, contract_findings=None):
+            return {"cases": []}   # model returned nothing for this batch
+
+        monkeypatch.setattr(run_eval.cov, "review_code_coverage", fake_review_empty)
+        r = run_coverage(llm=object())
+        assert r["section"] == "coverage"
+        assert all(row["actual"] == "uncovered" for row in r["rows"])

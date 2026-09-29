@@ -42,6 +42,18 @@ jobs:
       - name: Run unit + API + RBAC tests
         run: pytest -m "not dbintegration"
 
+      - name: Evaluation harness gate (deterministic, no model/database needed)
+        # tests/test_eval_harness.py (part of the pytest run above) already exercises
+        # this same logic; this step additionally proves the documented CLI entry
+        # point itself (see docs/architecture.md) works end-to-end and is a real merge
+        # gate — issue #42's original "wire the leakage and groundedness checks into
+        # CI as regression gates". Only the offline sections (adversarial grounding
+        # probes + dedup pairs) run here: no LLM call, no database, expected to score
+        # 1.0. --coverage (needs a real, reachable LLM) is deliberately NOT run in CI —
+        # see docs/architecture.md's "Measuring accuracy" section — and stays a manual/
+        # on-demand benchmark, not a merge gate.
+        run: python -m tests.eval.run_eval --probes --dedup
+
   # Same store.py surface, but against a real MongoDB — catches things the
   # mocked unit tests structurally can't (real unique-index violations, actual
   # query/update behavior, ObjectId edge cases, encrypted-settings round trip).

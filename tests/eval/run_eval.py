@@ -13,9 +13,11 @@ Exit code is non-zero when a scored section falls below its threshold, so this c
 a prompt or model change in CI rather than being a thing someone remembers to run.
 """
 import argparse
+import hashlib
 import json
 import os
 import sys
+from datetime import datetime, timezone
 
 # Allow `python -m tests.eval.run_eval` from the repo root with app/ on the path.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "app"))
@@ -185,6 +187,44 @@ def run_coverage(llm, samples=1) -> dict:
             "samples": samples}
 
 
+# --------------------------------------------------------------------------- run metadata
+def _dataset_fingerprint() -> str:
+    """A short, reproducible identifier for the exact corpus a run was scored against.
+
+    Computed (not hand-maintained) so it can never go stale the way a manually-bumped
+    version constant would: it changes if and only if the actual dataset content
+    changes, which is exactly what "reproduce/interpret a run later" needs. Only the
+    fields that affect scoring go in (ids + the ground truth), not free-text notes —
+    a wording fix to a `note` explaining a label shouldn't look like a corpus change.
+    """
+    material = repr((
+        [(p["id"], p["expected_status"]) for p in dataset.HALLUCINATION_PROBES],
+        [(p["id"], p["expected_same"]) for p in dataset.DEDUP_PAIRS],
+        [(p["id"], p["expected_same"]) for p in dataset.KNOWN_LIMITATION_PAIRS],
+        [(e["id"], tuple(sorted(e["expected"].items()))) for e in dataset.COVERAGE_EXAMPLES],
+    )).encode()
+    return hashlib.sha256(material).hexdigest()[:12]
+
+
+def _run_metadata(args, reports) -> dict:
+    """Safe-to-publish metadata for reproducing/interpreting a run later (#43's own
+    benchmark needs this to compare runs across models). Deliberately excludes
+    anything that isn't already a public identifier: no API key, no URL that might
+    embed credentials (ollama_url is local-network-only by convention, but is still
+    left out here since it's never needed to interpret a result)."""
+    return {
+        "tool": "tests.eval.run_eval",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "dataset_fingerprint": _dataset_fingerprint(),
+        "sections_run": [r["section"] for r in reports],
+        # Only meaningful (and only ever populated) when --coverage actually ran --
+        # the offline sections don't call a model at all, so labelling them with
+        # whatever --provider/--model happened to be passed would be misleading.
+        "provider": args.provider if getattr(args, "coverage", False) else None,
+        "model": args.model if getattr(args, "coverage", False) else None,
+    }
+
+
 # --------------------------------------------------------------------------- reporting
 def _print(report: dict):
     print(f"\n=== {report['section']} ===")
@@ -240,6 +280,10 @@ def main(argv=None):
     ap.add_argument("--min-coverage", type=float, default=0.0,
                     help="set a floor once you have a baseline from your own data")
     ap.add_argument("--json", action="store_true", help="emit machine-readable output")
+    ap.add_argument("--out", default="", help="also write the full JSON result "
+                    "(same payload as --json) to this file path, regardless of "
+                    "--json — so a normal human-readable run can still archive a "
+                    "machine-readable record")
     args = ap.parse_args(argv)
 
     if not (args.probes or args.dedup or args.coverage):
@@ -265,9 +309,13 @@ def main(argv=None):
         if r["score"] is not None and r["score"] < args.min_coverage:
             failures.append(f"coverage {r['score']} < {args.min_coverage}")
 
+    meta = _run_metadata(args, reports)
+    payload = {"meta": meta, "reports": reports, "failures": failures}
+
     if args.json:
-        print(json.dumps({"reports": reports, "failures": failures}, indent=2))
+        print(json.dumps(payload, indent=2))
     else:
+        print(f"dataset fingerprint: {meta['dataset_fingerprint']}  |  {meta['timestamp']}")
         for r in reports:
             _print(r)
         if failures:
@@ -276,6 +324,12 @@ def main(argv=None):
                 print(f"  - {f}")
         else:
             print("\nall scored sections met their thresholds")
+
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        print(f"\nresults written to {args.out}")
+
     return 1 if failures else 0
 
 
