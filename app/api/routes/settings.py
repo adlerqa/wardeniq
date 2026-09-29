@@ -17,6 +17,8 @@ exactly one router would force those other routes to import from this router, wh
 the plan explicitly forbids).
 """
 import os
+import secrets
+import time
 
 import crypto
 import email_send
@@ -25,11 +27,14 @@ import usage
 from fastapi import APIRouter, HTTPException, Request
 from llm import LLM
 from pydantic import BaseModel
+from pymongo import MongoClient
+from pymongo.errors import OperationFailure
+from pymongo.operations import SearchIndexModel
 
 import auth
 from api.schemas import OtpRequestIn
 from core.audit import _audit
-from core.bootstrap import BOOT, _search_unsupported
+from core.bootstrap import BOOT, _SEARCH_REQUIRED_MSG, _search_unsupported
 from core.config import (
     DB_NAME, EMBED_DIM, EMBED_MODEL, ENV_FILE_PATH,
     GEN_MODEL, MIN_POLL_INTERVAL, PROVIDER_LOCK,
@@ -41,6 +46,7 @@ from core.deps import (
 )
 from core.logging_setup import get_logger
 from core.state import store
+from store.base import TEXT_INDEX, VECTOR_INDEX
 from workers.registry import launch_job
 
 log = get_logger("settings")
@@ -478,26 +484,188 @@ def _env_file_writable() -> bool:
         return False
 
 
-def _probe_mongo(uri: str):
-    """Best-effort connectivity + Vector Search check for a candidate URI, so we never
-    persist a connection string that would brick startup. Returns (reachable, search_ok, detail)."""
+# Absolute floor for the $vectorSearch aggregation stage across EITHER deployment
+# shape: MongoDB Atlas supports it from 6.0.11+; self-managed (Community/Enterprise
+# + mongot) needs a newer server still (8.2+ per MongoDB's own compatibility docs).
+# We can't reliably tell "Atlas" from "self-managed" from server_version alone, so
+# we only hard-fail below the LOWER of the two floors here — anything above it but
+# still too old for a self-managed mongot is instead caught by the real
+# index-creation probe below (via _search_unsupported), which is authoritative.
+MIN_MONGO_VERSION = (6, 0, 11)
+
+
+def _version_below(version: str, floor: tuple) -> bool:
+    """True if `version` ("8.3.1") is below `floor`. Fails OPEN (False, i.e. "not too
+    old") on anything unparseable — this is a fast pre-check, not the real gate; the
+    capability probe that follows is what actually proves search works or doesn't."""
     try:
-        from pymongo import MongoClient
-        c = MongoClient(uri, serverSelectionTimeoutMS=3500)
+        parts = tuple(int(p) for p in version.split(".")[:len(floor)])
+        parts = parts + (0,) * (len(floor) - len(parts))
+        return parts < floor
+    except (ValueError, AttributeError):
+        return False
+
+
+def _probe_mongo(uri: str, dim: int | None = None) -> dict:
+    """Real capability validation for a candidate MONGO_URI (issue #110) — connect,
+    confirm replica-set topology, sanity-check the server version, then actually
+    CREATE a vectorSearch + search index on a disposable scratch collection, wait for
+    them to go queryable, and run one real $vectorSearch/$search query against them —
+    rather than just pinging or listing indexes on the real `test_cases` collection.
+    Always cleans up the scratch collection/indexes, even on failure.
+
+    Returns a dict: reachable, replica_set, server_version, search_ok, status (one of
+    "unreachable" | "no_replica_set" | "version_too_old" | "insufficient_privileges" |
+    "no_search" | "ok"), detail (safe, actionable, never the raw URI/credentials).
+    """
+    result = {"reachable": False, "replica_set": False, "server_version": None,
+              "search_ok": False, "status": "unreachable", "detail": ""}
+    try:
+        c: MongoClient = MongoClient(uri, serverSelectionTimeoutMS=3500)
+    except Exception as e:  # noqa: BLE001
+        result["detail"] = str(e)[:200]
+        return result
+    try:
         try:
             c.admin.command("ping")
-            search_ok = True
+        except Exception as e:  # noqa: BLE001
+            result["detail"] = str(e)[:200]
+            return result
+        result["reachable"] = True
+
+        # Fetched unconditionally (before any gate that might return early) so a
+        # caller always learns the server version alongside whatever else failed —
+        # e.g. "reachable, MongoDB 7.0.2, but not a replica set" in one round trip.
+        try:
+            result["server_version"] = c.server_info().get("version")
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Topology: wardenIQ's own bundled stacks (Community + Percona) are always
+        # replica sets — mongot's oplog tailing requires one; a standalone mongod
+        # can't run Search at all. (A mongos router also has no setName; sharded
+        # clusters aren't a deployment shape wardenIQ supports today, so they're
+        # treated the same as "no replica set" here rather than specially handled.)
+        try:
+            hello = c.admin.command("hello")
+        except Exception:  # noqa: BLE001
             try:
-                list(c[DB_NAME]["test_cases"].list_search_indexes())
+                hello = c.admin.command("ismaster")
             except Exception as e:  # noqa: BLE001
-                # A search-less server rejects the command outright; a missing namespace
-                # (fresh DB) does NOT mean search is unsupported.
-                search_ok = not _search_unsupported(e)
-            return True, search_ok, "ok"
+                result["status"] = "no_replica_set"
+                result["detail"] = f"could not confirm replica-set membership: {str(e)[:150]}"
+                return result
+        if not hello.get("setName"):
+            result["status"] = "no_replica_set"
+            result["detail"] = ("this database is not a replica set. wardenIQ requires a "
+                                 "MongoDB replica set (Atlas, or self-managed with mongot) — "
+                                 "a standalone mongod can't run Search.")
+            return result
+        result["replica_set"] = True
+
+        server_version = result["server_version"]
+        if isinstance(server_version, str) and _version_below(server_version, MIN_MONGO_VERSION):
+            floor_str = ".".join(str(p) for p in MIN_MONGO_VERSION)
+            result["status"] = "version_too_old"
+            result["detail"] = (f"MongoDB {result['server_version']} is too old — wardenIQ's Vector "
+                                 f"Search needs at least MongoDB {floor_str}. Upgrade the database "
+                                 "or point at a newer one.")
+            return result
+
+        # Non-destructive capability probe: create, verify, then drop — on a
+        # disposable, unpredictably-named scratch collection. Never touches a real
+        # application collection (projects/features/test_cases/...).
+        db = c[DB_NAME]
+        probe_dim = int(dim) if dim else EMBED_DIM
+        name = None
+        existing = set(db.list_collection_names())
+        for _ in range(5):
+            candidate = f"wardeniq_probe_{secrets.token_hex(8)}"
+            if candidate not in existing:
+                name = candidate
+                break
+        if name is None:
+            result["status"] = "no_search"
+            result["detail"] = "could not allocate a unique scratch collection name for validation"
+            return result
+        coll = db[name]
+        try:
+            try:
+                coll.insert_one({"title": "wardenIQ capability probe",
+                                 "embedding": [0.0] * probe_dim})
+                coll.create_search_index(SearchIndexModel(
+                    definition={"fields": [{"type": "vector", "path": "embedding",
+                                            "numDimensions": probe_dim, "similarity": "cosine"}]},
+                    name=VECTOR_INDEX, type="vectorSearch"))
+                coll.create_search_index(SearchIndexModel(
+                    definition={"mappings": {"dynamic": False,
+                                             "fields": {"title": {"type": "string"}}}},
+                    name=TEXT_INDEX, type="search"))
+            except OperationFailure as e:
+                if e.code == 13 or "not authorized" in str(e).lower():
+                    result["status"] = "insufficient_privileges"
+                    result["detail"] = ("connected, but this user isn't authorized to create search "
+                                        "indexes — wardenIQ needs index-management privileges on "
+                                        "this database.")
+                elif _search_unsupported(e):
+                    result["status"] = "no_search"
+                    result["detail"] = _SEARCH_REQUIRED_MSG
+                else:
+                    result["status"] = "no_search"
+                    result["detail"] = f"could not create a search index: {str(e)[:150]}"
+                return result
+
+            deadline = time.time() + 15
+            vector_ready = text_ready = False
+            while time.time() < deadline and not (vector_ready and text_ready):
+                try:
+                    idx = {i.get("name"): i.get("queryable", False) for i in coll.list_search_indexes()}
+                except Exception:  # noqa: BLE001
+                    idx = {}
+                vector_ready = idx.get(VECTOR_INDEX, False)
+                text_ready = idx.get(TEXT_INDEX, False)
+                if not (vector_ready and text_ready):
+                    time.sleep(1)
+            if not (vector_ready and text_ready):
+                result["status"] = "no_search"
+                result["detail"] = ("search indexes were created but didn't become queryable in "
+                                    "time — mongot may still be syncing, or Search isn't actually "
+                                    "available on this deployment.")
+                return result
+
+            try:
+                list(coll.aggregate([{"$vectorSearch": {
+                    "index": VECTOR_INDEX, "path": "embedding", "queryVector": [0.0] * probe_dim,
+                    "numCandidates": 10, "limit": 1}}]))
+                list(coll.aggregate([{"$search": {
+                    "index": TEXT_INDEX, "text": {"query": "wardenIQ", "path": "title"}}}]))
+            except Exception as e:  # noqa: BLE001
+                result["status"] = "no_search"
+                result["detail"] = f"search indexes exist but a query failed: {str(e)[:150]}"
+                return result
+
+            result["search_ok"] = True
+            result["status"] = "ok"
+            result["detail"] = "ok"
+            return result
         finally:
-            c.close()
-    except Exception as e:  # noqa: BLE001
-        return False, False, str(e)[:200]
+            # Always clean up, on every path above — success, failure, or timeout.
+            try:
+                have = {i.get("name") for i in coll.list_search_indexes()}
+            except Exception:  # noqa: BLE001
+                have = set()
+            for idx_name in (VECTOR_INDEX, TEXT_INDEX):
+                if idx_name in have:
+                    try:
+                        coll.drop_search_index(idx_name)
+                    except Exception:  # noqa: BLE001
+                        pass
+            try:
+                db.drop_collection(name)
+            except Exception:  # noqa: BLE001
+                pass
+    finally:
+        c.close()
 
 
 class DbConfigIn(BaseModel):
@@ -520,20 +688,20 @@ def set_db_config(body: DbConfigIn, request: Request):
         raise HTTPException(500, f"Cannot write to the config file ({ENV_FILE_PATH}). In Docker, "
                                  "the ./.env bind-mount in docker-compose.app.yml must be present "
                                  "and writable.")
-    reachable, search_ok, detail = _probe_mongo(uri)
-    if not reachable and not body.force:
-        raise HTTPException(400, f"Could not connect to that database: {detail}. Nothing was saved. "
-                                 "Re-submit with 'save anyway' to store it regardless.")
-    if reachable and not search_ok and not body.force:
-        raise HTTPException(400, "That database connected but has no Vector Search (not Atlas and no "
-                                 "mongot). wardenIQ requires search. Nothing was saved. Use 'save "
-                                 "anyway' only if search will be enabled before restart.")
+    probe = _probe_mongo(uri, dim=store.dim)
+    if not probe["reachable"] and not body.force:
+        raise HTTPException(400, f"Could not connect to that database: {probe['detail']}. Nothing "
+                                 "was saved. Re-submit with 'save anyway' to store it regardless.")
+    if probe["reachable"] and not probe["search_ok"] and not body.force:
+        raise HTTPException(400, f"{probe['detail']} Nothing was saved. Use 'save anyway' only if "
+                                 "this will be fixed before restart.")
     ok, err = _write_env_var(ENV_FILE_PATH, "MONGO_URI", uri)
     if not ok:
         raise HTTPException(500, f"Failed to write the config file: {err}")
     _audit(request, "db.config.updated", detail="MONGO_URI changed via UI")
-    return {"ok": True, "restart_required": True, "reachable": reachable,
-            "search_available": search_ok, "apply_cmd": "docker compose up -d"}
+    return {"ok": True, "restart_required": True, "reachable": probe["reachable"],
+            "search_available": probe["search_ok"], "replica_set": probe["replica_set"],
+            "server_version": probe["server_version"], "apply_cmd": "docker compose up -d"}
 
 
 class DbMigrateIn(BaseModel):
@@ -556,12 +724,12 @@ def db_migrate(body: DbMigrateIn, request: Request):
                                  "bind-mount in docker-compose.app.yml must be present and writable.")
     # The target must be reachable AND search-capable — otherwise the copy would land
     # in a database the app can't actually run on.
-    reachable, search_ok, detail = _probe_mongo(uri)
-    if not reachable:
-        raise HTTPException(400, f"Couldn't connect to the target database: {detail}. Nothing copied.")
-    if not search_ok:
-        raise HTTPException(400, "The target has no Vector Search (not Atlas, and no mongot), so "
-                                 "wardenIQ couldn't run on it. Migration cancelled — nothing copied.")
+    probe = _probe_mongo(uri, dim=store.dim)
+    if not probe["reachable"]:
+        raise HTTPException(400, f"Couldn't connect to the target database: {probe['detail']}. "
+                                 "Nothing copied.")
+    if not probe["search_ok"]:
+        raise HTTPException(400, f"{probe['detail']} Migration cancelled — nothing copied.")
     # Guard against clobbering a target that already has data (unless the caller insists).
     try:
         if not body.overwrite and store.target_has_data(uri):
