@@ -271,6 +271,35 @@ function renderMindmapDiag(perRepo) {
       .join("") +
     `</details></div>`;
 }
+// #21: explain an empty/never-succeeded Mind Map result instead of just showing
+// "not analyzed" — which branch was read, how many files survived test/spec
+// exclusion per repo, and why (from the job's own diagnostics, which otherwise
+// only existed for as long as the live watchJob() poll that started it was open).
+function analysisEmptyReasonHtml(lastAnalysis) {
+  if (!lastAnalysis) return "";
+  const repoLines = (lastAnalysis.per_repo || [])
+    .map((r) => {
+      const branch = esc(r.branch || "default");
+      if (r.error)
+        return `<code>${esc(r.repo)}</code> (branch ${branch}) — fetch error: ${esc(r.error)}`;
+      if (r.reused)
+        return `<code>${esc(r.repo)}</code> (branch ${branch}): ${r.impl_files || 0} implementation file(s) indexed (reused, unchanged since last run)`;
+      const total = r.files_in_repo ?? 0;
+      const impl = r.impl_files ?? 0;
+      return `<code>${esc(r.repo)}</code> (branch ${branch}): ${total} file(s) total, ${impl} remaining after excluding ${r.test_files || 0} test file(s) and ${r.non_impl_files || 0} non-implementation file(s)`;
+    })
+    .join("<br>");
+  if (!lastAnalysis.note && !repoLines && !(lastAnalysis.errors || []).length) return "";
+  const when = lastAnalysis.at
+    ? new Date(lastAnalysis.at * 1000).toLocaleString()
+    : "";
+  return `<div class="card mindmap-empty-reason" style="margin-top:8px">
+    <div class="sub">Last analysis${when ? ` (${esc(when)})` : ""} mapped ${lastAnalysis.features_mapped || 0} feature${(lastAnalysis.features_mapped || 0) === 1 ? "" : "s"}.</div>
+    ${lastAnalysis.note ? `<div class="warn" style="margin-top:4px">${esc(lastAnalysis.note)}</div>` : ""}
+    ${repoLines ? `<div class="muted" style="margin-top:6px;font-size:11.5px">${repoLines}</div>` : ""}
+    ${(lastAnalysis.errors || []).length ? `<div class="err" style="margin-top:4px">${lastAnalysis.errors.map((e) => esc(e)).join("<br>")}</div>` : ""}
+  </div>`;
+}
 async function loadMindmap() {
   const pid = $("#mm-proj").value || currentProject;
   // Guard: if we're called with no project (selector cleared while an Analyze
@@ -303,7 +332,8 @@ async function loadMindmap() {
     const grand = tot.covered + tot.partial + tot.uncovered;
     const head = `<div class="mindmap-summary-card"><div class="mindmap-summary-head"><h2>Project coverage map</h2>
       <div class="mindmap-chip-row">${mmChip("covered", tot.covered)} ${mmChip("partial", tot.partial)} ${mmChip("uncovered", tot.uncovered)}</div></div>
-      ${grand ? mmBar(tot, grand) : `<div class="sub">Not analyzed yet — click <b>Analyze codebase</b> to read the code and map coverage.</div>`}</div>`;
+      ${grand ? mmBar(tot, grand) : `<div class="sub">Not analyzed yet — click <b>Analyze codebase</b> to read the code and map coverage.</div>`}</div>
+      ${grand ? "" : analysisEmptyReasonHtml(r.last_analysis)}`;
     const cards = r.features
       .map((f) => {
         const c = f.counts;
@@ -326,6 +356,14 @@ async function loadMindmap() {
         <div class="mindmap-chip-row">${mmChip("covered", c.covered)} ${mmChip("partial", c.partial)} ${mmChip("uncovered", c.uncovered)}</div></summary>
         <div class="mindmap-feature-body">
         ${t ? mmBar(c, t) : `<div class="muted" style="margin:6px 0">${f.case_count || 0} test cases — run analysis to map them to code.</div>`}
+        ${
+          // #21: "found code, judged uncovered" reads very differently from
+          // "nothing found" — every case here WAS reviewed against real
+          // implementation files, they just didn't match anything.
+          t && c.covered === 0 && c.partial === 0 && (f.reviewed_files || []).length
+            ? `<div class="warn" style="margin:6px 0;font-size:12px">All ${t} reviewed case${t === 1 ? "" : "s"} came back uncovered. ${f.reviewed_files.length} implementation file${f.reviewed_files.length === 1 ? " was" : "s were"} read for this feature — this may be an accurate gap, or the implementing code may live in a repo/branch that isn't connected here.</div>`
+            : ""
+        }
         ${(f.reviewed_files || []).length ? `<details style="margin:6px 0 8px"><summary class="muted" style="cursor:pointer;font-size:11.5px">Files reviewed for this feature (${f.reviewed_files.length})</summary><div class="muted" style="margin-top:4px">${f.reviewed_files.map((ff) => `<code>${esc(ff)}</code>`).join(" ")}</div></details>` : ""}
         <div class="mindmap-case-list">${cases}</div></div></details>`;
       })
