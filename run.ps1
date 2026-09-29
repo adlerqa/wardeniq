@@ -17,7 +17,9 @@
   (Windows PowerShell 5.1 mis-parses non-ASCII characters in a BOM-less .ps1 file).
 #>
 param(
-    [switch]$Reset
+    [switch]$Reset,
+    [string]$Db = $env:WARDENIQ_DB,
+    [string]$MongoUri = $env:WARDENIQ_MONGO_URI
 )
 
 $ErrorActionPreference = "Stop"
@@ -48,9 +50,149 @@ if (-not $curPw -or $curPw -eq "mongotPassword") {
     Write-Host "==> generated a random mongot (search) password -> config/pwfile"
 }
 
+# -- first-start database/backend selection (#109) --------------------------
+# Only ever prompts (and only ever writes .env below) on a genuinely fresh
+# install: neither MONGO_URI nor COMPOSE_FILE is already pinned. This is the
+# EXACT gate the kernel check further below already used pre-#109 - reusing it
+# here (rather than inventing a new "already configured" signal) guarantees an
+# existing installation is never re-prompted and never notices this change.
+$freshDbInstall = (-not (Select-String -Path ".env" -Pattern '^MONGO_URI=.+' -Quiet -ErrorAction SilentlyContinue)) `
+    -and (-not (Select-String -Path ".env" -Pattern '^COMPOSE_FILE=' -Quiet -ErrorAction SilentlyContinue))
+
+if ($freshDbInstall) {
+    # Same interactive/non-interactive pattern install.ps1 already established
+    # (Ask/AskSecret/AskYesNo/$Interactive) - reused here, not reinvented.
+    $Interactive = ([Environment]::UserInteractive) -and ($env:WARDENIQ_ASSUME_YES -ne "1")
+    function Ask($q, $def) {
+        if (-not $Interactive) { return $def }
+        $suffix = if ($def) { " [$def]" } else { "" }
+        $ans = Read-Host "$q$suffix"
+        if ([string]::IsNullOrWhiteSpace($ans)) { return $def } else { return $ans }
+    }
+    # Silent (no echo) - a MONGO_URI may embed credentials, so it must never hit
+    # the terminal, shell history, or logs (see install.ps1's AskSecret).
+    function AskSecret($q) {
+        if (-not $Interactive) { return "" }
+        $sec = Read-Host $q -AsSecureString
+        $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
+        try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+        finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+    }
+    function AskYesNo($q, $def) {
+        $hint = if ($def -eq "y") { "Y/n" } else { "y/N" }
+        $ans = (Ask "$q ($hint)" $def).ToLower()
+        switch ($ans) { "y" { $true } "yes" { $true } "n" { $false } "no" { $false } default { $def -eq "y" } }
+    }
+    function MongoUriFormatOk($u) {
+        return ($u -match '^mongodb(\+srv)?://')
+    }
+    # 0 = connected, 1 = failed to connect, 2 = can't check (no mongosh - not an error).
+    function MongoUriReachable($u) {
+        if (-not (Get-Command mongosh -ErrorAction SilentlyContinue)) { return 2 }
+        $job = Start-Job -ScriptBlock {
+            param($uri) & mongosh $uri --quiet --eval "db.adminCommand('ping')" *> $null
+            $LASTEXITCODE
+        } -ArgumentList $u
+        if (Wait-Job $job -Timeout 10) {
+            $code = Receive-Job $job
+            Remove-Job $job -Force
+            if ($code -eq 0) { return 0 } else { return 1 }
+        } else {
+            Stop-Job $job; Remove-Job $job -Force
+            return 1
+        }
+    }
+    function SetEnv($k, $v) {
+        if (-not (Test-Path ".env")) { New-Item -ItemType File -Path ".env" | Out-Null }
+        $lines = @(Get-Content ".env" | Where-Object { $_ -notmatch "^$k=" })
+        $lines += "$k=$v"
+        Set-Content -Path ".env" -Value $lines
+    }
+
+    $dbChoice = $Db
+    if (-not $dbChoice) {
+        if ($Interactive) {
+            Write-Host ""
+            Write-Host "No existing wardenIQ database configuration was detected."
+            Write-Host ""
+            Write-Host "Choose your database:"
+            Write-Host ""
+            Write-Host "  1) MongoDB Community Server (bundled, default)"
+            Write-Host "  2) Percona Server for MongoDB + Percona Search (bundled, technical preview - see #27, #41)"
+            Write-Host "  3) Use an existing MongoDB-compatible database"
+            Write-Host ""
+            while (-not $dbChoice) {
+                switch (Ask "Select [1-3]" "1") {
+                    "1" { $dbChoice = "community" }
+                    "2" { $dbChoice = "percona" }
+                    "3" { $dbChoice = "external" }
+                    default { Write-Host "Please enter 1, 2, or 3." }
+                }
+            }
+        } else {
+            $dbChoice = "community"   # non-interactive, no -Db/WARDENIQ_DB: friendliest zero-config default
+        }
+    }
+
+    switch ($dbChoice) {
+        "community" {
+            # unchanged current behavior - MONGO_URI stays unset, falls back to MONGO_URI_BUNDLED
+        }
+        "percona" {
+            Write-Host "==> Percona is a technical preview: it does NOT avoid the kernel >= 6.19"
+            Write-Host "    limitation below (see #27, #41, docs/percona-search-validation.md)."
+            $perconaPwPath = Join-Path $PSScriptRoot "config/pwfile-percona"
+            $curPerconaPw = if (Test-Path $perconaPwPath) { (Get-Content $perconaPwPath -Raw).Trim() } else { "" }
+            if (-not $curPerconaPw) {
+                $bytes = New-Object 'System.Byte[]' 64
+                [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+                $chars = ([char[]](48..57 + 65..90 + 97..122))
+                $pw = -join ($bytes | ForEach-Object { $chars[$_ % $chars.Length] })[0..31]
+                [IO.File]::WriteAllText($perconaPwPath, $pw)
+                Write-Host "==> generated a random Percona mongot (search) password -> config/pwfile-percona"
+            }
+            SetEnv "MONGO_URI" "mongodb://mongod-percona:27017/?replicaSet=rs0"
+            SetEnv "COMPOSE_FILE" "docker-compose.app.yml:docker-compose.mongodb-percona.yml:docker-compose.ollama.yml"
+        }
+        "external" {
+            $uri = $MongoUri
+            if (-not $uri -and $Interactive) {
+                Write-Host "Paste your MongoDB connection string (needs Vector Search - Atlas M10+ or self-managed mongot)."
+                while ($true) {
+                    $uri = Ask "MONGO_URI" ""
+                    if (-not $uri) { break }
+                    if (-not (MongoUriFormatOk $uri)) {
+                        Write-Host "that doesn't look like a MongoDB connection string - it must start with mongodb:// or mongodb+srv://"
+                        continue
+                    }
+                    Write-Host "checking the connection..."
+                    $rc = MongoUriReachable $uri
+                    if ($rc -eq 0) { Write-Host "connected OK"; break }
+                    elseif ($rc -eq 2) { Write-Host "(mongosh not found on this machine - skipping the live connection check; format looks OK)"; break }
+                    else {
+                        Write-Host "could not connect using that URI (wrong host/user/password, IP not allow-listed, cluster paused, etc)."
+                        if (AskYesNo "Use it anyway?" "n") { break }
+                    }
+                }
+            } elseif ($uri -and -not (MongoUriFormatOk $uri)) {
+                Write-Host "==> WARDENIQ_MONGO_URI doesn't look like a valid MongoDB connection string (must start with mongodb:// or mongodb+srv://) - saving it as given since this is a non-interactive run, but the app will fail to start until it's fixed."
+            }
+            if ($uri) { SetEnv "MONGO_URI" $uri }
+            else { Write-Host "==> no MONGO_URI provided - set it in .env before wardenIQ will start." }
+            SetEnv "COMPOSE_FILE" "docker-compose.app.yml:docker-compose.ollama.yml"
+            SetEnv "OLLAMA_URL_BUNDLED" "http://host.docker.internal:11434"
+        }
+        default {
+            Write-Host "==> invalid WARDENIQ_DB value: '$dbChoice' (expected community, percona, or external)"
+            exit 1
+        }
+    }
+}
+
 # Compose file selection. docker-compose.yml uses `include:`, which needs Compose
 # v2.20+. To work on ANY Compose v2, pass the three service files explicitly - unless
-# .env pins COMPOSE_FILE (e.g. after scripts/enable-mongo-auth.sh), then honour that.
+# .env pins COMPOSE_FILE (e.g. after the first-start selection above, or
+# scripts/enable-mongo-auth.sh), then honour that.
 if (Select-String -Path ".env" -Pattern '^COMPOSE_FILE=' -Quiet -ErrorAction SilentlyContinue) {
     $Compose = @("compose")
 } else {
@@ -58,10 +200,23 @@ if (Select-String -Path ".env" -Pattern '^COMPOSE_FILE=' -Quiet -ErrorAction Sil
 }
 
 # Fail fast on a kernel MongoDB's tcmalloc allocator refuses to start on (see #27).
-# Only applies to the bundled MongoDB profile - bring-your-own MONGO_URI isn't
-# affected, since that database isn't started by this script.
+# Applies to EITHER bundled MongoDB profile (Community or Percona - Docker Desktop
+# on Windows runs Linux containers inside a Linux VM, and `docker info`'s
+# KernelVersion below reports THAT VM's kernel - exactly what MongoDB's tcmalloc
+# allocator actually runs against - so this check is just as meaningful on Windows
+# as on Linux/macOS; it is not a Unix-only concern, which is why run.ps1 already
+# carried a port of it before #109. The Percona validation in #41/PR #105
+# confirmed Percona's mongod hits the identical tcmalloc failure, so choosing
+# Percona must not silently skip this check just because it also sets MONGO_URI.
+# Only a genuine bring-your-own MONGO_URI (no bundled compose file pinned) skips
+# it, since that database isn't started here.
+$perconaPinned = $false
+if (Select-String -Path ".env" -Pattern '^COMPOSE_FILE=' -Quiet -ErrorAction SilentlyContinue) {
+    $composeFileLine = (Select-String -Path ".env" -Pattern '^COMPOSE_FILE=.*' -ErrorAction SilentlyContinue | Select-Object -First 1).Line
+    if ($composeFileLine -match 'docker-compose\.mongodb-percona\.yml') { $perconaPinned = $true }
+}
 $mongoUriSet = Select-String -Path ".env" -Pattern '^MONGO_URI=.+' -Quiet -ErrorAction SilentlyContinue
-if (-not $mongoUriSet) {
+if ($perconaPinned -or (-not $mongoUriSet)) {
     $kernelVersion = ""
     try { $kernelVersion = (docker info --format '{{.KernelVersion}}' 2>$null) } catch {}
     if ($kernelVersion -match '^(\d+)\.(\d+)') {
