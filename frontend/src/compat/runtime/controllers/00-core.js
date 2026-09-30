@@ -863,6 +863,7 @@ function navigateTo(v) {
   if (v === "users") {
     loadProjectPicker();
     loadUsers();
+    loadApiTokens();
     loadAudit();
   }
   if (v === "usage") loadUsage();

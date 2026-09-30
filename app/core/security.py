@@ -13,13 +13,13 @@ same order as the original decorators, via:
 which is exactly equivalent to the original `@app.middleware("http")` usage.
 
 Principal-resolver registry (REFACTOR_PLAN.md section 3.4): an upstream
-extension point for downstream distributions that need a second
-authentication scheme (e.g. a plugin bearer token) alongside the cookie
-session, without patching this file. `_PRINCIPAL_RESOLVERS` is empty in this
-repo — no call to `register_principal_resolver` exists here — so
-`resolve_principal` always falls through to `_cookie_principal`, and every
-existing route/test observes byte-identical behavior to before this
-refactor.
+extension point for a second authentication scheme (e.g. a bearer token)
+alongside the cookie session, without patching this file. main.py registers
+one resolver — core/token_auth.py's bearer_token_principal, for API tokens
+(issue #37) — against the "/api/" prefix; a request with no Authorization
+header (or one that doesn't resolve to an active token) falls through to
+`_cookie_principal` exactly as before, so every existing cookie-based
+route/test is unaffected.
 """
 import re
 
@@ -54,7 +54,7 @@ PUBLIC_PREFIX = ("/assets/",) if IS_PRODUCTION else ("/assets/", "/docs", "/redo
 # Admin-only areas (config + user management). Matched by exact or "<p>/..." prefix.
 ADMIN_PATHS = ("/api/users", "/api/settings", "/api/llm/test", "/api/jira/test",
                "/api/smtp/test", "/api/settings/s3/test", "/api/audit-logs", "/api/db-status", "/api/db-config",
-               "/api/db-migrate")
+               "/api/db-migrate", "/api/api-tokens")
 # Read-style POSTs that viewers are allowed to call.
 VIEWER_POST_OK = ("/api/retrieve",)
 # Secret-handling routes that live UNDER /api/projects/... (so they escape the
