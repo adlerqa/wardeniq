@@ -18,6 +18,7 @@ the plan explicitly forbids).
 """
 import os
 import secrets
+import threading
 import time
 
 import crypto
@@ -48,7 +49,7 @@ from core.deps import (
     current_llm, current_ollama_url, current_poll_interval,
 )
 from core.logging_setup import get_logger
-from core.state import store
+from core.state import SYNC, store
 from store.base import TEXT_INDEX, VECTOR_INDEX
 from workers.registry import launch_job
 
@@ -769,6 +770,38 @@ def set_db_config(body: DbConfigIn, request: Request):
 class DbMigrateIn(BaseModel):
     target_uri: str | None = None
     overwrite: bool | None = False
+    # #111: start even though something else is running (see _migration_blocker()) --
+    # accepts a best-effort snapshot. Separate from `overwrite`, which answers a different
+    # question (may the TARGET's existing data be replaced?).
+    override_busy: bool | None = False
+
+
+# Serialises the final "check nothing is running -> start the migration" step, so two
+# concurrent requests cannot both pass the check before either has created its job.
+_MIGRATE_START_LOCK = threading.Lock()
+
+
+def _migration_blocker(override_busy: bool) -> str | None:
+    """Why a migration may not start right now, or None if it may (#111).
+
+    migrate_to() streams the live source database with no isolation, so anything
+    writing during the copy can yield a partial capture:
+      * another migration already running -- never overridable;
+      * a GitHub/GitLab sync (core.state.SYNC["running"]) or any other `jobs` row with
+        status "running" -- refused unless `override_busy`."""
+    if store.has_running_job(only_types=("migrate",)):
+        return "A database migration is already in progress. Wait for it to finish."
+    if override_busy:
+        return None
+    if SYNC.get("running"):
+        return ("A GitHub/GitLab sync is currently running. Wait for it to finish, or start "
+                "anyway (best-effort snapshot, not guaranteed-consistent).")
+    busy = store.has_running_job(exclude_types=("migrate",))
+    if busy:
+        what = busy.get("label") or busy.get("type") or "a job"
+        return (f"wardenIQ is currently busy ({what}). Wait for it to finish, or start "
+                "anyway (best-effort snapshot, not guaranteed-consistent).")
+    return None
 
 
 @router.post("/api/db-migrate")
@@ -784,6 +817,10 @@ def db_migrate(body: DbMigrateIn, request: Request):
     if not _env_file_writable():
         raise HTTPException(500, f"Cannot write to the config file ({ENV_FILE_PATH}); the ./.env "
                                  "bind-mount in docker-compose.app.yml must be present and writable.")
+    # Idle check first (cheap, and avoids a long capability probe when we'd refuse anyway).
+    blocker = _migration_blocker(bool(body.override_busy))
+    if blocker:
+        raise HTTPException(409, blocker)
     # The target must be reachable AND search-capable — otherwise the copy would land
     # in a database the app can't actually run on.
     probe = _probe_mongo(uri, dim=store.dim)
@@ -804,9 +841,22 @@ def db_migrate(body: DbMigrateIn, request: Request):
         raise HTTPException(400, "Couldn't inspect the target database — check the "
                                  "connection string, credentials and network access "
                                  "(details in the server logs)")
-    jid = launch_job("migrate", {"target_uri": uri, "overwrite": bool(body.overwrite)},
-                     label="Migrate data to a new database")
-    _audit(request, "db.migrate.started", detail="migration to a new MongoDB started")
+    # The probe can take up to a minute, so re-check, atomically with the launch, that
+    # nothing started in the meantime.
+    if not _MIGRATE_START_LOCK.acquire(blocking=False):
+        raise HTTPException(409, "A database migration is already being started.")
+    try:
+        blocker = _migration_blocker(bool(body.override_busy))
+        if blocker:
+            raise HTTPException(409, blocker)
+        # Audited BEFORE the copy starts: an insert into the audit log after the worker
+        # is already copying would otherwise show up as the source changing mid-copy.
+        _audit(request, "db.migrate.started", detail="migration to a new MongoDB started")
+        jid = launch_job("migrate", {"target_uri": uri, "overwrite": bool(body.overwrite),
+                                     "override_busy": bool(body.override_busy)},
+                         label="Migrate data to a new database")
+    finally:
+        _MIGRATE_START_LOCK.release()
     return {"job_id": jid}
 
 
