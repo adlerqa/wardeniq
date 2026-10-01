@@ -111,6 +111,20 @@ class JobsMixin(_Base):
             j["id"] = str(j.pop("_id"))
         return j
 
+    def has_running_job(self, exclude_types=()):
+        """Any job currently `status: "running"`, optionally excluding certain
+        types. Used by the migration idle check (#111) to refuse starting a
+        migration while something else is in progress. Returns the job dict
+        (with a string `id`, params/logs stripped since callers only need
+        enough to explain *what's* running) or None if idle."""
+        q = {"status": "running"}
+        if exclude_types:
+            q["type"] = {"$nin": list(exclude_types)}
+        j = self.db["jobs"].find_one(q, {"params": 0, "logs": 0, "result": 0})
+        if j:
+            j["id"] = str(j.pop("_id"))
+        return j
+
     def fail_orphaned_jobs(self):
         """Background threads do not survive an application process restart."""
         now = time.time()

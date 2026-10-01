@@ -463,3 +463,40 @@ class BaseStore:
             return counts
         finally:
             c.close()
+
+    def verify_migration(self, target_uri: str, copied_counts: dict) -> dict:
+        """Best-effort post-copy sanity check (#111): for each collection
+        migrate_to() reported copying, compare that count against an EXACT
+        (count_documents, not estimated_document_count — the latter reads
+        cached collection stats that can lag right after a bulk insert, which
+        would make this check unreliable right when it matters most) count on
+        the target now, plus the source's own current count for visibility.
+
+        This is NOT a guaranteed-consistent comparison — the source may have
+        kept accepting writes during/after the copy (see #111's "Consistency
+        Guarantees": migration is a best-effort snapshot taken while the
+        system is expected to be idle, not a point-in-time backup). A
+        mismatch here means "the target doesn't have what was actually
+        copied" (worth surfacing loudly), not necessarily "data was lost".
+
+        Returns {"ok": bool, "collections": {name: {"copied", "target_now",
+        "source_now", "match"}}}. `ok` is True only if every collection's
+        target count exactly matches what migrate_to() reported copying.
+        """
+        c: MongoClient = MongoClient(target_uri, serverSelectionTimeoutMS=8000)
+        try:
+            tgt = c[self.db.name]
+            report, ok = {}, True
+            for nm, copied in copied_counts.items():
+                target_now = tgt[nm].count_documents({})
+                try:
+                    source_now = self.db[nm].count_documents({})
+                except Exception:  # noqa: BLE001
+                    source_now = None
+                match = target_now == copied
+                ok = ok and match
+                report[nm] = {"copied": copied, "target_now": target_now,
+                              "source_now": source_now, "match": match}
+            return {"ok": ok, "collections": report}
+        finally:
+            c.close()
