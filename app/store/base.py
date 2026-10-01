@@ -463,3 +463,63 @@ class BaseStore:
             return counts
         finally:
             c.close()
+
+    def verify_migration(self, target_uri: str, copied_counts: dict,
+                         allow_source_drift: bool = False) -> dict:
+        """Post-copy verification of migrate_to() (#111). Run AFTER the copy, BEFORE the
+        app is pointed at the target.
+
+        What is counted: an EXACT count_documents({}) -- not estimated_document_count,
+        whose cached stats can lag right after a bulk insert -- for every collection
+        migrate_to() reported copying (`copied_counts`: {collection: docs_copied}),
+        taken NOW on the target and NOW on the source.
+
+        What must hold, per collection:
+          * target == copied  -- the target really holds everything that was streamed.
+            A shortfall is always a failure.
+          * source == copied  -- the source did not gain/lose documents while (or just
+            after) it was being copied, so the target is a complete snapshot. Documents
+            written after they were streamed exist only in the old database, so
+            restarting onto the target would lose them. A difference is a failure,
+            unless `allow_source_drift` (the caller started the migration with
+            override_busy, i.e. accepted a best-effort snapshot), in which case it is
+            recorded as a warning instead.
+        A collection that appeared on the source after the copy started was never
+        copied; it is reported under the same source-drift rule.
+
+        Counts that cannot be obtained raise -- the caller must treat that as "not
+        verified", never as success.
+
+        Returns {"ok": bool, "failures": [str], "warnings": [str],
+                 "collections": {name: {"copied", "target_now", "source_now",
+                                        "target_match", "source_match"}}}.
+        Messages contain collection names and counts only, never the connection string."""
+        c: MongoClient = MongoClient(target_uri, serverSelectionTimeoutMS=8000)
+        try:
+            tgt = c[self.db.name]
+            collections: dict[str, dict] = {}
+            failures: list[str] = []
+            warnings: list[str] = []
+            drift = warnings if allow_source_drift else failures
+            for nm, copied in copied_counts.items():
+                target_now = tgt[nm].count_documents({})
+                source_now = self.db[nm].count_documents({})
+                target_match, source_match = target_now == copied, source_now == copied
+                collections[nm] = {"copied": copied, "target_now": target_now,
+                                   "source_now": source_now, "target_match": target_match,
+                                   "source_match": source_match}
+                if not target_match:
+                    failures.append(f"'{nm}': {copied} documents were copied but the target "
+                                    f"has {target_now}")
+                if not source_match:
+                    drift.append(f"'{nm}': {copied} documents were copied but the source now "
+                                 f"has {source_now} (it changed during the copy)")
+            created_since = sorted(n for n in self.db.list_collection_names()
+                                   if not n.startswith("system.") and n not in copied_counts)
+            for nm in created_since:
+                drift.append(f"'{nm}' was created on the source during the copy and was "
+                             "not copied")
+            return {"ok": not failures, "failures": failures, "warnings": warnings,
+                    "collections": collections}
+        finally:
+            c.close()

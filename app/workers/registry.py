@@ -2,6 +2,7 @@
 import threading
 
 import usage
+from core.exceptions import MIGRATION_IN_PROGRESS_MSG, MigrationInProgress
 from core.logging_setup import get_logger
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
                                               # mutated, never rebound)
@@ -12,8 +13,25 @@ log = get_logger("jobs")
 JOB_WORKERS = {}   # job type -> worker(jid, params)
 
 
+def _refuse_if_migrating(jtype):
+    """#111: while a database migration is running, no OTHER new background job may
+    start -- migrate_to() streams the live source database with no isolation, so a job
+    inserting mid-copy would produce a partial capture. The migration's own launch is
+    exempt (db_migrate() has already checked nothing else was running).
+
+    The "migration in progress" state is simply a `jobs` row of type "migrate" with
+    status "running": it is cleared by the launch_job() wrapper when the worker
+    succeeds OR raises, and by fail_orphaned_jobs() / sweep_stale_jobs() if the process
+    died mid-copy, so a failed migration can never leave the app permanently blocked."""
+    if jtype == "migrate":
+        return
+    if store.has_running_job(only_types=("migrate",)):
+        raise MigrationInProgress(MIGRATION_IN_PROGRESS_MSG)
+
+
 def launch_job(jtype, params, label="", project_id=None, feature_id=None):
     """Create a persisted job and run its worker in a background thread."""
+    _refuse_if_migrating(jtype)
     jid = store.create_job(jtype, params, label, project_id, feature_id)
 
     def run():
@@ -53,6 +71,7 @@ def run_tracked(jtype, fn, *, label="", project_id=None, feature_id=None):
     a bare background thread that has no active recorder; never from inside a
     ``launch_job`` worker (which already records) or recording would nest.
     """
+    _refuse_if_migrating(jtype)
     jid = store.create_job(jtype, {}, label, project_id, feature_id)
     result = None
     usage.start()
