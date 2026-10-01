@@ -6,6 +6,7 @@ is stubbed so only the routes' handling of each probe outcome is exercised.
 import auth
 import main
 from api.routes import settings as settings_mod
+from core.state import SYNC
 from fastapi.testclient import TestClient
 
 client = TestClient(main.app)
@@ -42,8 +43,12 @@ class _Env:
         monkeypatch.setattr(settings_mod, "_write_env_var",
                             lambda path, k, v: self.env_writes.append((k, v)) or (True, None))
         monkeypatch.setattr(main.store, "target_has_data", lambda uri: False)
+        # /api/db-migrate's idle check (#111) consults the job store and SYNC; an idle
+        # system is the baseline for these probe-outcome tests.
+        monkeypatch.setattr(main.store, "has_running_job", lambda **kw: None)
+        monkeypatch.setitem(SYNC, "running", False)
         monkeypatch.setattr(settings_mod, "launch_job",
-                            lambda t, params, label="": self.jobs.append((t, params)) or "job1")
+                            lambda t, params, label="", before_start=None: self.jobs.append((t, params)) or "job1")
 
         def fake_probe(uri, dim=None):
             self.probe_calls.append((uri, dim))
@@ -122,7 +127,8 @@ def test_db_migrate_starts_the_job_for_a_fully_validated_target(monkeypatch):
     env = _Env(monkeypatch, _probe_result())
     r = client.post("/api/db-migrate", json={"target_uri": URI}, cookies=_cookie())
     assert r.status_code == 200 and r.json() == {"job_id": "job1"}
-    assert env.jobs == [("migrate", {"target_uri": URI, "overwrite": False})]
+    assert env.jobs == [("migrate", {"target_uri": URI, "overwrite": False,
+                                     "override_busy": False})]
 
 
 def test_db_migrate_surfaces_the_curated_index_limit_message(monkeypatch):

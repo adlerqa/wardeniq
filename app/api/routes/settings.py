@@ -48,9 +48,10 @@ from core.deps import (
     current_llm, current_ollama_url, current_poll_interval,
 )
 from core.logging_setup import get_logger
+from core.security import _current_user
 from core.state import store
 from store.base import TEXT_INDEX, VECTOR_INDEX
-from workers.registry import launch_job
+from workers.registry import JOB_RETRY_HANDLERS, launch_job, migration_blocker
 
 log = get_logger("settings")
 
@@ -769,14 +770,22 @@ def set_db_config(body: DbConfigIn, request: Request):
 class DbMigrateIn(BaseModel):
     target_uri: str | None = None
     overwrite: bool | None = False
+    # #111: start even though something else is running (see workers.registry's
+    # migration_blocker()) -- accepts a best-effort snapshot. Separate from `overwrite`,
+    # which answers a different question (may the TARGET's existing data be replaced?).
+    override_busy: bool | None = False
 
 
-@router.post("/api/db-migrate")
-def db_migrate(body: DbMigrateIn, request: Request):
-    """Copy ALL data from the current database into a target MongoDB and point
-    MONGO_URI at it (admin-only). Runs as a background job; the app stays on the
-    current DB until the user restarts, so a partial copy never loses data."""
-    uri = (body.target_uri or "").strip()
+def _preflight_migration(uri, overwrite: bool, override_busy: bool, via_retry: bool = False) -> str:
+    """Everything that must hold before a migration job may be launched. Shared by EVERY
+    way of starting one (POST /api/db-migrate and the retry of a failed migrate job), so
+    the checks cannot be skipped by choosing a different entry point (#111). Returns the
+    cleaned URI; raises HTTPException otherwise.
+
+    The idle / one-migration-at-a-time rules are enforced again, atomically with the job
+    creation, inside workers.registry.launch_job() -- the check here is the cheap
+    fast-fail that avoids a long capability probe when the answer would be "no" anyway."""
+    uri = (uri or "").strip()
     if not uri:
         raise HTTPException(400, "Enter the target MongoDB connection string.")
     if not (uri.startswith("mongodb://") or uri.startswith("mongodb+srv://")):
@@ -784,6 +793,9 @@ def db_migrate(body: DbMigrateIn, request: Request):
     if not _env_file_writable():
         raise HTTPException(500, f"Cannot write to the config file ({ENV_FILE_PATH}); the ./.env "
                                  "bind-mount in docker-compose.app.yml must be present and writable.")
+    blocker = migration_blocker(override_busy)
+    if blocker:
+        raise HTTPException(409, blocker)
     # The target must be reachable AND search-capable — otherwise the copy would land
     # in a database the app can't actually run on.
     probe = _probe_mongo(uri, dim=store.dim)
@@ -794,7 +806,13 @@ def db_migrate(body: DbMigrateIn, request: Request):
         raise HTTPException(400, f"{probe['detail']} Migration cancelled — nothing copied.")
     # Guard against clobbering a target that already has data (unless the caller insists).
     try:
-        if not body.overwrite and store.target_has_data(uri):
+        if not overwrite and store.target_has_data(uri):
+            if via_retry:
+                raise HTTPException(409, "The target database already contains data (for "
+                                         "example from the earlier attempt). Retry keeps the "
+                                         "original options, so to replace that data start the "
+                                         "switch again from Configuration > Database and "
+                                         "choose to replace it.")
             raise HTTPException(409, "The target database already contains data. Re-run with "
                                      "'overwrite' to replace it, or pick an empty database.")
     except HTTPException:
@@ -804,10 +822,52 @@ def db_migrate(body: DbMigrateIn, request: Request):
         raise HTTPException(400, "Couldn't inspect the target database — check the "
                                  "connection string, credentials and network access "
                                  "(details in the server logs)")
-    jid = launch_job("migrate", {"target_uri": uri, "overwrite": bool(body.overwrite)},
-                     label="Migrate data to a new database")
-    _audit(request, "db.migrate.started", detail="migration to a new MongoDB started")
+    return uri
+
+
+def _start_migration(request: Request, uri, overwrite: bool, override_busy: bool,
+                     label: str, via_retry: bool = False) -> str:
+    """Preflight, then launch. launch_job() makes the final admission decision atomically
+    with creating the job row (raising MigrationBlocked -> 409 if another migration or,
+    without override_busy, any other job is running) and writes the audit entry first, so
+    the audit insert cannot land mid-copy and count as the source changing."""
+    uri = _preflight_migration(uri, overwrite, override_busy, via_retry=via_retry)
+    return launch_job(
+        "migrate",
+        {"target_uri": uri, "overwrite": bool(overwrite), "override_busy": bool(override_busy)},
+        label=label,
+        before_start=lambda: _audit(request, "db.migrate.started",
+                                    detail="migration to a new MongoDB started"))
+
+
+@router.post("/api/db-migrate")
+def db_migrate(body: DbMigrateIn, request: Request):
+    """Copy ALL data from the current database into a target MongoDB and point
+    MONGO_URI at it (admin-only). Runs as a background job; the app stays on the
+    current DB until the user restarts, so a partial copy never loses data."""
+    jid = _start_migration(request, body.target_uri, bool(body.overwrite),
+                           bool(body.override_busy), label="Migrate data to a new database")
     return {"job_id": jid}
+
+
+def _retry_migration(request: Request, job: dict, override_busy: bool = False) -> str:
+    """POST /api/jobs/{id}/retry for a `migrate` job (registered in JOB_RETRY_HANDLERS).
+
+    A retry is a NEW migration request, so it goes through exactly the same preflight and
+    admission as POST /api/db-migrate: admin only, capability probe, non-empty-target
+    guard, idle check, never two migrations at once. It keeps the original target and
+    `overwrite`, but never inherits an earlier `override_busy`: accepting a best-effort
+    snapshot has to be repeated explicitly (`?override_busy=true`) for each attempt."""
+    user = _current_user(request)
+    if user and user.get("role") != "admin":
+        raise HTTPException(403, "Only an admin can start a database migration.")
+    params = job.get("params") or {}
+    label = (job.get("label") or "Migrate data to a new database") + " (retry)"
+    return _start_migration(request, params.get("target_uri"), bool(params.get("overwrite")),
+                            bool(override_busy), label=label, via_retry=True)
+
+
+JOB_RETRY_HANDLERS["migrate"] = _retry_migration
 
 
 @router.post("/api/smtp/test")

@@ -247,8 +247,9 @@ function dbRow(k, v) {
 if ($("#cfg-db-refresh")) $("#cfg-db-refresh").onclick = loadDbStatus;
 
 // One simple action: copy the user's data into the database they entered, then switch
-// to it. (If that database already has data, we ask once whether to overwrite it.)
-async function runDbSwitch(overwrite) {
+// to it. (If that database already has data, we ask once whether to overwrite it; if
+// wardenIQ is busy with other work, we ask once whether to start anyway.)
+async function runDbSwitch(overwrite, overrideBusy) {
   const uri = ($("#cfg-db-uri").value || "").trim();
   const st = $("#cfg-db-status"),
     btn = $("#cfg-db-switch-go"),
@@ -271,7 +272,11 @@ async function runDbSwitch(overwrite) {
     const r = await api("/api/db-migrate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ target_uri: uri, overwrite: !!overwrite }),
+      body: JSON.stringify({
+        target_uri: uri,
+        overwrite: !!overwrite,
+        override_busy: !!overrideBusy,
+      }),
     });
     watchJob(r.job_id, (j) => {
       if (!st) return;
@@ -282,7 +287,16 @@ async function runDbSwitch(overwrite) {
       } else if (j.status === "succeeded") {
         const res = j.result || {};
         st.classList.remove("is-saving");
-        st.innerHTML = `<span class="ok">Your data has been copied to the new database.</span> Run <code>${esc(res.apply_cmd || "docker compose up -d")}</code> to finish switching.`;
+        // A best-effort copy (started while busy, on request) can pass with warnings --
+        // never hide those behind the plain success message.
+        const warns = (res.warnings || [])
+          .map((w) => `<div class="warn">${esc(w)}</div>`)
+          .join("");
+        // How to confirm the new database came up with working search after the restart.
+        const check = res.post_restart_check
+          ? `<div class="muted">${esc(res.post_restart_check)}</div>`
+          : "";
+        st.innerHTML = `<span class="ok">Your data has been copied to the new database.</span>${warns} Run <code>${esc(res.apply_cmd || "docker compose up -d")}</code> to finish switching.${check}`;
         $("#cfg-db-uri").value = "";
         btn.disabled = false;
         btn.textContent = lbl;
@@ -306,10 +320,28 @@ async function runDbSwitch(overwrite) {
           danger: true,
         })
       )
-        return runDbSwitch(true);
+        return runDbSwitch(true, overrideBusy);
       if (st) {
         st.classList.remove("is-saving");
         st.innerHTML = `<span class="muted">Cancelled — pick an empty database, or confirm replacing it.</span>`;
+      }
+      return;
+    }
+    // wardenIQ is running other work: copying a live database can capture it half-written,
+    // so the server refuses unless the user explicitly accepts a best-effort snapshot.
+    if (!overrideBusy && /currently busy|sync is currently running/i.test(e.message || "")) {
+      if (
+        await confirmModal({
+          title: "wardenIQ is busy",
+          body: `${e.message}\n\nCopying while it is busy is a best-effort snapshot: changes made during the copy may not be included. Start anyway?`,
+          confirmText: "Start anyway",
+          danger: true,
+        })
+      )
+        return runDbSwitch(overwrite, true);
+      if (st) {
+        st.classList.remove("is-saving");
+        st.innerHTML = `<span class="muted">Cancelled — try again once wardenIQ is idle.</span>`;
       }
       return;
     }
@@ -332,7 +364,7 @@ if ($("#cfg-db-switch-go"))
     if (
       !(await confirmModal({
         title: "Switch database?",
-        body: "Copy your data to this database and switch wardenIQ to it?\n\nYour current database stays intact until you restart, so nothing is lost.",
+        body: "Copy your data to this database and switch wardenIQ to it?\n\nYour current database stays intact until you restart, so nothing is lost. The copy is a best-effort snapshot taken while wardenIQ is idle, and it is verified before wardenIQ is switched.",
         confirmText: "Switch database",
       }))
     )
