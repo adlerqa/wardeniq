@@ -135,6 +135,6 @@ def delete_project(pid: str, request: Request):
     result = store.delete_project(pid)
     if not result:
         raise HTTPException(404, "project not found")
-    _audit(request, "project.deleted", target=pid,
+    _audit(request, "project.deleted", target=(proj or {}).get("name") or pid,
            old={"name": (proj or {}).get("name")})
     return result
