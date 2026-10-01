@@ -292,7 +292,11 @@ async function runDbSwitch(overwrite, overrideBusy) {
         const warns = (res.warnings || [])
           .map((w) => `<div class="warn">${esc(w)}</div>`)
           .join("");
-        st.innerHTML = `<span class="ok">Your data has been copied to the new database.</span>${warns} Run <code>${esc(res.apply_cmd || "docker compose up -d")}</code> to finish switching.`;
+        // How to confirm the new database came up with working search after the restart.
+        const check = res.post_restart_check
+          ? `<div class="muted">${esc(res.post_restart_check)}</div>`
+          : "";
+        st.innerHTML = `<span class="ok">Your data has been copied to the new database.</span>${warns} Run <code>${esc(res.apply_cmd || "docker compose up -d")}</code> to finish switching.${check}`;
         $("#cfg-db-uri").value = "";
         btn.disabled = false;
         btn.textContent = lbl;

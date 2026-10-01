@@ -29,6 +29,7 @@ from api.routes import settings as settings_mod
 from api.routes import webhooks as webhooks_mod
 from core import exceptions as exc_mod
 from core.exceptions import MigrationInProgress
+from core.state import SYNC
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from store import base as store_base
@@ -72,7 +73,7 @@ class RouteEnv:
         monkeypatch.setattr(main.store, "target_has_data", lambda uri: False)
         monkeypatch.setattr(main.store, "has_running_job", self._has_running_job)
         monkeypatch.setattr(settings_mod, "_env_file_writable", lambda: True)
-        monkeypatch.setitem(settings_mod.SYNC, "running", sync)
+        monkeypatch.setitem(SYNC, "running", sync)
         monkeypatch.setattr(settings_mod, "_audit",
                             lambda *a, **k: self.events.append("audit"))
         self._probe = probe if probe is not None else _probe_result()
@@ -89,7 +90,9 @@ class RouteEnv:
         self.probe_calls.append((uri, dim))
         return self._probe
 
-    def _launch_job(self, jtype, params, label=""):
+    def _launch_job(self, jtype, params, label="", before_start=None):
+        if before_start:
+            before_start()
         self.events.append("launch")
         self.launched.append((jtype, params))
         return "job-1"
@@ -173,49 +176,6 @@ def test_probe_failure_still_returns_the_current_probe_response(monkeypatch):
     r = env.post()
     assert r.status_code == 400 and "No vector search here." in r.json()["detail"]
     assert "nothing copied" in r.json()["detail"] and env.launched == []
-
-
-def test_busy_check_runs_again_right_before_launch(monkeypatch):
-    # The capability probe can take up to a minute: a job that starts meanwhile must
-    # still block the migration.
-    env = RouteEnv(monkeypatch)
-    real_probe = env._probe_mongo
-
-    def probe_then_job_starts(uri, dim=None):
-        out = real_probe(uri, dim=dim)
-        env.running_jobs.append({"id": "j2", "type": "generate", "label": "Late job"})
-        return out
-    monkeypatch.setattr(settings_mod, "_probe_mongo", probe_then_job_starts)
-    r = env.post()
-    assert r.status_code == 409 and "Late job" in r.json()["detail"]
-    assert env.launched == [] and "audit" not in env.events
-
-
-def test_concurrent_start_is_refused_by_the_start_lock(monkeypatch):
-    env = RouteEnv(monkeypatch)
-    assert settings_mod._MIGRATE_START_LOCK.acquire(blocking=False)
-    try:
-        r = env.post()
-    finally:
-        settings_mod._MIGRATE_START_LOCK.release()
-    assert r.status_code == 409 and "already being started" in r.json()["detail"]
-    assert env.launched == []
-
-
-def test_start_lock_is_released_after_a_refusal_and_after_a_launch_error(monkeypatch):
-    env = RouteEnv(monkeypatch, running_jobs=[{"id": "j1", "type": "generate"}])
-    assert env.post().status_code == 409                       # early refusal
-    env.running_jobs.clear()
-    # launch itself blows up -> lock must still be released for the next request
-    monkeypatch.setattr(settings_mod, "launch_job",
-                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
-    with pytest.raises(RuntimeError):
-        TestClient(main.app, raise_server_exceptions=True).post(
-            "/api/db-migrate", json={"target_uri": URI}, cookies=_cookie())
-    assert settings_mod._MIGRATE_START_LOCK.acquire(blocking=False)
-    settings_mod._MIGRATE_START_LOCK.release()
-    monkeypatch.setattr(settings_mod, "launch_job", env._launch_job)
-    assert env.post().status_code == 200
 
 
 # ========================================================== registry / state tests

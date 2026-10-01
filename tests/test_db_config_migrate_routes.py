@@ -6,6 +6,7 @@ is stubbed so only the routes' handling of each probe outcome is exercised.
 import auth
 import main
 from api.routes import settings as settings_mod
+from core.state import SYNC
 from fastapi.testclient import TestClient
 
 client = TestClient(main.app)
@@ -45,9 +46,9 @@ class _Env:
         # /api/db-migrate's idle check (#111) consults the job store and SYNC; an idle
         # system is the baseline for these probe-outcome tests.
         monkeypatch.setattr(main.store, "has_running_job", lambda **kw: None)
-        monkeypatch.setitem(settings_mod.SYNC, "running", False)
+        monkeypatch.setitem(SYNC, "running", False)
         monkeypatch.setattr(settings_mod, "launch_job",
-                            lambda t, params, label="": self.jobs.append((t, params)) or "job1")
+                            lambda t, params, label="", before_start=None: self.jobs.append((t, params)) or "job1")
 
         def fake_probe(uri, dim=None):
             self.probe_calls.append((uri, dim))

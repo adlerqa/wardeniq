@@ -101,6 +101,27 @@ test("warnings that accompany a best-effort success are displayed, escaped", asy
   assert.doesNotMatch(h.status(), /<b>x<\/b>/); // the injected markup is neutralised
 });
 
+test("the success message tells the user how to verify the new database after the restart", async () => {
+  const hint = "After restarting, sign in as an admin and open /api/db-status: boot.ready should be true <b>x</b>";
+  const h = harness({
+    apiScript: [{ job_id: "j1" }],
+    job: { status: "succeeded", result: { apply_cmd: "docker compose up -d", post_restart_check: hint } },
+  });
+  await h.context.runDbSwitch(false);
+  assert.match(h.status(), /Your data has been copied/);
+  assert.match(h.status(), /<div class="muted">After restarting, sign in as an admin and open \/api\/db-status/);
+  assert.doesNotMatch(h.status(), /<b>x<\/b>/); // escaped, not injected
+});
+
+test("no post-restart hint is rendered when the job result has none", async () => {
+  const h = harness({
+    apiScript: [{ job_id: "j1" }],
+    job: { status: "succeeded", result: { apply_cmd: "docker compose up -d" } },
+  });
+  await h.context.runDbSwitch(false);
+  assert.doesNotMatch(h.status(), /class="muted"/);
+});
+
 test("the request carries override_busy only when the user accepted it", async () => {
   const a = harness({ apiScript: [{ job_id: "j1" }] });
   await a.context.runDbSwitch(false);

@@ -196,6 +196,91 @@ instead, set `APP_IMAGE=adlerqa/wardeniq:1.2.0` in `.env`, then run the same com
 
 ---
 
+## Switching databases
+
+**Configuration → Database → Switch to this database** (admin only) copies your data to
+another MongoDB-compatible database, checks the copy, and points wardenIQ at it. Your
+current database is never modified, and wardenIQ keeps running on it until **you** restart,
+so a failed or abandoned switch loses nothing.
+
+**What it does, in order**
+
+1. Checks the target: reachable, a replica set, and Vector Search actually works (a
+   throwaway collection and indexes are created and removed, nothing of yours is touched).
+2. Refuses to start while a GitHub/GitLab sync or any other job is running, or while
+   another migration is running. The "wardenIQ is busy" prompt lets you **Start anyway**
+   for a *best-effort* copy; a migration that is already running can never be overridden.
+   While a migration runs, new jobs are refused ("a database migration is in progress").
+3. Copies every collection (indexes are not copied; they are rebuilt on the next start).
+4. **Verifies the copy.** For every collection it compares the number of documents copied
+   with the target and with the source. If they differ, or the check cannot run, the job
+   **fails** ("wardenIQ was NOT switched"), `.env` is left untouched and your current
+   database is unchanged. Start the switch again, choosing to replace the data already copied.
+5. Only after a passing check does it write `MONGO_URI` to `.env` and tell you to restart
+   (`docker compose up -d`).
+
+**Retrying a failed switch.** **Jobs → Retry** on a failed migration runs the same checks
+again (admin only, target re-validated, not allowed while another migration or job is
+running). It keeps the original target and replace-data choice but never repeats an earlier
+"start anyway"; to replace data that is already in the target, start the switch again from
+Configuration → Database.
+
+**Limitations**
+
+- It is a **best-effort snapshot taken while wardenIQ is idle**, not a point-in-time backup.
+  Anything written to the old database after it was copied (and before you restart) stays
+  only in the old database. A busy copy started with **Start anyway** reports any change it
+  noticed as a warning instead of failing.
+- Progress is recorded only in the **old** database. If wardenIQ is restarted in the middle
+  of a copy, that progress is not visible from the new database and the copy cannot be
+  resumed; start the switch again and choose to replace the data.
+- Locking is per process, which is how wardenIQ ships (one app container).
+
+### After the restart: verify the new database
+
+Do this once, after `docker compose up -d` has finished and wardenIQ is reachable again.
+Search indexes are built on the new database during start-up and can take a few minutes on a
+large database.
+
+1. Sign in as an **admin** and open `/api/db-status` on your wardenIQ address in the same
+   browser (for example `http://localhost:8001/api/db-status`). It is a read-only page that
+   returns JSON. It needs an admin session; API tokens cannot be used because they are never
+   admin.
+2. Check these fields:
+
+   | Field | Healthy value |
+   |---|---|
+   | `boot.ready` (and `boot.stage`) | `true` (`"ready"`) |
+   | `search_available` | `true` |
+   | `indexes` | every value `true` |
+   | `hosts`, `replica_set`, `db_name` | the new database |
+
+   ```json
+   "indexes": {
+     "features":   {"vector_index": true},
+     "test_steps": {"vector_index": true},
+     "test_cases": {"vector_index": true, "text_index": true}
+   }
+   ```
+
+   `indexes: true` means that index is **queryable**. `boot.ready` alone only means index
+   creation was accepted. The Configuration → Database **Connection** row shows the same
+   boot state.
+3. If something is not ready:
+   - `boot.stage` is `"indexing"` or an index shows `false`: wait a minute and reload. A
+     bundled search engine is still syncing; `docker compose logs mongot` shows progress
+     (`mongot-percona` on the Percona stack).
+   - `boot.stage` is `"error"`: `boot.detail` says why (for example the database has no
+     Vector Search, or your Atlas tier allows too few search indexes).
+   - To go back, set `MONGO_URI` in `.env` to its previous value (or delete the line if you
+     had none, on the bundled stack) and run the same start command again; the old database
+     was never changed. `./collect-logs.sh` gathers logs if you need help.
+
+> **Limitation:** `/api/db-status` lists the indexes on `features`, `test_steps` and
+> `test_cases` (4 of the 6 search indexes). The two chunk indexes (`feature_chunks`,
+> `code_chunks`) are created in the same start-up step but are not listed there; if their
+> creation failed, `boot.stage` is `"error"`.
+
 ---
 
 ## Bring your own LLM

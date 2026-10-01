@@ -209,8 +209,10 @@ def _migrate_worker(jid, params):
         jid, switched=True, restart_required=True, apply_cmd="docker compose up -d",
         # Index rebuilding on the target happens via ensure_indexes() on the next boot,
         # which only happens once the user restarts -- this is how to confirm it worked.
-        post_restart_check="After restarting, check /api/db-status -- all search "
-                           "indexes should report queryable: true.")
+        post_restart_check="After restarting, sign in as an admin and open /api/db-status: "
+                           "boot.ready should be true and every entry under indexes "
+                           "should be true (search indexes are queryable). Details: "
+                           "docs/configuration.md, \"Switching databases\".")
     store.update_job_progress(jid, "done", 100)
 
 

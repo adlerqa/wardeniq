@@ -26,6 +26,13 @@ class MigrationInProgress(Exception):
     callers (pollers, webhook threads) catch it themselves."""
 
 
+class MigrationBlocked(MigrationInProgress):
+    """A migration may not START right now: another migration is already running, or
+    something else is running and the caller did not accept a best-effort snapshot
+    (workers/registry.py's migration_blocker()). Subclasses MigrationInProgress so the
+    same global handler turns it into a 409 for every launch path."""
+
+
 MIGRATION_IN_PROGRESS_MSG = ("a database migration is in progress -- try again once it "
                              "finishes")
 
