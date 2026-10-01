@@ -67,6 +67,7 @@ temp/
 service-account*.json
 # Generated mongot secret — never commit (created by install.sh / run.sh)
 config/pwfile
+config/pwfile-percona
 # Generated replica-set keyfile for optional Mongo auth — never commit
 config/keyfile
 

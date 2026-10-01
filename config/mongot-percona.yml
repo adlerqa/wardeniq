@@ -1,0 +1,33 @@
+# Percona Search for MongoDB (mongot fork) — validation config for issue #41.
+# OVERRIDES the image's shipped default at /etc/mongot/mongot.yml. Schema
+# confirmed by reading that shipped default directly (percona/percona-search-mongodb:1.70.4)
+# — see docs/percona-search-validation.md for the exact commands used.
+#
+# Percona's schema nests auth under syncSource.replicaSet.scramAuth, unlike
+# MongoDB Community mongot's config (config/mongot.conf), which puts
+# username/passwordFile directly under syncSource.replicaSet. That's a real,
+# confirmed config-shape difference between the two, not a copy-paste of the
+# Community file.
+syncSource:
+  replicaSet:
+    hostAndPort: "mongod-percona:27017"
+    scramAuth:
+      username: mongotUser
+      passwordFile: "/etc/mongot/secrets/passwordFile"
+      authSource: admin
+      tls:
+        enabled: false
+storage:
+  dataPath: "/var/lib/mongot"
+server:
+  grpc:
+    address: "mongot-percona:27028"
+    tls:
+      mode: "disabled"
+metrics:
+  enabled: true
+  address: "0.0.0.0:9946"
+healthCheck:
+  address: "0.0.0.0:8080"
+logging:
+  verbosity: INFO
