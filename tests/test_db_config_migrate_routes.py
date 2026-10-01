@@ -123,3 +123,22 @@ def test_db_migrate_starts_the_job_for_a_fully_validated_target(monkeypatch):
     r = client.post("/api/db-migrate", json={"target_uri": URI}, cookies=_cookie())
     assert r.status_code == 200 and r.json() == {"job_id": "job1"}
     assert env.jobs == [("migrate", {"target_uri": URI, "overwrite": False})]
+
+
+def test_db_migrate_surfaces_the_curated_index_limit_message(monkeypatch):
+    from core.bootstrap import _SEARCH_INDEX_LIMIT_MSG
+    env = _Env(monkeypatch, _probe_result(search_ok=False, status="no_search",
+                                          detail=_SEARCH_INDEX_LIMIT_MSG))
+    r = client.post("/api/db-migrate", json={"target_uri": URI}, cookies=_cookie())
+    assert r.status_code == 400
+    assert _SEARCH_INDEX_LIMIT_MSG in r.json()["detail"] and "nothing copied" in r.json()["detail"]
+    assert env.jobs == []
+
+
+def test_db_config_surfaces_the_curated_index_limit_message(monkeypatch):
+    from core.bootstrap import _SEARCH_INDEX_LIMIT_MSG
+    env = _Env(monkeypatch, _probe_result(search_ok=False, status="no_search",
+                                          detail=_SEARCH_INDEX_LIMIT_MSG))
+    r = client.post("/api/db-config", json={"uri": URI}, cookies=_cookie())
+    assert r.status_code == 400 and _SEARCH_INDEX_LIMIT_MSG in r.json()["detail"]
+    assert env.env_writes == []

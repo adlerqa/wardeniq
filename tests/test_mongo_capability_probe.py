@@ -30,6 +30,7 @@ from api.routes import settings as settings_mod
 from api.routes.settings import (
     MIN_MONGO_VERSION, _probe_mongo, _probe_vector, _version_below,
 )
+from core.bootstrap import _SEARCH_INDEX_LIMIT_MSG, _SEARCH_REQUIRED_MSG, _search_index_limit
 from store.base import TEXT_INDEX, VECTOR_INDEX
 
 
@@ -105,8 +106,9 @@ class FakeAdmin:
 
 class FakeCollection:
     def __init__(self, create_error=None, ready_after_polls=0, aggregate_error=None,
-                 insert_error=None, empty_results=False):
+                 insert_error=None, empty_results=False, create_error_after=0):
         self.inserted = []
+        self.create_error_after = create_error_after    # creates that succeed before create_error
         self.index_definitions = {}     # name -> SearchIndexModel.document
         self._queryable = {}
         self.create_error = create_error
@@ -124,7 +126,7 @@ class FakeCollection:
         self.inserted.append(doc)
 
     def create_search_index(self, model):
-        if self.create_error:
+        if self.create_error and len(self.index_definitions) >= self.create_error_after:
             raise self.create_error
         self.index_definitions[model.document["name"]] = model.document
         self._queryable[model.document["name"]] = False
@@ -304,6 +306,105 @@ def test_probe_search_unsupported_is_no_search(monkeypatch):
     _patch_client(monkeypatch, client)
     r = _probe_mongo("mongodb://x/")
     assert r["status"] == "no_search" and r["search_ok"] is False
+
+
+# Raw text a real Atlas tier cap produces; the marker lets tests prove the raw driver
+# text is not what the caller is shown.
+RAW_LIMIT_MARKER = "raw-driver-marker-7f3a"
+ATLAS_LIMIT_ERROR = (
+    "Error: you have reached the maximum number of FTS indexes allowed for this instance "
+    f"size (M0: 3). {RAW_LIMIT_MARKER} Upgrade the cluster tier to create more search indexes."
+)
+
+
+def test_limit_error_text_is_recognised_by_the_existing_helper():
+    # Guards the fixture itself: the probe must be reusing core.bootstrap's helper,
+    # not matching its own strings, so the fixture has to be something that helper accepts.
+    assert _search_index_limit(OperationFailure(ATLAS_LIMIT_ERROR)) is True
+
+
+@pytest.mark.parametrize("after", [0, 1], ids=["cap_hit_on_vector_index", "cap_hit_on_text_index"])
+def test_probe_index_limit_error_returns_no_search_with_the_curated_message(monkeypatch, after):
+    coll = FakeCollection(create_error=OperationFailure(ATLAS_LIMIT_ERROR, code=8000),
+                          create_error_after=after)
+    client, _ = _healthy(coll)
+    _patch_client(monkeypatch, client)
+    r = _probe_mongo("mongodb://x/")
+    assert r["status"] == "no_search" and r["search_ok"] is False
+    # The existing, curated, actionable message -- exactly, not a copy of it.
+    assert r["detail"] == _SEARCH_INDEX_LIMIT_MSG
+    # ...and not the raw (previously truncated) driver text.
+    assert RAW_LIMIT_MARKER not in r["detail"]
+    assert "could not create a search index" not in r["detail"]
+
+
+def test_probe_index_limit_error_still_cleans_up(monkeypatch):
+    # Cap hit on the SECOND index: the first one already exists and must be removed.
+    coll = FakeCollection(create_error=OperationFailure(ATLAS_LIMIT_ERROR), create_error_after=1)
+    client, _ = _healthy(coll)
+    _patch_client(monkeypatch, client)
+    r = _probe_mongo("mongodb://x/")
+    assert r["status"] == "no_search"
+    assert coll.dropped_index_names == [VECTOR_INDEX]
+    assert client._db.dropped_collections == client._db.requested_names
+    assert client.closed is True
+
+
+def test_probe_index_limit_error_is_logged_server_side_not_returned(monkeypatch):
+    class Recorder:
+        def __init__(self):
+            self.lines = []
+
+        def warning(self, fmt, *args):
+            self.lines.append(fmt % args)
+
+        def __getattr__(self, name):        # info/error/... are irrelevant here
+            return lambda *a, **k: None
+
+    rec = Recorder()
+    monkeypatch.setattr(settings_mod, "log", rec)
+    coll = FakeCollection(create_error=OperationFailure(ATLAS_LIMIT_ERROR))
+    client, _ = _healthy(coll)
+    _patch_client(monkeypatch, client)
+    r = _probe_mongo("mongodb://user:Pw0rdMarker@db.example.test/")
+    logged = "\n".join(rec.lines)
+    assert RAW_LIMIT_MARKER in logged               # diagnosable by an operator...
+    assert RAW_LIMIT_MARKER not in repr(r)          # ...but not handed to the caller
+    assert "Pw0rdMarker" not in logged and "db.example.test" not in logged
+
+
+@pytest.mark.parametrize("raw", [
+    "Search index creation failed: index definition is invalid for field embedding",
+    "an unrelated server error occurred while creating the index",
+    "FTS index build queue is busy, try again",          # mentions FTS indexes, but not a cap
+])
+def test_probe_generic_create_failure_is_not_misclassified_as_the_index_limit(monkeypatch, raw):
+    coll = FakeCollection(create_error=OperationFailure(raw))
+    client, _ = _healthy(coll)
+    _patch_client(monkeypatch, client)
+    r = _probe_mongo("mongodb://x/")
+    assert r["status"] == "no_search"
+    assert r["detail"] != _SEARCH_INDEX_LIMIT_MSG
+    assert r["detail"].startswith("could not create a search index:")
+    assert raw[:60] in r["detail"]                      # generic diagnostic preserved
+
+
+def test_probe_search_unsupported_still_uses_the_requires_search_message(monkeypatch):
+    coll = FakeCollection(create_error=OperationFailure("no such command: 'createSearchIndexes'"))
+    client, _ = _healthy(coll)
+    _patch_client(monkeypatch, client)
+    r = _probe_mongo("mongodb://x/")
+    assert r["detail"] == _SEARCH_REQUIRED_MSG
+    assert r["detail"] != _SEARCH_INDEX_LIMIT_MSG
+
+
+def test_probe_unauthorized_is_still_insufficient_privileges_not_index_limit(monkeypatch):
+    coll = FakeCollection(create_error=OperationFailure("not authorized on x to execute command", code=13))
+    client, _ = _healthy(coll)
+    _patch_client(monkeypatch, client)
+    r = _probe_mongo("mongodb://x/")
+    assert r["status"] == "insufficient_privileges"
+    assert r["detail"] != _SEARCH_INDEX_LIMIT_MSG
 
 
 def test_probe_full_success_reports_ok_and_cleans_up(monkeypatch):

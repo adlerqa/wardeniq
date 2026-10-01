@@ -34,7 +34,10 @@ from pymongo.operations import SearchIndexModel
 import auth
 from api.schemas import OtpRequestIn
 from core.audit import _audit
-from core.bootstrap import BOOT, _SEARCH_REQUIRED_MSG, _search_unsupported
+from core.bootstrap import (
+    BOOT, _SEARCH_INDEX_LIMIT_MSG, _SEARCH_REQUIRED_MSG,
+    _search_index_limit, _search_unsupported,
+)
 from core.config import (
     DB_NAME, EMBED_DIM, EMBED_MODEL, ENV_FILE_PATH,
     GEN_MODEL, MIN_POLL_INTERVAL, PROVIDER_LOCK,
@@ -634,6 +637,15 @@ def _probe_mongo(uri: str, dim: int | None = None) -> dict:
                 result["detail"] = ("connected, but this user isn't authorized to create search "
                                     "indexes -- wardenIQ needs index-management privileges on "
                                     "this database.")
+            elif _search_index_limit(e):
+                # Same classification + curated message core.bootstrap uses at startup:
+                # the Atlas per-tier index cap is a distinct, common case, and the fix
+                # (bigger tier or self-managed mongot) is not in the driver's error text.
+                # The raw error goes to the server log, not to the caller.
+                log.warning("[db-probe] search index limit reached on the candidate "
+                            "database: %s", str(e)[:300])
+                result["status"] = "no_search"
+                result["detail"] = _SEARCH_INDEX_LIMIT_MSG
             elif _search_unsupported(e):
                 result["status"] = "no_search"
                 result["detail"] = _SEARCH_REQUIRED_MSG
