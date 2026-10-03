@@ -46,13 +46,22 @@ prompt or model change produces a number instead of an impression:
 python -m tests.eval.run_eval                      # offline: grounding probes + dedup
 python -m tests.eval.run_eval --coverage \
     --provider ollama --model qwen2.5:7b           # real-model coverage accuracy
+python -m tests.eval.run_eval --out results.json    # also archive the JSON result
 ```
 
-The offline sections are deterministic and expected to score `1.0`, so they're safe to
-gate CI on (non-zero exit on regression). The `--coverage` section needs a reachable LLM
-and reports per-status precision/recall plus an **overclaim rate** - how often a verdict
-claimed *more* coverage than the truth, tracked separately because saying "tested" about
-untested behaviour is a worse error than the reverse.
+The offline sections are deterministic and expected to score `1.0`, so **CI gates on them**
+(`.github/workflows/ci.yml`'s `unit-tests` job runs `python -m tests.eval.run_eval --probes
+--dedup` as an explicit step; `tests/test_eval_harness.py` exercises the same logic via
+pytest too — either regressing fails the build). The `--coverage` section needs a reachable
+LLM, so it deliberately stays a manual/on-demand benchmark rather than a CI gate — it
+reports per-status precision/recall plus an **overclaim rate** - how often a verdict claimed
+*more* coverage than the truth, tracked separately because saying "tested" about untested
+behaviour is a worse error than the reverse.
+
+Every run's `--json`/`--out` output includes a `meta` block (tool, UTC timestamp, a
+content-derived `dataset_fingerprint`, which sections ran, and — only when `--coverage`
+ran — the provider/model) so two runs can be compared and a result can be traced back to
+the exact corpus it was scored against. Never includes API keys or other secrets.
 
 SMTP (for sign-in emails) is set under **Configuration → Email** (stored encrypted, takes
 precedence) or via `SMTP_*` vars in `.env`. Until SMTP exists, the first admin's code is
