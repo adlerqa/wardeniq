@@ -163,8 +163,17 @@ if ($("#mm-add-git"))
 async function loadMindmapRepos() {
   const pid = $("#mm-proj").value || currentProject;
   if (!pid) return;
+  skIn("#mm-map", skeleton.rows(5, "Loading coverage map"));
   try {
-    const r = await api(`/api/projects/${pid}/repos?repo_type=app`); // app repos only (test repos excluded)
+    const r = await api(`/api/projects/${pid}/mindmap`);
+    MM_DATA = r;
+    MM_FOCUS = null;
+    renderMindmapDiag(r.last_analysis?.per_repo || []);
+
+    renderMmGraph();
+    if (!r.features.length) {
+      // Handle empty features if needed
+    }
     $("#mm-repos").innerHTML = repoBranchRows(r.repos, "mm-repo");
     fillBranchDropdowns("mm-repo", r.repos);
   } catch (e) {}
