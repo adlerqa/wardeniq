@@ -12,6 +12,7 @@ path reports through this one gate).
 
 import math
 import os
+import secrets
 import time
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -71,6 +72,14 @@ def cosine_atlas(a, b) -> float:
     na = math.sqrt(sum(x * x for x in a)) or 1e-9
     nb = math.sqrt(sum(y * y for y in b)) or 1e-9
     return (1 + dot / (na * nb)) / 2
+
+
+# Shown (and raised) whenever a migration target turns out to be the database wardenIQ is
+# already using. migrate_to(overwrite=True) deletes the target's documents before copying, so
+# pointing it at its own source would erase the data it is about to copy.
+SELF_TARGET_MSG = ("The target is the database wardenIQ is already using. A migration copies "
+                   "your data to a DIFFERENT database; copying a database onto itself would "
+                   "erase it. Nothing was copied.")
 
 
 class BaseStore:
@@ -408,6 +417,31 @@ class BaseStore:
         else:
             self._degraded.pop(what, None)
 
+    def target_is_this_database(self, target_uri: str) -> bool:
+        """True if the database at `target_uri` (same database name as ours) IS the database
+        this store is using -- the same data, however the URI spells the server (localhost vs
+        127.0.0.1, an internal service name, an SRV record, a proxy).
+
+        Comparing connection strings cannot tell that, so this proves it instead: write a
+        uniquely named scratch collection into OUR database, then look for it through the
+        target connection. Visible there means same database. The collection name is unique
+        per call (concurrent checks cannot interfere) and is always dropped again. It is read
+        from the primary so replication lag cannot hide it. Any failure (cannot write, cannot
+        reach the target) raises: callers must treat "could not tell" as "do not copy"."""
+        from pymongo import ReadPreference
+        name = f"wardeniq_selfcheck_{secrets.token_hex(12)}"
+        c: MongoClient = MongoClient(target_uri, serverSelectionTimeoutMS=8000)
+        try:
+            self.db[name].insert_one({"_id": name})
+            try:
+                seen = c[self.db.name].get_collection(
+                    name, read_preference=ReadPreference.PRIMARY).find_one({"_id": name})
+                return seen is not None
+            finally:
+                self.db.drop_collection(name)
+        finally:
+            c.close()
+
     def target_has_data(self, target_uri: str) -> bool:
         """True if the target database already holds any app data (so we don't clobber
         someone's existing DB without consent)."""
@@ -429,9 +463,16 @@ class BaseStore:
         preserving _ids and embedded vectors. Indexes are NOT copied — the app
         recreates them (regular + vector/search) on next startup against the target.
         Returns {collection: docs_copied}. Documents are streamed in batches so large,
-        embedding-heavy datasets don't blow up memory."""
+        embedding-heavy datasets don't blow up memory.
+
+        Refuses (before reading or deleting anything) when the target is this very database:
+        with `overwrite` the target's documents are deleted before the copy, so a self-target
+        would erase the data it is about to copy. Enforced here, at the destructive
+        primitive, so no caller (route, retry, a future one) can bypass it."""
         from pymongo import MongoClient
         BATCH = 300
+        if self.target_is_this_database(target_uri):
+            raise RuntimeError(SELF_TARGET_MSG)
         c = MongoClient(target_uri, serverSelectionTimeoutMS=8000)
         try:
             tgt = c[self.db.name]
@@ -461,5 +502,71 @@ class BaseStore:
                     copied += len(batch)
                 counts[nm] = copied
             return counts
+        finally:
+            c.close()
+
+    def verify_migration(self, target_uri: str, copied_counts: dict,
+                         allow_source_drift: bool = False) -> dict:
+        """Post-copy verification of migrate_to() (#111). Run AFTER the copy, BEFORE the
+        app is pointed at the target.
+
+        What is counted: an EXACT count_documents({}) -- not estimated_document_count,
+        whose cached stats can lag right after a bulk insert -- for every collection
+        migrate_to() reported copying (`copied_counts`: {collection: docs_copied}),
+        taken NOW on the target and NOW on the source.
+
+        What must hold, per collection:
+          * target == copied  -- the target really holds everything that was streamed.
+            A shortfall is always a failure.
+          * source == copied  -- the source did not gain/lose documents while (or just
+            after) it was being copied, so the target is a complete snapshot. Documents
+            written after they were streamed exist only in the old database, so
+            restarting onto the target would lose them. A difference is a failure,
+            unless `allow_source_drift` (the caller started the migration with
+            override_busy, i.e. accepted a best-effort snapshot), in which case it is
+            recorded as a warning instead.
+        A collection that appeared on the source after the copy started was never
+        copied; it is reported under the same source-drift rule.
+
+        Counts that cannot be obtained raise -- the caller must treat that as "not
+        verified", never as success.
+
+        Returns {"ok": bool, "failures": [str], "warnings": [str],
+                 "collections": {name: {"copied", "target_now", "source_now",
+                                        "target_match", "source_match"}}}.
+        Messages contain collection names and counts only, never the connection string.
+
+        A "copy" onto this same database can never verify: comparing a database with itself
+        passes trivially (even after the copy erased it: 0 == 0), so that case fails closed."""
+        if self.target_is_this_database(target_uri):
+            return {"ok": False, "failures": [SELF_TARGET_MSG], "warnings": [],
+                    "collections": {}}
+        c: MongoClient = MongoClient(target_uri, serverSelectionTimeoutMS=8000)
+        try:
+            tgt = c[self.db.name]
+            collections: dict[str, dict] = {}
+            failures: list[str] = []
+            warnings: list[str] = []
+            drift = warnings if allow_source_drift else failures
+            for nm, copied in copied_counts.items():
+                target_now = tgt[nm].count_documents({})
+                source_now = self.db[nm].count_documents({})
+                target_match, source_match = target_now == copied, source_now == copied
+                collections[nm] = {"copied": copied, "target_now": target_now,
+                                   "source_now": source_now, "target_match": target_match,
+                                   "source_match": source_match}
+                if not target_match:
+                    failures.append(f"'{nm}': {copied} documents were copied but the target "
+                                    f"has {target_now}")
+                if not source_match:
+                    drift.append(f"'{nm}': {copied} documents were copied but the source now "
+                                 f"has {source_now} (it changed during the copy)")
+            created_since = sorted(n for n in self.db.list_collection_names()
+                                   if not n.startswith("system.") and n not in copied_counts)
+            for nm in created_since:
+                drift.append(f"'{nm}' was created on the source during the copy and was "
+                             "not copied")
+            return {"ok": not failures, "failures": failures, "warnings": warnings,
+                    "collections": collections}
         finally:
             c.close()

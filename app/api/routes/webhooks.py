@@ -24,11 +24,28 @@ from fastapi import APIRouter, Request
 
 from background.poller import _ACCEPTED_GH_ACTIONS, _ACCEPTED_GL_ACTIONS, _verify_github_signature
 from core.config import WEBHOOK_SECRET
+from core.exceptions import MigrationInProgress
+from core.logging_setup import get_logger
 from core.state import store
 from workers.code_coverage_worker import ingest_pr_tracked
 import crypto
 
 router = APIRouter()
+log = get_logger("webhooks")
+
+
+def _ingest_pr_in_thread(repo, pr):
+    """Thread target for webhook-driven ingestion. While a database migration is running
+    new background work is refused (#111); for a webhook that means the event is dropped,
+    so say so explicitly instead of dying with an unhandled thread traceback. (GitHub PRs
+    are picked up again by the next poll; GitLab MRs are webhook-driven only, so that
+    event needs a manual redelivery.)"""
+    try:
+        ingest_pr_tracked(repo, pr)
+    except MigrationInProgress:
+        log.warning("[webhook] PR/MR event for %s dropped: a database migration is in "
+                    "progress. Redeliver it once the migration has finished.",
+                    (repo or {}).get("full_name", "?"))
 
 
 @router.post("/api/webhook/github")
@@ -57,7 +74,7 @@ async def github_webhook(request: Request):
         if WEBHOOK_SECRET and _verify_github_signature(WEBHOOK_SECRET, body, sig_header):
             repo = store.repo_by_fullname(full)
             if repo:
-                threading.Thread(target=ingest_pr_tracked, args=(repo, payload.get("pull_request", {})),
+                threading.Thread(target=_ingest_pr_in_thread, args=(repo, payload.get("pull_request", {})),
                                  daemon=True).start()
                 return {"handled": True, "repo": full}
         return {"ok": True}
@@ -74,7 +91,7 @@ async def github_webhook(request: Request):
         if repo["project_id"] in seen:
             continue
         seen.add(repo["project_id"])
-        threading.Thread(target=ingest_pr_tracked, args=(repo, payload.get("pull_request", {})),
+        threading.Thread(target=_ingest_pr_in_thread, args=(repo, payload.get("pull_request", {})),
                          daemon=True).start()
     return {"handled": True, "projects": len(seen), "repo": full}
 
@@ -126,5 +143,5 @@ async def gitlab_webhook(request: Request):
         if repo["project_id"] in seen:
             continue
         seen.add(repo["project_id"])
-        threading.Thread(target=ingest_pr_tracked, args=(repo, pseudo_pr), daemon=True).start()
+        threading.Thread(target=_ingest_pr_in_thread, args=(repo, pseudo_pr), daemon=True).start()
     return {"handled": True, "projects": len(seen), "repo": full}

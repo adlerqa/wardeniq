@@ -1,20 +1,96 @@
 
 import threading
+from collections.abc import Callable
 
 import usage
+from core.exceptions import MIGRATION_IN_PROGRESS_MSG, MigrationBlocked, MigrationInProgress
 from core.logging_setup import get_logger
-from core.state import store  # noqa: F401  (bare name-import is safe: store is
-                                              # mutated, never rebound)
+from core.state import SYNC, store  # noqa: F401  (bare name-import is safe: store is
+                                                  # mutated, never rebound)
 from workers.heartbeat import heartbeat
 
 log = get_logger("jobs")
 
 JOB_WORKERS = {}   # job type -> worker(jid, params)
 
+# Job types whose launch has preconditions beyond "a worker exists" register a retry
+# handler here (job type -> handler(request, job, override_busy) -> new job id), so that
+# POST /api/jobs/{id}/retry re-runs them through the SAME checks as their normal entry
+# point instead of calling launch_job() directly. See api/routes/settings.py (migrate).
+JOB_RETRY_HANDLERS: dict[str, Callable[..., str]] = {}
 
-def launch_job(jtype, params, label="", project_id=None, feature_id=None):
+# Job types that may ONLY be retried through a registered handler. For these the generic retry
+# (re-launching the stored params as they were) is never acceptable: a migration's stored
+# params include destructive choices (`overwrite`) that must not be re-applied, and skipping
+# the handler would skip its preflight and authorization. If the handler is missing, retry
+# fails closed instead of silently falling back (see api/routes/jobs_usage.py).
+RETRY_REQUIRES_HANDLER = frozenset({"migrate"})
+
+# Serialises "may this job start?" with "create its job row" for EVERY launch path. That
+# is what makes the migration invariants race-free within a process: whichever of
+# {a migration, any other job} creates its row first is seen by the other's check. The
+# critical section is one find + one insert; nothing slow (probe, copy) runs under it.
+# Process-local: the shipped container runs a single uvicorn process, and this does NOT
+# make multi-process deployments safe.
+_LAUNCH_LOCK = threading.Lock()
+
+
+def migration_blocker(override_busy: bool = False) -> str | None:
+    """Why a migration may not start right now, or None if it may (#111).
+
+    migrate_to() streams the live source database with no isolation, so anything writing
+    during the copy can yield a partial capture:
+      * another migration already running -- never overridable;
+      * a GitHub/GitLab sync (core.state.SYNC["running"]) or any other `jobs` row with
+        status "running" -- refused unless `override_busy` (a best-effort snapshot)."""
+    if store.has_running_job(only_types=("migrate",)):
+        return "A database migration is already in progress. Wait for it to finish."
+    if override_busy:
+        return None
+    if SYNC.get("running"):
+        return ("A GitHub/GitLab sync is currently running. Wait for it to finish, or start "
+                "anyway (best-effort snapshot, not guaranteed-consistent).")
+    busy = store.has_running_job(exclude_types=("migrate",))
+    if busy:
+        what = busy.get("label") or busy.get("type") or "a job"
+        return (f"wardenIQ is currently busy ({what}). Wait for it to finish, or start "
+                "anyway (best-effort snapshot, not guaranteed-consistent).")
+    return None
+
+
+def _admit_and_create_job(jtype, params, label, project_id, feature_id, before_start=None):
+    """The single place a job row is created for launch_job()/run_tracked(), so the
+    migration rules hold no matter which route, retry or internal caller asked (#111):
+
+      * a MIGRATION is admitted only if migration_blocker() is clear (another migration
+        running is never overridable; `override_busy` in its params only waives the
+        "something else is running" check);
+      * every OTHER job is refused while a migration is running, because migrate_to()
+        streams the live source with no isolation and a job inserting mid-copy would
+        produce a partial capture.
+
+    The "migration in progress" state is a `jobs` row of type "migrate" with status
+    "running": cleared by the launch_job() wrapper when the worker succeeds OR raises,
+    and by fail_orphaned_jobs() / sweep_stale_jobs() if the process died mid-copy, so a
+    failed migration can never leave the app permanently blocked.
+
+    `before_start` runs after admission and before the row exists (used to write the
+    audit entry before the copy can begin); if it raises, nothing is launched."""
+    with _LAUNCH_LOCK:
+        if jtype == "migrate":
+            blocker = migration_blocker(bool((params or {}).get("override_busy")))
+            if blocker:
+                raise MigrationBlocked(blocker)
+        elif store.has_running_job(only_types=("migrate",)):
+            raise MigrationInProgress(MIGRATION_IN_PROGRESS_MSG)
+        if before_start:
+            before_start()
+        return store.create_job(jtype, params, label, project_id, feature_id)
+
+
+def launch_job(jtype, params, label="", project_id=None, feature_id=None, before_start=None):
     """Create a persisted job and run its worker in a background thread."""
-    jid = store.create_job(jtype, params, label, project_id, feature_id)
+    jid = _admit_and_create_job(jtype, params, label, project_id, feature_id, before_start)
 
     def run():
         usage.start()   # record all LLM/embedding tokens spent by this job's thread
@@ -53,7 +129,7 @@ def run_tracked(jtype, fn, *, label="", project_id=None, feature_id=None):
     a bare background thread that has no active recorder; never from inside a
     ``launch_job`` worker (which already records) or recording would nest.
     """
-    jid = store.create_job(jtype, {}, label, project_id, feature_id)
+    jid = _admit_and_create_job(jtype, {}, label, project_id, feature_id)
     result = None
     usage.start()
     try:
