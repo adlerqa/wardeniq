@@ -207,6 +207,9 @@ so a failed or abandoned switch loses nothing.
 
 1. Checks the target: reachable, a replica set, and Vector Search actually works (a
    throwaway collection and indexes are created and removed, nothing of yours is touched).
+   It also refuses a target that **is the database wardenIQ is already using** (however the
+   address is spelled: `localhost`, `127.0.0.1`, a service name), because copying a database
+   onto itself would erase it. Nothing is copied in that case.
 2. Refuses to start while a GitHub/GitLab sync or any other job is running, or while
    another migration is running. The "wardenIQ is busy" prompt lets you **Start anyway**
    for a *best-effort* copy; a migration that is already running can never be overridden.
@@ -217,13 +220,29 @@ so a failed or abandoned switch loses nothing.
    **fails** ("wardenIQ was NOT switched"), `.env` is left untouched and your current
    database is unchanged. Start the switch again, choosing to replace the data already copied.
 5. Only after a passing check does it write `MONGO_URI` to `.env` and tell you to restart
-   (`docker compose up -d`).
+   (see [Starting wardenIQ after the switch](#starting-wardeniq-after-the-switch) below).
 
 **Retrying a failed switch.** **Jobs → Retry** on a failed migration runs the same checks
-again (admin only, target re-validated, not allowed while another migration or job is
-running). It keeps the original target and replace-data choice but never repeats an earlier
-"start anyway"; to replace data that is already in the target, start the switch again from
-Configuration → Database.
+again (admin only, target re-validated, never the database wardenIQ is using, not allowed
+while another migration or job is running). It keeps only the original target. It never
+repeats an earlier "start anyway" **or** an earlier "replace existing data", because the
+target may hold something else now: a target that already contains data is refused. To
+replace data in a target, start the switch again from Configuration → Database, where you
+are asked to confirm.
+
+### Starting wardenIQ after the switch
+
+The screen shows `docker compose up -d` as the command to finish switching. Run it from the
+folder you installed wardenIQ in, in the form that matches your install:
+
+```bash
+docker compose -f docker-compose.app.yml up -d --no-build   # bring-your-own MongoDB install
+docker compose up -d --no-build                             # bundled all-in-one install
+```
+
+These are the same start commands as under "Day to day" above. In a bring-your-own folder
+there is no default Compose file, so the bare `docker compose up -d` fails with "no
+configuration file provided".
 
 **Limitations**
 
@@ -238,7 +257,8 @@ Configuration → Database.
 
 ### After the restart: verify the new database
 
-Do this once, after `docker compose up -d` has finished and wardenIQ is reachable again.
+Do this once, after the start command from [Starting wardenIQ after the switch](#starting-wardeniq-after-the-switch)
+has finished and wardenIQ is reachable again.
 Search indexes are built on the new database during start-up and can take a few minutes on a
 large database.
 
@@ -273,7 +293,8 @@ large database.
    - `boot.stage` is `"error"`: `boot.detail` says why (for example the database has no
      Vector Search, or your Atlas tier allows too few search indexes).
    - To go back, set `MONGO_URI` in `.env` to its previous value (or delete the line if you
-     had none, on the bundled stack) and run the same start command again; the old database
+     had none, on the bundled stack) and run the same start command again (same form as
+     above); the old database
      was never changed. `./collect-logs.sh` gathers logs if you need help.
 
 > **Limitation:** `/api/db-status` lists the indexes on `features`, `test_steps` and

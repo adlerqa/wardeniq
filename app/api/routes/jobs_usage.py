@@ -23,7 +23,7 @@ from core.config import GEN_TOTAL
 from core.deps import _ext_error, current_ollama_url
 from core.security import _allowed_project_ids, _current_user, _require_job_project
 from core.state import store
-from workers.registry import JOB_RETRY_HANDLERS, JOB_WORKERS, launch_job
+from workers.registry import JOB_RETRY_HANDLERS, JOB_WORKERS, RETRY_REQUIRES_HANDLER, launch_job
 
 router = APIRouter()
 
@@ -174,6 +174,9 @@ def job_retry(jid: str, request: Request, override_busy: bool = False):
     handler = JOB_RETRY_HANDLERS.get(j["type"])
     if handler:
         return {"job_id": handler(request, j, override_busy)}
+    if j["type"] in RETRY_REQUIRES_HANDLER:
+        # Fail closed: never fall back to re-launching a migration's stored params.
+        raise HTTPException(400, f"job type '{j['type']}' cannot be retried")
     nid = launch_job(j["type"], j.get("params", {}), label=j.get("label", "") + " (retry)",
                      project_id=j.get("project_id"), feature_id=j.get("feature_id"))
     return {"job_id": nid}

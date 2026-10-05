@@ -50,7 +50,7 @@ from core.deps import (
 from core.logging_setup import get_logger
 from core.security import _current_user
 from core.state import store
-from store.base import TEXT_INDEX, VECTOR_INDEX
+from store.base import SELF_TARGET_MSG, TEXT_INDEX, VECTOR_INDEX
 from workers.registry import JOB_RETRY_HANDLERS, launch_job, migration_blocker
 
 log = get_logger("settings")
@@ -784,7 +784,12 @@ def _preflight_migration(uri, overwrite: bool, override_busy: bool, via_retry: b
 
     The idle / one-migration-at-a-time rules are enforced again, atomically with the job
     creation, inside workers.registry.launch_job() -- the check here is the cheap
-    fast-fail that avoids a long capability probe when the answer would be "no" anyway."""
+    fast-fail that avoids a long capability probe when the answer would be "no" anyway.
+    Likewise the "target is this very database" rule is enforced again inside
+    Store.migrate_to() and verify_migration(), where the data would actually be erased.
+
+    `overwrite` is the caller's explicit, per-request choice to replace data already in the
+    target; it is never taken from a stored job (see _retry_migration)."""
     uri = (uri or "").strip()
     if not uri:
         raise HTTPException(400, "Enter the target MongoDB connection string.")
@@ -804,13 +809,27 @@ def _preflight_migration(uri, overwrite: bool, override_busy: bool, via_retry: b
                                  "Nothing copied.")
     if not probe["search_ok"]:
         raise HTTPException(400, f"{probe['detail']} Migration cancelled — nothing copied.")
+    # The target must be a DIFFERENT database. A migration with `overwrite` deletes the
+    # target's documents before copying, so a target that is this very database (however its
+    # URI is spelled -- this is proven, not guessed from the string) would erase the data.
+    # Fails closed: if it cannot be determined, nothing is copied.
+    try:
+        if store.target_is_this_database(uri):
+            raise HTTPException(400, SELF_TARGET_MSG)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        log.error("[db-config] could not confirm the target is a different database: %r", e)
+        raise HTTPException(400, "Couldn't confirm that the target is a different database "
+                                 "from the one wardenIQ is using, so nothing was copied "
+                                 "(details in the server logs).")
     # Guard against clobbering a target that already has data (unless the caller insists).
     try:
         if not overwrite and store.target_has_data(uri):
             if via_retry:
                 raise HTTPException(409, "The target database already contains data (for "
-                                         "example from the earlier attempt). Retry keeps the "
-                                         "original options, so to replace that data start the "
+                                         "example from the earlier attempt). A retry never "
+                                         "replaces existing data, so to replace it start the "
                                          "switch again from Configuration > Database and "
                                          "choose to replace it.")
             raise HTTPException(409, "The target database already contains data. Re-run with "
@@ -854,16 +873,24 @@ def _retry_migration(request: Request, job: dict, override_busy: bool = False) -
     """POST /api/jobs/{id}/retry for a `migrate` job (registered in JOB_RETRY_HANDLERS).
 
     A retry is a NEW migration request, so it goes through exactly the same preflight and
-    admission as POST /api/db-migrate: admin only, capability probe, non-empty-target
-    guard, idle check, never two migrations at once. It keeps the original target and
-    `overwrite`, but never inherits an earlier `override_busy`: accepting a best-effort
-    snapshot has to be repeated explicitly (`?override_busy=true`) for each attempt."""
+    admission as POST /api/db-migrate: admin only, capability probe, "not this very
+    database", non-empty-target guard, idle check, never two migrations at once. It keeps
+    the original target and nothing else that was a choice:
+      * `override_busy` (accepting a best-effort snapshot) must be repeated explicitly
+        (`?override_busy=true`) for each attempt;
+      * `overwrite` (replacing the target's existing data) is NEVER re-applied. It was a
+        destructive confirmation for one particular attempt against whatever the target held
+        then; the target may hold something else now (another application's data, or --
+        because a migration copies the jobs table -- this very database), and a retry button
+        offers no chance to confirm again. A retry therefore always runs with overwrite off:
+        a non-empty target is refused and the user is told to start the switch again from
+        Configuration > Database, where replacing data is asked for explicitly."""
     user = _current_user(request)
     if user and user.get("role") != "admin":
         raise HTTPException(403, "Only an admin can start a database migration.")
     params = job.get("params") or {}
     label = (job.get("label") or "Migrate data to a new database") + " (retry)"
-    return _start_migration(request, params.get("target_uri"), bool(params.get("overwrite")),
+    return _start_migration(request, params.get("target_uri"), False,
                             bool(override_busy), label=label, via_retry=True)
 
 

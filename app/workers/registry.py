@@ -19,6 +19,13 @@ JOB_WORKERS = {}   # job type -> worker(jid, params)
 # point instead of calling launch_job() directly. See api/routes/settings.py (migrate).
 JOB_RETRY_HANDLERS: dict[str, Callable[..., str]] = {}
 
+# Job types that may ONLY be retried through a registered handler. For these the generic retry
+# (re-launching the stored params as they were) is never acceptable: a migration's stored
+# params include destructive choices (`overwrite`) that must not be re-applied, and skipping
+# the handler would skip its preflight and authorization. If the handler is missing, retry
+# fails closed instead of silently falling back (see api/routes/jobs_usage.py).
+RETRY_REQUIRES_HANDLER = frozenset({"migrate"})
+
 # Serialises "may this job start?" with "create its job row" for EVERY launch path. That
 # is what makes the migration invariants race-free within a process: whichever of
 # {a migration, any other job} creates its row first is seen by the other's check. The

@@ -12,6 +12,7 @@ path reports through this one gate).
 
 import math
 import os
+import secrets
 import time
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
@@ -71,6 +72,14 @@ def cosine_atlas(a, b) -> float:
     na = math.sqrt(sum(x * x for x in a)) or 1e-9
     nb = math.sqrt(sum(y * y for y in b)) or 1e-9
     return (1 + dot / (na * nb)) / 2
+
+
+# Shown (and raised) whenever a migration target turns out to be the database wardenIQ is
+# already using. migrate_to(overwrite=True) deletes the target's documents before copying, so
+# pointing it at its own source would erase the data it is about to copy.
+SELF_TARGET_MSG = ("The target is the database wardenIQ is already using. A migration copies "
+                   "your data to a DIFFERENT database; copying a database onto itself would "
+                   "erase it. Nothing was copied.")
 
 
 class BaseStore:
@@ -408,6 +417,31 @@ class BaseStore:
         else:
             self._degraded.pop(what, None)
 
+    def target_is_this_database(self, target_uri: str) -> bool:
+        """True if the database at `target_uri` (same database name as ours) IS the database
+        this store is using -- the same data, however the URI spells the server (localhost vs
+        127.0.0.1, an internal service name, an SRV record, a proxy).
+
+        Comparing connection strings cannot tell that, so this proves it instead: write a
+        uniquely named scratch collection into OUR database, then look for it through the
+        target connection. Visible there means same database. The collection name is unique
+        per call (concurrent checks cannot interfere) and is always dropped again. It is read
+        from the primary so replication lag cannot hide it. Any failure (cannot write, cannot
+        reach the target) raises: callers must treat "could not tell" as "do not copy"."""
+        from pymongo import ReadPreference
+        name = f"wardeniq_selfcheck_{secrets.token_hex(12)}"
+        c: MongoClient = MongoClient(target_uri, serverSelectionTimeoutMS=8000)
+        try:
+            self.db[name].insert_one({"_id": name})
+            try:
+                seen = c[self.db.name].get_collection(
+                    name, read_preference=ReadPreference.PRIMARY).find_one({"_id": name})
+                return seen is not None
+            finally:
+                self.db.drop_collection(name)
+        finally:
+            c.close()
+
     def target_has_data(self, target_uri: str) -> bool:
         """True if the target database already holds any app data (so we don't clobber
         someone's existing DB without consent)."""
@@ -429,9 +463,16 @@ class BaseStore:
         preserving _ids and embedded vectors. Indexes are NOT copied — the app
         recreates them (regular + vector/search) on next startup against the target.
         Returns {collection: docs_copied}. Documents are streamed in batches so large,
-        embedding-heavy datasets don't blow up memory."""
+        embedding-heavy datasets don't blow up memory.
+
+        Refuses (before reading or deleting anything) when the target is this very database:
+        with `overwrite` the target's documents are deleted before the copy, so a self-target
+        would erase the data it is about to copy. Enforced here, at the destructive
+        primitive, so no caller (route, retry, a future one) can bypass it."""
         from pymongo import MongoClient
         BATCH = 300
+        if self.target_is_this_database(target_uri):
+            raise RuntimeError(SELF_TARGET_MSG)
         c = MongoClient(target_uri, serverSelectionTimeoutMS=8000)
         try:
             tgt = c[self.db.name]
@@ -493,7 +534,13 @@ class BaseStore:
         Returns {"ok": bool, "failures": [str], "warnings": [str],
                  "collections": {name: {"copied", "target_now", "source_now",
                                         "target_match", "source_match"}}}.
-        Messages contain collection names and counts only, never the connection string."""
+        Messages contain collection names and counts only, never the connection string.
+
+        A "copy" onto this same database can never verify: comparing a database with itself
+        passes trivially (even after the copy erased it: 0 == 0), so that case fails closed."""
+        if self.target_is_this_database(target_uri):
+            return {"ok": False, "failures": [SELF_TARGET_MSG], "warnings": [],
+                    "collections": {}}
         c: MongoClient = MongoClient(target_uri, serverSelectionTimeoutMS=8000)
         try:
             tgt = c[self.db.name]

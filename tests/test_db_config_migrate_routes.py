@@ -43,6 +43,7 @@ class _Env:
         monkeypatch.setattr(settings_mod, "_write_env_var",
                             lambda path, k, v: self.env_writes.append((k, v)) or (True, None))
         monkeypatch.setattr(main.store, "target_has_data", lambda uri: False)
+        monkeypatch.setattr(main.store, "target_is_this_database", lambda uri: False)
         # /api/db-migrate's idle check (#111) consults the job store and SYNC; an idle
         # system is the baseline for these probe-outcome tests.
         monkeypatch.setattr(main.store, "has_running_job", lambda **kw: None)

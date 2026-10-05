@@ -10,8 +10,10 @@ These tests drive the REAL retry endpoint, the REAL /api/db-migrate route and th
 workers.registry over an in-memory job store (only the Mongo probe, the target inspection and
 the migrate worker itself are stubbed), so nothing in the launch path is bypassed by a fake.
 """
+import os
 import threading
 import time
+import uuid
 from contextlib import nullcontext
 
 import auth
@@ -22,6 +24,7 @@ from api.routes import settings as settings_mod
 from core.exceptions import MigrationBlocked, MigrationInProgress
 from core.state import SYNC
 from fastapi.testclient import TestClient
+from store.base import SELF_TARGET_MSG
 from test_db_migration_hardening import MemoryJobs
 from workers import registry
 
@@ -54,6 +57,9 @@ class Live:
         self.mem = Jobs()
         self.audit, self.probe_calls, self.target_checks, self.started = [], [], [], []
         self.target_has_data = False
+        self.same_database = False          # is the target the database the app is using?
+        self.same_check_error = None
+        self.same_checks = []
         self.probe = _probe_ok()
         self.gate = threading.Event()
         self._baseline_threads = threading.active_count()
@@ -67,6 +73,7 @@ class Live:
                             lambda action, **kw: self.audit.append(action) or True)
         monkeypatch.setattr(main.store, "dim", 768, raising=False)
         monkeypatch.setattr(main.store, "target_has_data", self._target_has_data)
+        monkeypatch.setattr(main.store, "target_is_this_database", self._target_is_this_database)
         monkeypatch.setattr(settings_mod, "_env_file_writable", lambda: True)
         monkeypatch.setattr(settings_mod, "_probe_mongo", self._probe_mongo)
         monkeypatch.setitem(SYNC, "running", False)
@@ -78,6 +85,12 @@ class Live:
     def _probe_mongo(self, uri, dim=None):
         self.probe_calls.append((uri, dim))
         return self.probe
+
+    def _target_is_this_database(self, uri):
+        self.same_checks.append(uri)
+        if self.same_check_error:
+            raise self.same_check_error
+        return self.same_database
 
     def _target_has_data(self, uri):
         self.target_checks.append(uri)
@@ -282,18 +295,19 @@ def test_B2_retry_is_rejected_while_a_sync_is_running(live, monkeypatch):
     assert live.started == []
 
 
-def test_C_retry_with_override_proceeds_past_unrelated_work_and_keeps_the_parameters(live):
-    failed = _failed_migrate(live, overwrite=True)
+def test_C_retry_with_override_proceeds_past_unrelated_work_and_keeps_only_the_target(live):
+    failed = _failed_migrate(live, overwrite=True)             # the original attempt had replace=on
     live.add_job("generate", "running", label="Generate tests")
     r = live.retry(failed, override_busy="true")
     assert r.status_code == 200
     new = live.mem.jobs[r.json()["job_id"]]
     assert new["type"] == "migrate" and new["label"].endswith("(retry)")
-    assert new["params"] == {"target_uri": TARGET, "overwrite": True, "override_busy": True}
+    # The target is kept; the saved `overwrite` is NOT re-applied; override is this attempt's.
+    assert new["params"] == {"target_uri": TARGET, "overwrite": False, "override_busy": True}
     assert live.wait_started() and live.started == [r.json()["job_id"]]
     assert live.probe_calls == [(TARGET, 768)]                 # re-validated, at the store dim
     assert "db.migrate.started" in live.audit                  # and audited like a normal start
-    assert live.target_checks == []                            # overwrite=True: no target guard
+    assert live.same_checks == [TARGET] and live.target_checks == [TARGET]   # both guards ran
 
 
 def test_D_retry_with_override_is_still_rejected_while_a_migration_is_running(live):
@@ -391,16 +405,51 @@ def test_F3_retry_keeps_the_non_empty_target_guard_and_explains_how_to_replace(l
     assert live.target_checks == [TARGET] and live.started == [] and live.count("migrate") == 1
 
 
-def test_F4_retry_with_saved_overwrite_may_replace_but_only_after_every_other_check(live):
+def test_F4_retry_never_reapplies_a_saved_overwrite_against_a_non_empty_target(live):
+    """Regression: a saved overwrite=True used to let a retry skip the non-empty-target guard
+    and replace whatever the target holds NOW (another application's data, or this very
+    database). A retry must never re-apply that destructive choice."""
+    live.target_has_data = True                                # a foreign, non-empty target
+    failed = _failed_migrate(live, overwrite=True)
+    r = live.retry(failed)
+    assert r.status_code == 409 and "already contains data" in r.json()["detail"]
+    assert "never replaces" in r.json()["detail"]
+    assert live.target_checks == [TARGET]                      # the guard DID run
+    assert live.started == [] and live.count("migrate") == 1   # no migration, no new job
+    _no_secrets(r)
+
+
+def test_F4b_an_overwrite_query_parameter_on_retry_has_no_effect(live):
+    live.target_has_data = True
+    failed = _failed_migrate(live, overwrite=True)
+    for q in ({"overwrite": "true"}, {"overwrite": "true", "override_busy": "true"}):
+        r = live.retry(failed, **q)
+        assert r.status_code == 409 and live.started == []
+    assert live.count("migrate") == 1
+
+
+def test_F4c_retry_still_works_for_a_legitimate_empty_target_and_runs_with_overwrite_off(live):
+    live.target_has_data = False
+    failed = _failed_migrate(live, overwrite=True)
+    r = live.retry(failed)
+    assert r.status_code == 200
+    job = live.mem.jobs[r.json()["job_id"]]
+    assert job["params"]["overwrite"] is False                 # never inherited
+    assert live.wait_started()
+
+
+def test_F4d_retry_with_saved_overwrite_false_against_a_non_empty_target_is_refused(live):
+    live.target_has_data = True
+    r = live.retry(_failed_migrate(live, overwrite=False))
+    assert r.status_code == 409 and live.started == [] and live.target_checks == [TARGET]
+
+
+def test_F4e_other_refusals_still_come_first_for_a_saved_overwrite(live):
     live.target_has_data = True
     failed = _failed_migrate(live, overwrite=True)
     live.add_job("generate", "running")
-    assert live.retry(failed).status_code == 409               # still busy -> still refused
-    assert live.probe_calls == []                               # refused before probing
-    live.mem.jobs[[k for k, j in live.mem.jobs.items() if j["type"] == "generate"][0]]["status"] = "succeeded"
-    r = live.retry(failed)
-    assert r.status_code == 200 and live.probe_calls                # idle now: probe ran, copy starts
-    assert live.target_checks == []                              # explicit overwrite: no guard
+    assert live.retry(failed).status_code == 409               # busy
+    assert live.probe_calls == [] and live.same_checks == [] and live.target_checks == []
 
 
 def test_F5_retry_with_unusable_saved_params_is_a_400(live):
@@ -409,6 +458,19 @@ def test_F5_retry_with_unusable_saved_params_is_a_400(live):
         r = live.retry(jid)
         assert r.status_code == 400 and live.started == []
     assert live.probe_calls == []
+
+
+def test_E5_retry_of_a_migration_fails_closed_if_its_handler_is_not_registered(live, monkeypatch):
+    """The invariant "a retry never re-applies a saved overwrite" must not depend on the
+    handler registry having been populated: without a handler, the generic retry path would
+    re-launch the SAVED params (overwrite=True included) with no preflight at all."""
+    monkeypatch.delitem(registry.JOB_RETRY_HANDLERS, "migrate")
+    failed = _failed_migrate(live, overwrite=True)
+    r = live.retry(failed)
+    assert r.status_code == 400 and "cannot be retried" in r.json()["detail"]
+    assert live.started == [] and live.count("migrate") == 1
+    assert live.probe_calls == [] and live.target_checks == []
+    _no_secrets(r)
 
 
 # ============== retry: G (responses do not expose secrets) and access control
@@ -442,6 +504,79 @@ def test_a_non_admin_cannot_retry_a_migration(monkeypatch):
         env.close()
 
 
+# ============== the target must never be the database the app is using
+@pytest.mark.parametrize("overwrite", [False, True])
+def test_S1_normal_route_refuses_the_database_the_app_is_using(live, overwrite):
+    live.same_database = True
+    r = live.migrate(overwrite=overwrite)
+    assert r.status_code == 400 and r.json()["detail"] == SELF_TARGET_MSG
+    assert live.started == [] and live.count("migrate") == 0     # no job at all
+    assert live.audit == []                                       # nothing started, nothing audited
+    assert live.target_checks == []                               # refused before the data guard
+    _no_secrets(r)
+
+
+@pytest.mark.parametrize("saved_overwrite", [True, False])
+def test_S2_retry_refuses_the_database_the_app_is_using(live, saved_overwrite):
+    """The reproduced data loss: after a switch, the live database contains the copied
+    migrate job whose target is that same database; retrying it must be impossible."""
+    live.same_database = True
+    failed = _failed_migrate(live, overwrite=saved_overwrite)
+    r = live.retry(failed)
+    assert r.status_code == 400 and r.json()["detail"] == SELF_TARGET_MSG
+    assert live.started == [] and live.count("migrate") == 1
+    _no_secrets(r)
+
+
+def test_S3_self_target_refused_even_with_override_busy(live):
+    live.same_database = True
+    live.add_job("generate", "running")
+    failed = _failed_migrate(live, overwrite=True)
+    assert live.retry(failed, override_busy="true").status_code == 400
+    assert live.migrate(overwrite=True, override_busy=True).status_code == 400
+    assert live.started == []
+
+
+def test_S4_failing_to_tell_whether_the_target_is_this_database_fails_closed(live):
+    live.same_check_error = RuntimeError("cannot write the scratch collection")
+    for resp in (live.migrate(), live.retry(_failed_migrate(live))):
+        assert resp.status_code == 400 and "Couldn't confirm" in resp.json()["detail"]
+        _no_secrets(resp)
+    assert live.started == [] and live.target_checks == []        # never got as far as copying
+
+
+def test_S5_busy_is_still_reported_before_the_self_target_check(live):
+    live.same_database = True
+    live.add_job("generate", "running")
+    assert live.migrate().status_code == 409
+    assert live.same_checks == []
+
+
+def test_S6_a_different_empty_target_still_migrates(live):
+    live.same_database = False
+    live.target_has_data = False
+    r = live.migrate()
+    assert r.status_code == 200 and live.wait_started()
+    assert live.same_checks == [TARGET] and live.target_checks == [TARGET]
+
+
+# ============== the normal route: overwrite is an explicit, per-request confirmation
+def test_N1_normal_route_refuses_a_non_empty_target_without_overwrite(live):
+    live.target_has_data = True
+    r = live.migrate()
+    assert r.status_code == 409 and "already contains data" in r.json()["detail"]
+    assert live.started == []
+
+
+def test_N2_normal_route_with_explicit_overwrite_replaces_a_non_empty_foreign_target(live):
+    live.target_has_data = True                                # someone else's data, a different database
+    r = live.migrate(overwrite=True)
+    assert r.status_code == 200                                # the user's explicit confirmation
+    assert live.mem.jobs[r.json()["job_id"]]["params"]["overwrite"] is True
+    assert live.target_checks == []                            # (the guard exists to demand that choice)
+    assert live.same_checks == [TARGET]                        # but never for this very database
+
+
 # ============== the normal route still works, through the same shared mechanism
 def test_the_normal_route_still_starts_an_idle_migration(live):
     r = live.migrate()
@@ -468,3 +603,228 @@ def test_a_migration_refused_at_admission_writes_no_audit_entry(live):
     live.add_job("migrate", "running")
     live.migrate()
     assert live.audit == []
+
+
+# ===================================================================================
+# REAL servers: the whole path (route / retry endpoint -> registry -> job thread ->
+# worker -> migrate_to -> verification) against real MongoDB, with throwaway databases.
+#   MONGO_TEST_URI    the "live" database the app is using (source)
+#   MONGO_TEST_URI_2  a second, separate MongoDB used as a foreign target
+# Only the capability probe (not under test here) and the .env writer are stubbed.
+# ===================================================================================
+MONGO_TEST_URI = os.getenv("MONGO_TEST_URI", "mongodb://localhost:27017")
+MONGO_TEST_URI_2 = os.getenv("MONGO_TEST_URI_2", "")
+
+
+def _reachable(uri):
+    if not uri:
+        return False
+    try:
+        from pymongo import MongoClient
+        MongoClient(uri, serverSelectionTimeoutMS=1500).admin.command("ping")
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+class RealHttp:
+    def __init__(self, monkeypatch):
+        from core import audit as audit_mod
+        from core import security as security_mod
+        from pymongo import MongoClient
+        from store import Store
+        from workers import generation as gen_mod
+        self.name = f"wardeniq_http_{uuid.uuid4().hex[:10]}"
+        self.src = Store(MONGO_TEST_URI, self.name, dim=8)
+        self.src.get_settings = lambda: {}
+        self.src.get_user = lambda uid: {"id": "u1", "email": "a@b.c", "role": "admin",
+                                         "active": True, "session_version": 0, "all_projects": True}
+        self.foreign = MongoClient(MONGO_TEST_URI_2) if _reachable(MONGO_TEST_URI_2) else None
+        self.env_writes = []
+        self._baseline_threads = threading.active_count()
+        for mod in (settings_mod, registry, security_mod, audit_mod, gen_mod):
+            monkeypatch.setattr(mod, "store", self.src)
+        monkeypatch.setattr(settings_mod, "_env_file_writable", lambda: True)
+        monkeypatch.setattr(settings_mod, "_probe_mongo", lambda uri, dim=None: _probe_ok())
+        monkeypatch.setattr(gen_mod, "_write_env_var",
+                            lambda path, k, v: self.env_writes.append((k, v)) or (True, None))
+        monkeypatch.setattr(registry, "heartbeat", lambda jid, *a, **k: nullcontext())
+        monkeypatch.setitem(SYNC, "running", False)
+
+    # --- seeding / inspection
+    def seed_live(self, overwrite):
+        self.src.db["projects"].insert_many([{"name": f"live-{i}"} for i in range(5)])
+        self.src.db["features"].insert_many([{"title": f"f{i}"} for i in range(7)])
+        # what a switch leaves behind: the copied migrate job, whose target is THIS database
+        jid = self.src.create_job("migrate", {"target_uri": MONGO_TEST_URI, "overwrite": overwrite},
+                                  "Migrate data to a new database")
+        self.src.update_job(jid, status="failed", error="interrupted by application restart")
+        return jid
+
+    def failed_job(self, target_uri, overwrite):
+        jid = self.src.create_job("migrate", {"target_uri": target_uri, "overwrite": overwrite},
+                                  "Migrate data to a new database")
+        self.src.update_job(jid, status="failed", error="earlier attempt")
+        return jid
+
+    def live_counts(self):
+        return (self.src.db["projects"].count_documents({}), self.src.db["features"].count_documents({}))
+
+    def foreign_db(self):
+        return self.foreign[self.name]
+
+    def wait(self, jid, timeout=60):
+        end = time.time() + timeout
+        while time.time() < end:
+            j = self.src.get_job(jid)
+            if j is None or j["status"] != "running":
+                return j
+            time.sleep(0.05)
+        raise AssertionError("job did not finish")
+
+    def retry(self, jid, **q):
+        return client.post(f"/api/jobs/{jid}/retry", params=q,
+                           cookies={auth.SESSION_COOKIE: auth.sign_session("u1", 0)})
+
+    def migrate(self, target, **body):
+        return client.post("/api/db-migrate", json={"target_uri": target, **body},
+                           cookies={auth.SESSION_COOKIE: auth.sign_session("u1", 0)})
+
+    def close(self):
+        end = time.time() + 10
+        while time.time() < end and threading.active_count() > self._baseline_threads:
+            time.sleep(0.02)
+        self.src.client.drop_database(self.name)
+        self.src.client.close()
+        if self.foreign is not None:
+            self.foreign.drop_database(self.name)
+            self.foreign.close()
+
+
+@pytest.fixture()
+def real(monkeypatch):
+    if not _reachable(MONGO_TEST_URI):
+        pytest.skip(f"no MongoDB reachable at MONGO_TEST_URI={MONGO_TEST_URI!r}")
+    env = RealHttp(monkeypatch)
+    yield env
+    env.close()
+
+
+@pytest.fixture()
+def real_pair(real):
+    if real.foreign is None:
+        pytest.skip("set MONGO_TEST_URI_2 to a second, separate MongoDB to run this")
+    return real
+
+
+@pytest.mark.dbintegration
+@pytest.mark.parametrize("saved_overwrite", [True, False])
+def test_real_retry_of_the_copied_job_cannot_migrate_the_database_onto_itself(real, saved_overwrite):
+    """The reproduced data loss, end to end (real route, retry, jobs, worker): 5 projects /
+    7 features became 0 / 0, the job row vanished and verification passed."""
+    jid = real.seed_live(saved_overwrite)
+    before_jobs = real.src.db["jobs"].count_documents({})
+    r = real.retry(jid)
+    assert r.status_code == 400 and r.json()["detail"] == SELF_TARGET_MSG
+    assert real.live_counts() == (5, 7)                          # the live data is untouched
+    assert real.src.db["jobs"].count_documents({}) == before_jobs and real.src.get_job(jid)
+    assert real.env_writes == []
+    assert not [n for n in real.src.db.list_collection_names() if n.startswith("wardeniq_selfcheck_")]
+
+
+@pytest.mark.dbintegration
+@pytest.mark.parametrize("target", ["same", "alias"])
+def test_real_normal_route_cannot_migrate_the_database_onto_itself(real, target):
+    real.seed_live(True)
+    uri = MONGO_TEST_URI if target == "same" else MONGO_TEST_URI.replace("localhost", "127.0.0.1")
+    r = real.migrate(uri, overwrite=True)                        # even with an explicit "replace"
+    assert r.status_code == 400 and r.json()["detail"] == SELF_TARGET_MSG
+    assert real.live_counts() == (5, 7) and real.env_writes == []
+
+
+@pytest.mark.dbintegration
+def test_real_retry_with_saved_overwrite_cannot_replace_a_non_empty_foreign_target(real_pair):
+    real_pair.seed_live(False)
+    real_pair.foreign_db()["projects"].insert_many([{"name": f"SOMEONE-ELSES-{i}"} for i in range(3)])
+    failed = real_pair.failed_job(MONGO_TEST_URI_2, overwrite=True)    # saved with replace=on
+    r = real_pair.retry(failed)
+    assert r.status_code == 409 and "already contains data" in r.json()["detail"]
+    assert real_pair.foreign_db()["projects"].count_documents({"name": {"$regex": "^SOMEONE"}}) == 3
+    assert real_pair.env_writes == []
+    assert real_pair.live_counts() == (5, 7)
+
+
+@pytest.mark.dbintegration
+def test_real_retry_with_saved_overwrite_false_against_a_non_empty_target_is_refused(real_pair):
+    real_pair.seed_live(False)
+    real_pair.foreign_db()["projects"].insert_one({"name": "SOMEONE-ELSES"})
+    r = real_pair.retry(real_pair.failed_job(MONGO_TEST_URI_2, overwrite=False))
+    assert r.status_code == 409 and real_pair.foreign_db()["projects"].count_documents({}) == 1
+
+
+@pytest.mark.dbintegration
+def test_real_normal_route_without_overwrite_refuses_a_non_empty_target(real_pair):
+    real_pair.seed_live(False)
+    real_pair.foreign_db()["projects"].insert_one({"name": "SOMEONE-ELSES"})
+    r = real_pair.migrate(MONGO_TEST_URI_2)
+    assert r.status_code == 409 and real_pair.foreign_db()["projects"].count_documents({}) == 1
+
+
+@pytest.mark.dbintegration
+def test_real_normal_route_with_explicit_overwrite_still_replaces_a_foreign_target(real_pair):
+    """The designed, confirmed path keeps working: overwrite is the user's explicit choice
+    for THIS request, and the target is a different database."""
+    real_pair.seed_live(False)
+    real_pair.foreign_db()["projects"].insert_many([{"name": f"OLD-{i}"} for i in range(3)])
+    r = real_pair.migrate(MONGO_TEST_URI_2, overwrite=True)
+    assert r.status_code == 200
+    job = real_pair.wait(r.json()["job_id"])
+    assert job["status"] == "succeeded" and job["result"]["verified"] and job["result"]["switched"]
+    assert real_pair.foreign_db()["projects"].count_documents({"name": {"$regex": "^live-"}}) == 5
+    assert real_pair.foreign_db()["projects"].count_documents({"name": {"$regex": "^OLD-"}}) == 0
+    assert real_pair.env_writes == [("MONGO_URI", MONGO_TEST_URI_2)]
+
+
+@pytest.mark.dbintegration
+def test_real_migration_to_a_legitimate_empty_target_succeeds_and_verifies(real_pair):
+    real_pair.seed_live(False)
+    r = real_pair.migrate(MONGO_TEST_URI_2)
+    assert r.status_code == 200
+    job = real_pair.wait(r.json()["job_id"])
+    res = job["result"]
+    assert job["status"] == "succeeded" and res["verified"] is True and res["switched"] is True
+    assert res["verification"]["ok"] is True and res["warnings"] == []
+    assert real_pair.foreign_db()["projects"].count_documents({}) == 5
+    assert real_pair.foreign_db()["features"].count_documents({}) == 7
+    assert real_pair.live_counts() == (5, 7)                      # the source is untouched
+    assert real_pair.env_writes == [("MONGO_URI", MONGO_TEST_URI_2)]
+
+
+@pytest.mark.dbintegration
+def test_real_retry_to_a_legitimate_empty_target_still_works_with_overwrite_off(real_pair):
+    real_pair.seed_live(False)
+    failed = real_pair.failed_job(MONGO_TEST_URI_2, overwrite=True)    # saved replace=on is ignored
+    r = real_pair.retry(failed)
+    assert r.status_code == 200
+    job = real_pair.wait(r.json()["job_id"])
+    assert job["status"] == "succeeded" and job["result"]["verified"] is True
+    assert real_pair.src.get_job(r.json()["job_id"])["params"]["overwrite"] is False
+    assert real_pair.foreign_db()["projects"].count_documents({}) == 5
+
+
+@pytest.mark.dbintegration
+def test_real_verification_still_fails_closed_after_the_safety_checks(real_pair, monkeypatch):
+    real_pair.seed_live(False)
+    real_copy = real_pair.src.migrate_to
+
+    def copy_then_lose_one(target, **kw):
+        out = real_copy(target, **kw)
+        real_pair.foreign_db()["features"].delete_one({})
+        return out
+    monkeypatch.setattr(real_pair.src, "migrate_to", copy_then_lose_one)
+    r = real_pair.migrate(MONGO_TEST_URI_2)
+    assert r.status_code == 200
+    job = real_pair.wait(r.json()["job_id"])
+    assert job["status"] == "failed" and "NOT switched" in job["error"]
+    assert job["result"]["switched"] is False and real_pair.env_writes == []
+

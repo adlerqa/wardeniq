@@ -33,6 +33,7 @@ from core.state import SYNC
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from store import base as store_base
+from store.base import SELF_TARGET_MSG
 from workers import generation as gen
 from workers import registry
 
@@ -71,6 +72,7 @@ class RouteEnv:
         monkeypatch.setattr(main.store, "add_audit", lambda *a, **k: True)
         monkeypatch.setattr(main.store, "dim", 768, raising=False)
         monkeypatch.setattr(main.store, "target_has_data", lambda uri: False)
+        monkeypatch.setattr(main.store, "target_is_this_database", lambda uri: False)
         monkeypatch.setattr(main.store, "has_running_job", self._has_running_job)
         monkeypatch.setattr(settings_mod, "_env_file_writable", lambda: True)
         monkeypatch.setitem(SYNC, "running", sync)
@@ -471,8 +473,14 @@ class FakeTargetClient:
 
 
 class FakeSelf:
-    def __init__(self, source_counts, extra_names=()):
+    def __init__(self, source_counts, extra_names=(), same_database=False, same_error=None):
         self.db = FakeDatabase(source_counts, extra_names=extra_names)
+        self._same, self._same_error = same_database, same_error
+
+    def target_is_this_database(self, uri):       # the real one writes a scratch collection
+        if self._same_error:
+            raise self._same_error
+        return self._same
 
 
 def _verify(monkeypatch, copied, target, source, allow=False, extra=(), target_error=None):
@@ -538,6 +546,51 @@ def test_verify_raises_when_counts_cannot_be_obtained(monkeypatch):
 def test_verify_messages_never_contain_the_connection_string(monkeypatch):
     out = _verify(monkeypatch, {"a": 3}, {"a": 1}, {"a": 4})
     assert "example.test" not in repr(out) and "target." not in repr(out)
+
+
+# ----------------------------------- a database must never be "migrated" onto itself
+def test_verify_fails_closed_when_the_target_is_this_database(monkeypatch):
+    # Comparing a database with itself always "matches" -- even after the copy erased it
+    # (0 == 0) -- so it must never be able to verify.
+    def no_connect(*a, **k):
+        raise AssertionError("must not even connect to compare")
+    monkeypatch.setattr(store_base, "MongoClient", no_connect)
+    out = store_base.BaseStore.verify_migration(
+        FakeSelf({"projects": 0, "features": 0}, same_database=True), URI,
+        {"projects": 0, "features": 0})
+    assert out["ok"] is False and out["failures"] == [SELF_TARGET_MSG]
+    assert out["collections"] == {} and out["warnings"] == []
+
+
+def test_verify_raises_when_it_cannot_tell_whether_the_target_is_this_database(monkeypatch):
+    monkeypatch.setattr(store_base, "MongoClient", lambda *a, **k: FakeTargetClient({}))
+    with pytest.raises(ConnectionError):
+        store_base.BaseStore.verify_migration(
+            FakeSelf({"a": 1}, same_error=ConnectionError("lost")), URI, {"a": 1})
+
+
+@pytest.mark.parametrize("overwrite", [False, True])
+def test_migrate_to_refuses_a_self_target_before_connecting_or_deleting(monkeypatch, overwrite):
+    import pymongo
+    connected = []
+
+    def no_connect(*a, **k):
+        connected.append(a)
+        raise AssertionError("must not connect to the target")
+    monkeypatch.setattr(pymongo, "MongoClient", no_connect)
+    with pytest.raises(RuntimeError, match="already using"):
+        store_base.BaseStore.migrate_to(FakeSelf({"projects": 5}, same_database=True), URI,
+                                        overwrite=overwrite)
+    assert connected == []
+
+
+def test_migrate_to_does_not_continue_when_it_cannot_tell(monkeypatch):
+    import pymongo
+    monkeypatch.setattr(pymongo, "MongoClient",
+                        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no connect")))
+    with pytest.raises(ConnectionError):
+        store_base.BaseStore.migrate_to(
+            FakeSelf({"a": 1}, same_error=ConnectionError("lost")), URI, overwrite=True)
 
 
 # ======================================================== dbintegration (real servers)
@@ -709,3 +762,77 @@ def test_real_worker_source_drift_fails_by_default_and_warns_with_override(
     assert err is None and writes == [("MONGO_URI", MONGO_TEST_URI_2)]
     assert job["result"]["switched"] is True
     assert any("changed during the copy" in w for w in job["result"]["warnings"])
+
+
+# ------------------------------------------------ real servers: self-target protection
+def _selfcheck_leftovers(store):
+    return [n for n in store.db.list_collection_names() if n.startswith("wardeniq_selfcheck_")]
+
+
+def _seed_live(store):
+    store.db["projects"].insert_many([{"name": f"live-{i}"} for i in range(5)])
+    store.db["features"].insert_many([{"title": f"f{i}"} for i in range(7)])
+    return store.create_job("migrate", {"target_uri": MONGO_TEST_URI, "overwrite": True}, "Migrate")
+
+
+def _snapshot(store):
+    return {n: sorted(str(d["_id"]) for d in store.db[n].find({}, {"_id": 1}))
+            for n in sorted(store.db.list_collection_names())}
+
+
+@pytest.mark.dbintegration
+def test_real_target_is_this_database_is_proven_not_guessed_from_the_uri(real_source):
+    s = real_source
+    assert s.target_is_this_database(MONGO_TEST_URI) is True
+    alias = MONGO_TEST_URI.replace("localhost", "127.0.0.1")
+    if alias != MONGO_TEST_URI:                                # a different spelling, same database
+        assert s.target_is_this_database(alias) is True
+    assert _selfcheck_leftovers(s) == []                       # always cleaned up
+
+
+@pytest.mark.dbintegration
+def test_real_a_different_server_is_not_this_database(real_pair):
+    src, _ = real_pair
+    assert src.target_is_this_database(MONGO_TEST_URI_2) is False
+    assert _selfcheck_leftovers(src) == []
+
+
+@pytest.mark.dbintegration
+@pytest.mark.parametrize("overwrite", [False, True])
+def test_real_self_migration_is_refused_and_nothing_is_deleted(real_source, overwrite):
+    """The reproduced data loss: 5 projects / 7 features became 0 / 0 and the jobs row
+    vanished, then verification passed (0 == 0)."""
+    s = real_source
+    _seed_live(s)
+    before = _snapshot(s)
+    with pytest.raises(RuntimeError, match="already using"):
+        s.migrate_to(MONGO_TEST_URI, overwrite=overwrite)
+    assert _snapshot(s) == before                              # every document, incl. jobs, intact
+    assert s.db["projects"].count_documents({}) == 5 and s.db["features"].count_documents({}) == 7
+    assert _selfcheck_leftovers(s) == []
+
+
+@pytest.mark.dbintegration
+def test_real_verification_cannot_pass_for_a_self_target(real_source):
+    s = real_source
+    _seed_live(s)
+    v = s.verify_migration(MONGO_TEST_URI, {"projects": 5, "features": 7})
+    assert v["ok"] is False and v["failures"] == [SELF_TARGET_MSG]
+    # ...including the exact "erased" case: everything copied == 0 == source == target.
+    v = s.verify_migration(MONGO_TEST_URI, {"projects": 0, "features": 0})
+    assert v["ok"] is False
+    assert s.db["projects"].count_documents({}) == 5
+
+
+@pytest.mark.dbintegration
+def test_real_worker_refuses_a_self_target_and_keeps_the_data(real_source, monkeypatch, tmp_path):
+    s = real_source
+    _seed_live(s)
+    before = _snapshot(s)
+    job, writes, err, _ = _run_real_worker(
+        monkeypatch, s, tmp_path,
+        {"target_uri": MONGO_TEST_URI, "overwrite": True, "override_busy": False})
+    assert isinstance(err, RuntimeError) and "already using" in str(err)
+    assert writes == []                                          # .env untouched
+    assert _snapshot(s)["projects"] == before["projects"] and _snapshot(s)["features"] == before["features"]
+
