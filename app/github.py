@@ -139,6 +139,11 @@ class GitHub:
                  "language": r.get("language"),
                  "html_url": r.get("html_url")} for r in (batch or [])]
 
+    def get_repo(self, owner, name):
+        """Repository metadata; raises httpx.HTTPStatusError (404 = missing or not
+        visible to this token) so callers can tell that apart from auth/rate-limit."""
+        return self._get(f"/repos/{owner}/{name}")
+
     def me(self):
         return self._get("/user")
 

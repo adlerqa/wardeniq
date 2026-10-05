@@ -169,6 +169,33 @@ class RepoIn(BaseModel):
     default_branch: str = "main"
 
 
+def _require_github_repo(client, owner: str, name: str) -> None:
+    """Raise a clean HTTPException unless GitHub confirms the repository is reachable.
+
+    Runs BEFORE anything is persisted or watched. Failures are kept distinct instead
+    of all meaning "not found": a 404 (GitHub also answers 404 for a private repo the
+    token cannot see), auth, forbidden, rate limiting and network/server errors each
+    get their own status, via the shared _ext_error mapping. A provider 401 comes back
+    as 400 there, because the UI treats any 401 as an expired login session.
+    """
+    import httpx
+    try:
+        client.get_repo(owner, name)
+    except httpx.HTTPStatusError as e:
+        resp = e.response
+        status = resp.status_code
+        if status == 404:
+            raise HTTPException(
+                404, f"GitHub repository {owner}/{name} was not found, or the "
+                     "configured token cannot access it — check the URL and the PAT")
+        if status == 403 and (resp.headers.get("x-ratelimit-remaining") == "0"
+                              or "retry-after" in resp.headers):
+            raise HTTPException(429, "GitHub: rate limited — please try again shortly")
+        raise _ext_error("GitHub", e)
+    except Exception as e:  # noqa: BLE001
+        raise _ext_error("GitHub", e)
+
+
 @router.post("/api/projects/{pid}/repos")
 def add_repo(pid: str, body: RepoIn, request: Request):
     provider = (body.git_provider or "github").lower()
@@ -209,6 +236,9 @@ def add_repo(pid: str, body: RepoIn, request: Request):
                 if not token:
                     raise HTTPException(400, "GitHub PAT not configured for this project")
                 client = github.GitHub(token, GITHUB_API)
+                # Not swallowed like the webhook calls below: reject a missing repo
+                # before any webhook, persistence or PR sync (issue #126).
+                _require_github_repo(client, owner, name)
                 # Reuse existing webhook for the same target_url if one exists.
                 existing = None
                 try:
