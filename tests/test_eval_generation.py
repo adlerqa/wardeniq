@@ -13,6 +13,7 @@ import sys
 import types
 from pathlib import Path
 
+import httpx
 import pytest
 
 import usage
@@ -142,20 +143,76 @@ class TestGroundingSurvivors:
 
 
 class TestLlmCallSummary:
-    def test_rollup(self):
-        calls = [{"seconds": 2.0, "prompt_chars": 100, "response_chars": 10, "ok": True},
-                 {"seconds": 4.0, "prompt_chars": 50, "response_chars": 0, "ok": False}]
+    def test_rollup_counts_outcomes_and_decode_speed(self):
+        calls = [
+            {"outcome": "ok", "seconds": 2.0, "prompt_chars": 100, "response_chars": 10,
+             "completion_tokens": 100, "decode_seconds": 5.0, "queue_wait_seconds_estimate": 1.0},
+            {"outcome": "timeout", "seconds": 4.0, "prompt_chars": 50, "response_chars": 0},
+            {"outcome": "parse_error", "seconds": 1.0, "completion_tokens": 20,
+             "decode_seconds": 1.0},
+        ]
         s = m.llm_call_summary(calls)
-        assert s == {"count": 2, "failed": 1, "total_seconds": 6.0, "max_seconds": 4.0,
-                     "mean_seconds": 3.0, "prompt_chars": 150, "response_chars": 10}
+        assert (s["attempted"], s["successful"], s["failed"]) == (3, 1, 2)
+        assert (s["timeouts"], s["http_errors"], s["parse_errors"], s["other_errors"]) == (1, 0, 1, 0)
+        assert s["by_outcome"] == {"ok": 1, "timeout": 1, "http_error": 0, "parse_error": 1,
+                                   "other": 0}
+        assert s["total_seconds"] == 7.0 and s["max_seconds"] == 4.0
+        assert s["prompt_chars"] == 150 and s["response_chars"] == 10
+        assert s["completion_tokens"] == 120 and s["decode_seconds"] == 6.0
+        assert s["tokens_per_second"] == 20.0
+        assert s["queue_wait_seconds_estimate"] == 1.0
 
-    def test_empty_has_no_mean(self):
+    def test_empty_has_no_mean_and_no_speed(self):
         s = m.llm_call_summary([])
-        assert s["count"] == 0 and s["mean_seconds"] is None and s["max_seconds"] is None
+        assert s["attempted"] == 0 and s["mean_seconds"] is None and s["max_seconds"] is None
+        assert s["tokens_per_second"] is None and s["completion_tokens"] is None
 
     def test_junk_entries_are_ignored(self):
-        s = m.llm_call_summary([None, "x", {"seconds": "slow"}, {"seconds": 1.0}])
-        assert s["count"] == 2 and s["total_seconds"] == 1.0
+        s = m.llm_call_summary([None, "x", {"seconds": "slow"}, {"seconds": 1.0, "ok": True}])
+        assert s["attempted"] == 2 and s["total_seconds"] == 1.0
+
+    def test_entries_without_an_outcome_fall_back_to_the_ok_flag(self):
+        s = m.llm_call_summary([{"ok": True}, {"ok": False}, {}])
+        assert s["successful"] == 1 and s["other_errors"] == 2
+
+    def test_decode_speed_ignores_calls_without_both_numbers(self):
+        s = m.llm_call_summary([{"outcome": "ok", "completion_tokens": 50},
+                                {"outcome": "ok", "decode_seconds": 5.0},
+                                {"outcome": "ok", "completion_tokens": 10, "decode_seconds": 0}])
+        assert s["tokens_per_second"] is None
+
+
+class TestCompleteness:
+    @staticmethod
+    def _calls(*outcomes):
+        return [{"outcome": o, "seconds": 1.0} for o in outcomes]
+
+    def test_all_calls_answered_is_complete(self):
+        c = m.assess_completeness(self._calls("ok", "ok"))
+        assert c["complete"] is True and c["reasons"] == []
+        assert (c["attempted_calls"], c["successful_calls"], c["failed_calls"]) == (2, 2, 0)
+
+    @pytest.mark.parametrize("outcome,key", [("timeout", "timeout_count"),
+                                             ("http_error", "http_error_count"),
+                                             ("other", "other_error_count")])
+    def test_any_infrastructure_failure_makes_it_incomplete(self, outcome, key):
+        c = m.assess_completeness(self._calls("ok", outcome))
+        assert c["complete"] is False and c[key] == 1 and c["failed_calls"] == 1
+        assert len(c["reasons"]) == 1
+
+    def test_a_parse_error_alone_does_not_make_it_incomplete(self):
+        # Malformed JSON is the model's own output; excluding such repeats would flatter it.
+        c = m.assess_completeness(self._calls("ok", "parse_error"))
+        assert c["complete"] is True and c["parse_error_count"] == 1 and c["failed_calls"] == 1
+
+    def test_no_calls_at_all_is_incomplete(self):
+        c = m.assess_completeness([])
+        assert c["complete"] is False and "no model calls" in c["reasons"][0]
+
+    def test_reasons_name_each_kind_of_failure(self):
+        c = m.assess_completeness(self._calls("timeout", "timeout", "http_error"))
+        text = " ".join(c["reasons"])
+        assert "2 model call(s) timed out" in text and "1 model call(s) failed with an HTTP error" in text
 
 
 class TestCaseText:
@@ -210,35 +267,77 @@ class TestRequirementCoverage:
 
 class TestAggregateRepeats:
     @staticmethod
-    def _run(generated, exemplar, seconds, ok=True):
-        return {"ok": ok,
+    def _run(generated, exemplar, seconds, ok=True, complete=True, repeat=1):
+        return {"repeat": repeat, "ok": ok, "complete": complete,
+                "completeness": {"complete": complete,
+                                 "reasons": [] if complete else ["3 model call(s) timed out"]},
                 "filter": m.summarize_filter({"generated": generated, "persisted": generated - exemplar,
                                               "rejected": exemplar,
                                               "rejected_by_reason": {"exemplar-copy": exemplar}}),
                 "timings": {"pipeline_seconds": seconds, "ingest_seconds": 1.0},
                 "requirement_coverage": {"rate": 0.5}, "requirement_gaps": {"count": 2},
-                "usage": {"prompt_tokens": 100, "completion_tokens": 10}}
+                "usage": {"prompt_tokens": 100, "completion_tokens": 10},
+                "llm_calls": {"attempted": 10, "parse_errors": 1, "tokens_per_second": 12.0,
+                              "queue_wait_seconds_estimate": 30.0},
+                "pipeline": {"errors": []}}
 
-    def test_mean_min_max_across_successful_repeats(self):
-        agg = m.aggregate_repeats([self._run(10, 2, 100.0), self._run(10, 4, 140.0)])
-        assert agg["repeats_total"] == 2 and agg["repeats_ok"] == 2
+    def test_mean_min_max_across_complete_repeats(self):
+        agg = m.aggregate_repeats([self._run(10, 2, 100.0), self._run(10, 4, 140.0, repeat=2)])
+        assert agg["repeats_total"] == 2 and agg["repeats_complete"] == 2
+        assert agg["valid_baseline"] is True and agg["all_repeats_complete"] is True
         ex = agg["metrics"]["exemplar_copy_rate"]
         assert (ex["n"], ex["mean"], ex["min"], ex["max"]) == (2, 0.3, 0.2, 0.4)
         assert agg["metrics"]["pipeline_seconds"]["mean"] == 120.0
+        assert agg["metrics"]["decode_tokens_per_second"]["mean"] == 12.0
+        assert agg["statement"] == "All 2 repeats completed without timeouts or server errors."
 
-    def test_failed_repeats_are_counted_but_excluded(self):
-        agg = m.aggregate_repeats([self._run(10, 2, 100.0), {"ok": False, "error": "x"}])
-        assert agg["repeats_total"] == 2 and agg["repeats_ok"] == 1
-        assert agg["metrics"]["generated"]["n"] == 1
+    def test_incomplete_repeats_never_enter_the_official_metrics(self):
+        good = self._run(10, 2, 100.0, repeat=1)
+        bad = self._run(10, 5, 900.0, complete=False, repeat=2)
+        agg = m.aggregate_repeats([good, bad])
+        assert agg["repeats_complete"] == 1 and agg["repeats_incomplete"] == 1
+        assert agg["metrics"]["exemplar_copy_rate"]["n"] == 1
+        assert agg["metrics"]["exemplar_copy_rate"]["mean"] == 0.2     # not 0.35
+        assert agg["metrics"]["pipeline_seconds"]["max"] == 100.0       # 900 s is excluded
+        assert agg["all_repeats_complete"] is False
+        assert "1 of 2" in agg["statement"]
+
+    def test_incomplete_repeats_stay_visible_as_diagnostics(self):
+        agg = m.aggregate_repeats([self._run(10, 2, 100.0), self._run(10, 5, 900.0, complete=False, repeat=2)])
+        diag = agg["incomplete_diagnostics"]
+        assert [d["repeat"] for d in diag] == [2]
+        assert diag[0]["ran"] is True and diag[0]["reasons"] == ["3 model call(s) timed out"]
+        assert diag[0]["metrics"]["exemplar_copy_rate"] == 0.5
+
+    def test_no_complete_repeat_means_no_valid_baseline(self):
+        agg = m.aggregate_repeats([self._run(10, 2, 100.0, complete=False),
+                                   self._run(10, 3, 100.0, complete=False, repeat=2)])
+        assert agg["valid_baseline"] is False and agg["repeats_complete"] == 0
+        assert agg["metrics"] == {}
+        assert agg["statement"].startswith("NO VALID BASELINE")
+        assert "nothing about model quality" in agg["statement"]
+
+    def test_a_repeat_that_crashed_is_incomplete_and_explained(self):
+        crashed = {"repeat": 2, "ok": False, "complete": False, "error": "RuntimeError: boom"}
+        agg = m.aggregate_repeats([self._run(10, 2, 100.0), crashed])
+        assert agg["repeats_ok"] == 1 and agg["repeats_incomplete"] == 1
+        assert agg["incomplete_diagnostics"][0]["reasons"] == ["RuntimeError: boom"]
+        assert agg["incomplete_diagnostics"][0]["ran"] is False
+
+    def test_a_repeat_with_no_completeness_verdict_is_not_trusted(self):
+        legacy = {"ok": True, "filter": m.summarize_filter({"generated": 1, "persisted": 1,
+                                                            "rejected": 0, "rejected_by_reason": {}})}
+        agg = m.aggregate_repeats([legacy])
+        assert agg["valid_baseline"] is False and agg["metrics"] == {}
 
     def test_none_values_do_not_count_toward_n(self):
         zero = self._run(0, 0, 50.0)       # zero generated -> rates are None
-        agg = m.aggregate_repeats([zero, self._run(10, 2, 100.0)])
+        agg = m.aggregate_repeats([zero, self._run(10, 2, 100.0, repeat=2)])
         assert agg["metrics"]["exemplar_copy_rate"]["n"] == 1
         assert agg["metrics"]["exemplar_copy_count"]["n"] == 2
 
     def test_grounding_survivors_are_aggregated_when_present(self):
-        a, b = self._run(10, 2, 100.0), self._run(10, 2, 100.0)
+        a, b = self._run(10, 2, 100.0), self._run(10, 2, 100.0, repeat=2)
         a["grounding_survivors"] = {"entities": 0, "apis": 2, "ui_components": 1}
         b["grounding_survivors"] = {"entities": 2, "apis": 2, "ui_components": 3}
         agg = m.aggregate_repeats([a, b])["metrics"]
@@ -247,11 +346,13 @@ class TestAggregateRepeats:
         assert "grounding_entities" not in m.aggregate_repeats([self._run(10, 2, 1.0)])["metrics"]
 
     def test_nothing_to_aggregate(self):
-        assert m.aggregate_repeats([]) == {"repeats_total": 0, "repeats_ok": 0, "metrics": {}}
+        agg = m.aggregate_repeats([])
+        assert agg["repeats_total"] == 0 and agg["valid_baseline"] is False
+        assert agg["statement"] == "No repeats were run." and agg["metrics"] == {}
         assert m.aggregate_repeats([None, "x"])["repeats_total"] == 0
 
     def test_unavailable_filter_contributes_no_filter_metrics(self):
-        agg = m.aggregate_repeats([{"ok": True, "filter": {"available": False},
+        agg = m.aggregate_repeats([{"ok": True, "complete": True, "filter": {"available": False},
                                     "timings": {"pipeline_seconds": 5.0}}])
         assert "generated" not in agg["metrics"] and agg["metrics"]["pipeline_seconds"]["n"] == 1
 
@@ -355,8 +456,8 @@ class SpyLLM:
         SpyLLM.instances.append(self)
 
     def chat_json(self, system, user, **kw):
-        self.calls.append({"label": "other", "seconds": 0.5, "prompt_chars": 10,
-                           "response_chars": 5, "ok": True})
+        self.calls.append({"label": "other", "outcome": "ok", "seconds": 0.5,
+                           "prompt_chars": 10, "response_chars": 5})
         return {"summary": "Users who forgot their password can request a reset link by email."}
 
 
@@ -743,7 +844,7 @@ class TestRecordingLLM:
         out = llm._raw_chat("sys", "TASK: Generate API tests\nrest", 8192, 0.1, 100)
         assert out == '{"ok": true}'
         call = llm.calls[0]
-        assert call["label"] == "Generate API tests" and call["ok"] is True
+        assert call["label"] == "Generate API tests" and call["outcome"] == "ok"
         assert call["response_chars"] == 12 and call["seconds"] >= 0
 
     def test_a_failing_call_is_recorded_and_re_raised(self, monkeypatch):
@@ -753,7 +854,7 @@ class TestRecordingLLM:
         llm = self._llm()
         with pytest.raises(RuntimeError):
             llm._raw_chat("s", "no task header", 1, 0.1, 1)
-        assert llm.calls[0]["ok"] is False and llm.calls[0]["label"] == "other"
+        assert llm.calls[0]["outcome"] == "other" and llm.calls[0]["label"] == "other"
 
 
 def test_summary_prompt_stays_in_step_with_the_apps_ingest_prompt():
@@ -765,3 +866,389 @@ def test_summary_prompt_stays_in_step_with_the_apps_ingest_prompt():
     for line in rule_lines:
         # The app's prompt is an f-string, so its literal braces are doubled in the source.
         assert line.replace("{", "{{").replace("}", "}}") in deps, line
+
+
+# =========================================================================== robustness
+def _http_status_error(status):
+    request = httpx.Request("POST", "http://ollama.invalid/api/chat")
+    return httpx.HTTPStatusError(f"HTTP {status}", request=request,
+                                 response=httpx.Response(status, request=request))
+
+
+class _CapturingBase:
+    """Stands in for the real LLM._raw_chat: records the timeout it was given and replies
+    (or raises) as instructed."""
+
+    def __init__(self, monkeypatch, reply='{"ok": true}', raises=None, meta=None):
+        self.timeouts = []
+        outer = self
+
+        def fake(llm_self, system, user, num_ctx=8192, temperature=0.2, max_tokens=4000,
+                 timeout_seconds=None):
+            outer.timeouts.append(timeout_seconds)
+            runner._RESPONSE_META.value = meta
+            if raises is not None:
+                raise raises
+            return reply
+
+        monkeypatch.setattr(runner.llm_module.LLM, "_raw_chat", fake)
+
+
+def _recording(**kw):
+    return runner.RecordingLLM(provider="ollama", model="m", **kw)
+
+
+class TestCallTimeout:
+    def test_a_custom_timeout_replaces_the_timeout_of_every_call(self, monkeypatch):
+        base = _CapturingBase(monkeypatch)
+        llm = _recording(call_timeout=1800)
+        llm._raw_chat("s", "u", 8192, 0.1, 100, timeout_seconds=180)
+        llm._raw_chat("s", "u", 8192, 0.1, 100, timeout_seconds=300)
+        llm._raw_chat("s", "u", 8192, 0.1, 100)
+        assert base.timeouts == [1800, 1800, 1800]
+        assert [c["timeout_seconds"] for c in llm.calls] == [1800, 1800, 1800]
+
+    def test_without_an_override_each_call_keeps_the_pipelines_own_timeout(self, monkeypatch):
+        base = _CapturingBase(monkeypatch)
+        llm = _recording()
+        llm._raw_chat("s", "u", 8192, 0.1, 100, timeout_seconds=180)
+        llm._raw_chat("s", "u", 8192, 0.1, 100)
+        assert base.timeouts == [180, None]
+        assert [c["timeout_seconds"] for c in llm.calls] == [180, None]
+
+    def test_the_override_is_confined_to_the_recording_client(self, monkeypatch):
+        base = _CapturingBase(monkeypatch)
+        _recording(call_timeout=1800)              # constructing it must not leak anywhere
+        plain = runner.llm_module.LLM(provider="ollama", model="m")
+        plain._raw_chat("s", "u", 8192, 0.1, 100, timeout_seconds=180)
+        assert base.timeouts == [180]
+
+    def test_the_timeout_is_recorded_in_the_metadata(self):
+        cfg = _cfg(call_timeout=1800)
+        meta = TestMetadataAndSecrets()._payload(cfg)["meta"]
+        assert meta["run_parameters"]["call_timeout_seconds"] == 1800
+        assert meta["run_parameters"]["call_timeout_mode"] == "override"
+
+    def test_the_default_is_recorded_as_the_pipelines_own_timeouts(self):
+        meta = TestMetadataAndSecrets()._payload(_cfg())["meta"]
+        assert meta["run_parameters"]["call_timeout_seconds"] is None
+        assert meta["run_parameters"]["call_timeout_mode"] == "pipeline-defaults"
+
+    def test_each_repeat_records_the_timeout_it_ran_with(self):
+        run = _run(_cfg(call_timeout=1800))
+        assert run["runtime"]["call_timeout_seconds"] == 1800
+        assert run["runtime"]["call_timeout_mode"] == "override"
+
+    def test_the_cli_option_is_parsed_validated_and_given_to_the_client(self, monkeypatch, tmp_path):
+        assert runner.parse_args(["--model", "m", "--mongo-uri", "mongodb://x/"]).call_timeout is None
+        assert runner.parse_args(["--model", "m", "--mongo-uri", "mongodb://x/",
+                                  "--call-timeout", "1800"]).call_timeout == 1800.0
+        for bad in ("0", "-5"):
+            with pytest.raises(SystemExit):
+                runner.parse_args(["--model", "m", "--mongo-uri", "mongodb://x/",
+                                   "--call-timeout", bad])
+        SpyLLM.instances.clear()
+        TestModelSelection._wire(monkeypatch)
+        runner.main(["--model", "m", "--mongo-uri", "mongodb://x/", "--call-timeout", "1800",
+                     "--out", str(tmp_path / "r.json")])
+        assert SpyLLM.instances[0].kwargs["call_timeout"] == 1800.0
+
+
+class TestCallClassification:
+    def test_a_good_reply_is_ok(self, monkeypatch):
+        _CapturingBase(monkeypatch, reply='{"summary": "x"}')
+        llm = _recording()
+        assert llm._raw_chat("s", "u") == '{"summary": "x"}'
+        assert llm.calls[0]["outcome"] == "ok" and llm.calls[0]["error_type"] is None
+
+    @pytest.mark.parametrize("exc", [httpx.ReadTimeout("timed out"),
+                                     httpx.ConnectTimeout("timed out"),
+                                     httpx.PoolTimeout("timed out")])
+    def test_timeouts_are_classified_and_re_raised(self, monkeypatch, exc):
+        _CapturingBase(monkeypatch, raises=exc)
+        llm = _recording()
+        with pytest.raises(httpx.TimeoutException):
+            llm._raw_chat("s", "u")
+        assert llm.calls[0]["outcome"] == "timeout"
+
+    def test_an_http_error_records_the_status(self, monkeypatch):
+        _CapturingBase(monkeypatch, raises=_http_status_error(500))
+        llm = _recording()
+        with pytest.raises(httpx.HTTPStatusError):
+            llm._raw_chat("s", "u")
+        call = llm.calls[0]
+        assert call["outcome"] == "http_error" and call["http_status"] == 500
+
+    @pytest.mark.parametrize("reply", ["this is not json", "", "{}", "[1, 2]", "   "])
+    def test_a_reply_the_pipeline_cannot_parse_is_a_parse_error(self, monkeypatch, reply):
+        _CapturingBase(monkeypatch, reply=reply)
+        llm = _recording()
+        assert llm._raw_chat("s", "u") == reply            # the reply is passed on unchanged
+        assert llm.calls[0]["outcome"] == "parse_error"
+
+    def test_a_reply_wrapped_in_text_that_the_pipeline_can_still_read_is_ok(self, monkeypatch):
+        _CapturingBase(monkeypatch, reply='Sure! {"summary": "x"} hope that helps')
+        llm = _recording()
+        llm._raw_chat("s", "u")
+        assert llm.calls[0]["outcome"] == "ok"
+
+    def test_any_other_failure_is_other_and_keeps_only_the_exception_class(self, monkeypatch):
+        leak = "http://admin:hunter2@ollama.internal/api/chat refused"
+        _CapturingBase(monkeypatch, raises=ConnectionError(leak))
+        llm = _recording()
+        with pytest.raises(ConnectionError):
+            llm._raw_chat("s", "u")
+        call = llm.calls[0]
+        assert call["outcome"] == "other" and call["error_type"] == "ConnectionError"
+        assert "hunter2" not in json.dumps(call) and "ollama.internal" not in json.dumps(call)
+
+    def test_a_connection_failure_is_an_infrastructure_failure(self, monkeypatch):
+        _CapturingBase(monkeypatch, raises=httpx.ConnectError("refused"))
+        llm = _recording()
+        with pytest.raises(httpx.ConnectError):
+            llm._raw_chat("s", "u")
+        assert llm.calls[0]["outcome"] == "other"
+        assert m.assess_completeness(llm.calls)["complete"] is False
+
+    def test_token_and_timing_metadata_from_the_server_is_recorded(self, monkeypatch):
+        _CapturingBase(monkeypatch, meta={"prompt_eval_count": 500, "eval_count": 120,
+                                          "eval_duration": 10_000_000_000,
+                                          "total_duration": 12_000_000_000,
+                                          "done_reason": "stop"})
+        llm = _recording()
+        llm._raw_chat("s", "u")
+        call = llm.calls[0]
+        assert call["completion_tokens"] == 120 and call["prompt_tokens"] == 500
+        assert call["decode_seconds"] == 10.0 and call["tokens_per_second"] == 12.0
+        assert call["done_reason"] == "stop" and call["queue_wait_seconds_estimate"] >= 0
+
+    def test_a_failed_call_never_reuses_the_previous_calls_metadata(self, monkeypatch):
+        meta = {"prompt_eval_count": 5, "eval_count": 9, "eval_duration": 1_000_000_000,
+                "total_duration": 1_000_000_000}
+        base = _CapturingBase(monkeypatch, meta=meta)
+        llm = _recording()
+        llm._raw_chat("s", "u")
+        _CapturingBase(monkeypatch, raises=httpx.ReadTimeout("t"), meta=None)
+        with pytest.raises(httpx.TimeoutException):
+            llm._raw_chat("s", "u")
+        assert llm.calls[1]["completion_tokens"] is None and base.timeouts == [None]
+
+    def test_response_stats_handles_missing_metadata(self):
+        stats = runner.response_stats(None, 3.0)
+        assert stats["completion_tokens"] is None and stats["tokens_per_second"] is None
+        assert stats["queue_wait_seconds_estimate"] is None
+
+    def test_the_http_shim_keeps_the_servers_metadata_for_the_call(self):
+        class Resp:
+            status_code = 200
+
+            def json(self):
+                return {"eval_count": 7, "eval_duration": 1_000_000_000, "message": {"content": "secret"}}
+
+        class Fake:
+            def post(self, url, *a, **k):
+                return Resp()
+
+        proxy = runner._HttpxWithSeed(Fake(), 1)
+        runner._RESPONSE_META.value = None
+        proxy.post("http://o/api/chat", json={"model": "m"})
+        assert runner._RESPONSE_META.value["eval_count"] == 7
+        assert "message" not in runner._RESPONSE_META.value      # the reply text is not kept
+        runner._RESPONSE_META.value = None
+        proxy.post("http://o/api/embeddings", json={"prompt": "x"})
+        assert runner._RESPONSE_META.value is None
+
+
+class TimeoutSpyLLM(SpyLLM):
+    """A model whose every call times out."""
+
+    def chat_json(self, system, user, **kw):
+        self.calls.append({"label": "other", "outcome": "timeout", "seconds": 300.0})
+        raise httpx.ReadTimeout("timed out")
+
+
+class TestRepeatCompleteness:
+    def test_a_repeat_with_no_infrastructure_failure_is_complete(self):
+        run = _run()
+        assert run["complete"] is True and run["completeness"]["reasons"] == []
+        c = run["completeness"]
+        assert (c["attempted_calls"], c["successful_calls"], c["failed_calls"]) == (1, 1, 0)
+        assert (c["timeout_count"], c["other_error_count"]) == (0, 0)
+        assert run["runtime"]["complete"] is True
+        assert run["runtime"]["wall_clock_includes_timeout_waits"] is False
+
+    def test_a_repeat_with_a_timed_out_call_is_incomplete_but_still_ran(self):
+        run = _run(llm=TimeoutSpyLLM())
+        assert run["ok"] is True and run["complete"] is False
+        c = run["completeness"]
+        assert c["timeout_count"] == 1 and c["failed_calls"] == 1
+        assert "timed out" in c["reasons"][0]
+        assert run["runtime"]["wall_clock_includes_timeout_waits"] is True
+        assert run["calls"][0]["outcome"] == "timeout"
+
+    def test_an_unreported_filter_block_makes_a_repeat_incomplete(self):
+        out = real_shaped_output()
+        out.pop("testgen_filter")
+        run = _run(pipeline_fn=lambda **kw: out)
+        assert run["complete"] is False
+        assert "filter statistics" in " ".join(run["completeness"]["reasons"])
+
+    def test_a_repeat_that_raised_is_incomplete_and_keeps_the_calls_it_made(self):
+        def boom(**kw):
+            raise ValueError("bad")
+
+        run = _run(pipeline_fn=boom)
+        assert run["ok"] is False and run["complete"] is False
+        assert "raised an exception" in run["completeness"]["reasons"][0]
+        assert run["llm_calls"]["attempted"] == 1 and len(run["calls"]) == 1
+
+    def test_pipeline_errors_alone_do_not_make_a_repeat_incomplete(self):
+        out = real_shaped_output()
+        out["errors"] = ["API worker failed: LLM JSON generation failed after 2 attempts: bad json"]
+        run = _run(pipeline_fn=lambda **kw: out)
+        assert run["complete"] is True and run["completeness"]["pipeline_error_count"] == 1
+
+    def test_runtime_separates_decode_speed_from_wall_clock(self):
+        class MeteredLLM(SpyLLM):
+            def chat_json(self, system, user, **kw):
+                self.calls.append({"label": "other", "outcome": "ok", "seconds": 40.0,
+                                   "completion_tokens": 120, "decode_seconds": 10.0,
+                                   "queue_wait_seconds_estimate": 25.0})
+                return {"summary": "Users who forgot their password can request a reset link by email."}
+
+        rt = _run(llm=MeteredLLM())["runtime"]
+        assert rt["tokens_per_second"] == 12.0 and rt["decode_seconds"] == 10.0
+        assert rt["completion_tokens"] == 120 and rt["queue_wait_seconds_estimate"] == 25.0
+        assert rt["wall_clock_seconds"] >= 0
+
+    def test_main_exits_1_and_reports_no_valid_baseline_when_nothing_completed(self, monkeypatch, tmp_path):
+        TestModelSelection._wire(monkeypatch)
+        monkeypatch.setattr(runner, "RecordingLLM", TimeoutSpyLLM)
+        out = tmp_path / "r.json"
+        rc = runner.main(["--model", "m", "--mongo-uri", "mongodb://x/", "--repeats", "2",
+                          "--out", str(out)])
+        agg = json.loads(out.read_text())["aggregate"]
+        assert rc == 1
+        assert agg["valid_baseline"] is False and agg["statement"].startswith("NO VALID BASELINE")
+        assert agg["repeats_incomplete"] == 2 and agg["metrics"] == {}
+
+    def test_main_exits_0_only_when_every_repeat_is_complete(self, monkeypatch, tmp_path):
+        TestModelSelection._wire(monkeypatch)
+        rc = runner.main(["--model", "m", "--mongo-uri", "mongodb://x/", "--repeats", "2",
+                          "--out", str(tmp_path / "r.json")])
+        data = json.loads((tmp_path / "r.json").read_text())
+        assert rc == 0 and data["aggregate"]["all_repeats_complete"] is True
+
+
+class TestPerRepeatPersistence:
+    ARGS = ["--model", "m", "--mongo-uri", "mongodb://x/", "--repeats", "3"]
+
+    def test_the_result_file_is_written_after_every_repeat(self, monkeypatch, tmp_path):
+        out = tmp_path / "r.json"
+        seen = []
+
+        def pipeline(**kw):
+            seen.append(json.loads(out.read_text()) if out.exists() else None)
+            return fake_pipeline(**kw)
+
+        TestModelSelection._wire(monkeypatch, pipeline)
+        rc = runner.main(self.ARGS + ["--out", str(out)])
+        assert rc == 0
+        assert seen[0] is None                                   # nothing before repeat 1 ends
+        assert seen[1]["status"] == "in_progress" and len(seen[1]["runs"]) == 1
+        assert seen[2]["status"] == "in_progress" and len(seen[2]["runs"]) == 2
+        final = json.loads(out.read_text())
+        assert final["status"] == "finished" and len(final["runs"]) == 3
+        assert final["repeats_planned"] == 3 and "finished_utc" in final["meta"]
+        assert "finished_utc" not in seen[1]["meta"]
+
+    def test_finished_repeats_survive_a_later_repeat_being_interrupted(self, monkeypatch, tmp_path):
+        out = tmp_path / "r.json"
+        n = {"calls": 0}
+
+        def pipeline(**kw):
+            n["calls"] += 1
+            if n["calls"] == 3:
+                raise KeyboardInterrupt
+            return fake_pipeline(**kw)
+
+        TestModelSelection._wire(monkeypatch, pipeline)
+        with pytest.raises(KeyboardInterrupt):
+            runner.main(self.ARGS + ["--out", str(out)])
+        data = json.loads(out.read_text())
+        assert data["status"] == "aborted" and data["abort_reason"] == "KeyboardInterrupt"
+        assert [r["repeat"] for r in data["runs"]] == [1, 2]
+        assert all(r["complete"] for r in data["runs"])
+        assert data["aggregate"]["repeats_complete"] == 2
+
+    def test_finished_repeats_survive_an_unexpected_exception_outside_the_repeat(self, monkeypatch, tmp_path):
+        out = tmp_path / "r.json"
+        TestModelSelection._wire(monkeypatch)
+        original = runner.run_repeat
+        n = {"calls": 0}
+
+        def flaky(*a, **kw):
+            n["calls"] += 1
+            if n["calls"] == 2:
+                raise RuntimeError("unexpected")
+            return original(*a, **kw)
+
+        monkeypatch.setattr(runner, "run_repeat", flaky)
+        with pytest.raises(RuntimeError):
+            runner.main(self.ARGS + ["--out", str(out)])
+        data = json.loads(out.read_text())
+        assert data["status"] == "aborted" and data["abort_reason"] == "RuntimeError"
+        assert [r["repeat"] for r in data["runs"]] == [1]
+
+    def test_a_failing_save_during_abort_does_not_hide_the_original_error(self, monkeypatch, tmp_path):
+        TestModelSelection._wire(monkeypatch, lambda **kw: (_ for _ in ()).throw(KeyboardInterrupt()))
+        monkeypatch.setattr(runner, "write_json_atomic",
+                            lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
+        with pytest.raises(KeyboardInterrupt):
+            runner.main(self.ARGS + ["--out", str(tmp_path / "r.json")])
+
+    def test_without_out_the_final_json_is_printed(self, monkeypatch, capsys):
+        TestModelSelection._wire(monkeypatch)
+        runner.main(["--model", "m", "--mongo-uri", "mongodb://x/"])
+        assert '"status": "finished"' in capsys.readouterr().out
+
+
+class TestAtomicWrite:
+    def test_writes_valid_json_and_leaves_no_temporary_file(self, tmp_path):
+        target = tmp_path / "sub" / "r.json"
+        runner.write_json_atomic(target, {"a": 1})
+        assert json.loads(target.read_text()) == {"a": 1}
+        assert [p.name for p in target.parent.iterdir()] == ["r.json"]
+
+    def test_replaces_an_existing_file(self, tmp_path):
+        target = tmp_path / "r.json"
+        runner.write_json_atomic(target, {"v": 1})
+        runner.write_json_atomic(target, {"v": 2})
+        assert json.loads(target.read_text()) == {"v": 2}
+
+    def test_a_failed_write_keeps_the_previous_file_and_cleans_up(self, monkeypatch, tmp_path):
+        target = tmp_path / "r.json"
+        runner.write_json_atomic(target, {"v": "old"})
+
+        def broken_replace(src, dst):
+            raise OSError("simulated crash")
+
+        monkeypatch.setattr(runner.os, "replace", broken_replace)
+        with pytest.raises(OSError):
+            runner.write_json_atomic(target, {"v": "new"})
+        assert json.loads(target.read_text()) == {"v": "old"}
+        assert [p.name for p in tmp_path.iterdir()] == ["r.json"]
+
+
+class TestNoSecretsInRobustnessOutput:
+    def test_calls_and_runtime_never_carry_exception_text_or_the_database_uri(self, monkeypatch, tmp_path):
+        uri = "mongodb://evaluser:Sup3rS3cretPw@db.internal.example:27017/?authSource=admin"
+        _CapturingBase(monkeypatch, raises=OSError(f"cannot reach {uri} with Sup3rS3cretPw"))
+        llm = _recording(call_timeout=1800)
+        with pytest.raises(OSError):
+            llm._raw_chat("s", "u")
+        run = _run(_cfg(mongo_uri=uri, call_timeout=1800), llm=TimeoutSpyLLM())
+        run["calls"] = run.get("calls", []) + llm.calls
+        text = json.dumps({"run": run, "agg": m.aggregate_repeats([run])}, default=str)
+        for secret in ("Sup3rS3cretPw", "evaluser", "db.internal.example"):
+            assert secret not in text

@@ -81,7 +81,11 @@ def test_the_real_pipeline_output_becomes_a_result_and_the_database_is_dropped(s
     assert set(run["filter"]["reasons"]) >= {"exemplar-copy", "no-source-grounding", "duplicate"}
     # Real pipeline progress was captured as stages, and real model calls were timed.
     assert run["stages"] and run["stages"][-1]["stage"]
-    assert run["llm_calls"]["count"] > 0 and run["llm_calls"]["failed"] == 0
+    assert run["llm_calls"]["attempted"] > 0 and run["llm_calls"]["failed"] == 0
+    # Every real call got an answer, so the repeat is complete and each call was classified.
+    assert run["complete"] is True, run["completeness"]
+    assert run["calls"] and {c["outcome"] for c in run["calls"]} == {"ok"}
+    assert run["runtime"]["call_timeout_mode"] == "pipeline-defaults"
     assert run["ingest"]["chunks"] >= 1
     assert run["requirement_coverage"]["total"] == 11
     # The gap-check wrapper was removed again, and the throwaway database is gone.

@@ -145,31 +145,89 @@ def parse_grounding_survivors(stages):
     return None
 
 
-def llm_call_summary(calls) -> dict:
-    """Roll up recorded LLM calls: [{"seconds", "prompt_chars", "response_chars", "ok"}].
+OUTCOMES = ("ok", "timeout", "http_error", "parse_error", "other")
+# Failures that come from the environment (a slow or restarted model server), not from what
+# the model said. A repeat with any of these is INCOMPLETE. A parse_error is the model's own
+# unusable output and is deliberately not disqualifying: dropping repeats because the model
+# produced malformed JSON would flatter the model.
+INFRASTRUCTURE_FAILURES = ("timeout", "http_error", "other")
 
-    `total_seconds` is the SUM of call durations; the pipeline runs some calls in parallel,
-    so it can exceed the wall-clock time of the run.
+
+def call_outcome(call) -> str:
+    """The outcome of one recorded call. Entries without one fall back to their `ok` flag."""
+    outcome = call.get("outcome") if isinstance(call, dict) else None
+    if outcome in OUTCOMES:
+        return outcome
+    return "ok" if isinstance(call, dict) and call.get("ok") is True else "other"
+
+
+def _sum_numbers(calls, key):
+    values = [float(c[key]) for c in calls if _is_number(c.get(key))]
+    return sum(values) if values else None
+
+
+def llm_call_summary(calls) -> dict:
+    """Roll up recorded LLM calls (one entry per call actually sent to the model server).
+
+    `attempted` counts every call, including the pipeline's own retries and JSON-repair calls.
+    `total_seconds` is the SUM of call durations; the pipeline runs some calls in parallel and
+    a single-slot server queues them, so it can exceed the wall-clock time of the run.
+    `tokens_per_second` is decode speed, taken only from calls that reported both a token count
+    and a decode time; it is the figure to use for speed, not wall-clock time.
     """
-    seconds, prompt_chars, response_chars, failed, count = [], 0, 0, 0, 0
-    for call in calls or []:
-        if not isinstance(call, dict):
-            continue
-        count += 1
-        if _is_number(call.get("seconds")):
-            seconds.append(float(call["seconds"]))
-        prompt_chars += int(call["prompt_chars"]) if _is_number(call.get("prompt_chars")) else 0
-        response_chars += int(call["response_chars"]) if _is_number(call.get("response_chars")) else 0
-        if call.get("ok") is False:
-            failed += 1
+    calls = [c for c in (calls or []) if isinstance(c, dict)]
+    by_outcome = {o: 0 for o in OUTCOMES}
+    for call in calls:
+        by_outcome[call_outcome(call)] += 1
+    seconds = [float(c["seconds"]) for c in calls if _is_number(c.get("seconds"))]
+    timed = [c for c in calls if _is_number(c.get("completion_tokens"))
+             and _is_number(c.get("decode_seconds")) and c["decode_seconds"] > 0]
+    decode = sum(float(c["decode_seconds"]) for c in timed)
+    tokens = sum(float(c["completion_tokens"]) for c in timed)
+    queue = _sum_numbers(calls, "queue_wait_seconds_estimate")
     return {
-        "count": count,
-        "failed": failed,
+        "count": len(calls),
+        "attempted": len(calls),
+        "successful": by_outcome["ok"],
+        "failed": len(calls) - by_outcome["ok"],
+        "timeouts": by_outcome["timeout"],
+        "http_errors": by_outcome["http_error"],
+        "parse_errors": by_outcome["parse_error"],
+        "other_errors": by_outcome["other"],
+        "by_outcome": by_outcome,
         "total_seconds": round(sum(seconds), 3),
         "max_seconds": round(max(seconds), 3) if seconds else None,
         "mean_seconds": round(sum(seconds) / len(seconds), 3) if seconds else None,
-        "prompt_chars": prompt_chars,
-        "response_chars": response_chars,
+        "prompt_chars": int(_sum_numbers(calls, "prompt_chars") or 0),
+        "response_chars": int(_sum_numbers(calls, "response_chars") or 0),
+        "completion_tokens": int(tokens) if timed else None,
+        "decode_seconds": round(decode, 3) if timed else None,
+        "tokens_per_second": round(tokens / decode, 2) if decode > 0 else None,
+        "queue_wait_seconds_estimate": round(queue, 3) if queue is not None else None,
+    }
+
+
+def assess_completeness(calls) -> dict:
+    """Did every model call reach an answer? Only infrastructure failures make a repeat
+    incomplete (see INFRASTRUCTURE_FAILURES); `reasons` says why, in plain words."""
+    s = llm_call_summary(calls)
+    reasons = []
+    if s["attempted"] == 0:
+        reasons.append("no model calls were recorded")
+    for key, label in (("timeouts", "timed out"), ("http_errors", "failed with an HTTP error"),
+                       ("other_errors", "failed for another reason")):
+        if s[key]:
+            reasons.append(f"{s[key]} model call(s) {label}")
+    return {
+        "complete": not reasons,
+        "reasons": reasons,
+        "attempted_calls": s["attempted"],
+        "successful_calls": s["successful"],
+        "failed_calls": s["failed"],
+        "timeout_count": s["timeouts"],
+        "http_error_count": s["http_errors"],
+        "parse_error_count": s["parse_errors"],
+        "other_error_count": s["other_errors"],
     }
 
 
@@ -256,26 +314,68 @@ def flatten_run(run) -> dict:
     usage_block = (run or {}).get("usage") or {}
     flat["prompt_tokens"] = usage_block.get("prompt_tokens")
     flat["completion_tokens"] = usage_block.get("completion_tokens")
+    calls = (run or {}).get("llm_calls") or {}
+    flat["model_calls_attempted"] = calls.get("attempted")
+    flat["model_call_parse_errors"] = calls.get("parse_errors")
+    flat["decode_tokens_per_second"] = calls.get("tokens_per_second")
+    flat["queue_wait_seconds_estimate"] = calls.get("queue_wait_seconds_estimate")
+    errors = ((run or {}).get("pipeline") or {}).get("errors")
+    flat["pipeline_error_count"] = len(errors) if isinstance(errors, list) else 0
     return flat
 
 
-def aggregate_repeats(runs) -> dict:
-    """Mean / min / max of each metric across the SUCCESSFUL repeats.
+def _describe(values) -> dict:
+    return {
+        "n": len(values),
+        "mean": round(sum(values) / len(values), 4) if values else None,
+        "min": min(values) if values else None,
+        "max": max(values) if values else None,
+    }
 
-    n is how many repeats contributed a number for that metric. With few repeats these are
-    descriptive only; they are not confidence intervals.
+
+def aggregate_repeats(runs) -> dict:
+    """The OFFICIAL aggregate: mean / min / max of each metric over COMPLETE repeats only.
+
+    A repeat is complete when it ran and none of its model calls hit an infrastructure
+    failure (timeout, HTTP error, other). Incomplete repeats stay visible under
+    `incomplete_diagnostics` but never enter `metrics`, so a timeout cannot be mistaken for a
+    model-quality result. With no complete repeat there is no valid baseline, and
+    `statement` says so. n is how many complete repeats contributed a number for a metric;
+    with few repeats these are descriptive only, not confidence intervals.
     """
     runs = [r for r in (runs or []) if isinstance(r, dict)]
-    ok = [r for r in runs if r.get("ok")]
-    flats = [flatten_run(r) for r in ok]
-    names = sorted({k for f in flats for k in f})
-    metrics = {}
-    for name in names:
-        values = [f[name] for f in flats if _is_number(f.get(name))]
-        metrics[name] = {
-            "n": len(values),
-            "mean": round(sum(values) / len(values), 4) if values else None,
-            "min": min(values) if values else None,
-            "max": max(values) if values else None,
-        }
-    return {"repeats_total": len(runs), "repeats_ok": len(ok), "metrics": metrics}
+    ran = [r for r in runs if r.get("ok")]
+    complete = [r for r in ran if r.get("complete") is True]
+    incomplete = [r for r in runs if r not in complete]
+    flats = [flatten_run(r) for r in complete]
+    metrics = {name: _describe([f[name] for f in flats if _is_number(f.get(name))])
+               for name in sorted({k for f in flats for k in f})}
+    total = len(runs)
+    if not total:
+        statement = "No repeats were run."
+    elif not complete:
+        statement = (f"NO VALID BASELINE: none of the {total} repeat(s) completed without "
+                     "timeouts or server errors. The results are diagnostic only and say "
+                     "nothing about model quality.")
+    elif len(complete) < total:
+        statement = (f"The official aggregate uses {len(complete)} of {total} repeats. The "
+                     f"other {total - len(complete)} were incomplete and are diagnostic only "
+                     "(see incomplete_diagnostics).")
+    else:
+        statement = f"All {total} repeats completed without timeouts or server errors."
+    return {
+        "repeats_total": total,
+        "repeats_ok": len(ran),
+        "repeats_complete": len(complete),
+        "repeats_incomplete": len(incomplete),
+        "valid_baseline": bool(complete),
+        "all_repeats_complete": bool(total) and len(complete) == total,
+        "statement": statement,
+        "metrics": metrics,
+        "incomplete_diagnostics": [
+            {"repeat": r.get("repeat"), "ran": bool(r.get("ok")),
+             "reasons": (r.get("completeness") or {}).get("reasons") or
+                        ([r["error"]] if r.get("error") else []),
+             "metrics": flatten_run(r) if r.get("ok") else {}}
+            for r in incomplete],
+    }

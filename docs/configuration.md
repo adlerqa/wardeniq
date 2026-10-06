@@ -335,11 +335,10 @@ The model you pick changes three things, and they pull against each other.
 - **Speed.** A local model runs on your hardware, and on a CPU a single generation run can
   take many minutes. A hosted model is usually faster but depends on the network.
 
-> **Status: no recommendation yet.** This section is the scaffold for model guidance. It
-> does not yet say which model to use, what the minimum viable model is, or whether the
-> bundled default (`qwen2.5:3b`) should change. A first baseline for the bundled default has
-> been measured on one sample document, which is not enough to recommend anything. Results
-> for further models will be added here after they are measured.
+> **Status: no recommendation, and no published results yet.** This section is the scaffold
+> for model guidance. It does not say which model to use, what the minimum viable model is,
+> or whether the bundled default (`qwen2.5:3b`) should change. No valid baseline has been
+> collected yet. Results will be added here once they have been measured without timeouts.
 
 ### What the evaluation measures
 
@@ -356,10 +355,41 @@ records what the pipeline itself reports:
   coverage against hand-labelled requirements in `tests/eval/generation_fixture.py`. The
   heuristic only shows that some case mentions a requirement's key terms; it does not judge
   whether the case is correct;
-- wall-clock time per pipeline stage and per model call, and token usage.
+- every model call, classified as `ok`, `timeout`, `http_error`, `parse_error` or `other`,
+  with its duration and, where the server reports them, token counts and decode speed.
 
 Each run records the model and its digest, the git commit, a hash of the corpus and of the
-labels, the seed, and the hardware, so a result can be reproduced and interpreted later.
+labels, the seed, the call timeout and the hardware, so a result can be reproduced and
+interpreted later.
+
+### Timeouts and incomplete runs
+
+The pipeline gives each model call 180 to 300 seconds. A CPU-only model decodes at roughly
+10 to 15 tokens per second, and a single-slot Ollama queues the pipeline's parallel
+workers behind each other, so on CPU a call can be cut off before the model finishes. When
+that happens a whole category of tests is silently not generated, and the counts and rates
+then describe the timeout, not the model.
+
+- **A longer timeout is a benchmark setting, not an app change.** `--call-timeout SECONDS`
+  replaces the timeout of every model call in the runner's own client only. It is recorded in
+  the result. Without it the pipeline's own timeouts apply, which is useful for seeing what a
+  first run on that hardware looks like, but is not a model comparison. On CPU-only hardware
+  start with something like `--call-timeout 1800`. The application's own timeouts are not
+  changed by this.
+- **A repeat is complete only if no call hit an infrastructure failure** (a timeout, an HTTP
+  error such as the model server being killed, or another error). A reply the pipeline
+  cannot parse (`parse_error`) is the model's own output and does not make a repeat
+  incomplete; leaving such repeats out would flatter the model.
+- **Incomplete repeats are excluded from the official aggregate.** They stay in the result
+  file as diagnostics. If no repeat is complete, the result states that there is no valid
+  baseline, and the runner exits with status 1.
+- **Results affected by timeouts or resource exhaustion are diagnostic, not model-quality
+  evidence.** Do not compare models using them.
+- **Runtime is hardware-specific.** Wall-clock time includes queueing and any timeout waits,
+  so it is not model speed. Use the recorded decode speed (`tokens_per_second`) for that, and
+  quote it together with the hardware.
+- The result file is rewritten after every repeat, so a crash or an interrupted run keeps the
+  repeats that finished (`status` is `in_progress`, `aborted` or `finished`).
 
 ### Limits of the current evidence
 
@@ -383,20 +413,29 @@ The runner never touches your wardenIQ settings or database. Each repeat uses it
 throwaway `wardeniq_eval_*` database and drops it afterwards. It only uses a local Ollama,
 reads no API keys, and never downloads a model.
 
+It needs only two things: a running Ollama with the model and the embedding model already
+pulled, and a MongoDB it may create throwaway databases on. It does not need the wardenIQ
+app or the bundled database stack. On a laptop, Ollama in Docker shares the Docker VM's
+memory (often 8 GB) with every other container; if the model server is killed for lack of
+memory mid-run, the repeat is reported incomplete. For a baseline, stop the containers you do
+not need (`docker stop <name>` or `docker compose stop <service>`) and start them again
+afterwards. Do **not** use `docker compose down -v`, which deletes your data.
+
 ```bash
 # a disposable MongoDB for the runner to create throwaway databases on
 docker run -d --rm --name wardeniq-eval-mongo -p 127.0.0.1:27099:27017 mongo:7
 
 ollama pull <model>          # the runner will not do this for you
 
-python scripts/eval_generation.py --model <model> --repeats 3 \
+python scripts/eval_generation.py --model <model> --repeats 3 --call-timeout 1800 \
   --mongo-uri 'mongodb://127.0.0.1:27099/?directConnection=true' \
   --out docs/eval-results/generation-<model>.json
 ```
 
-The first baseline, for the bundled default, is archived at
-`docs/eval-results/generation-qwen2.5-3b-baseline.json`. It is a reference point for the
-method, not a recommendation.
+Exit status 0 means every repeat finished and was complete; 1 means at least one repeat
+failed or was incomplete (the file is still written); 2 means bad options or a failed
+pre-flight check, and nothing was run. Check `aggregate.valid_baseline` and
+`aggregate.statement` in the result before using it.
 
 ---
 
