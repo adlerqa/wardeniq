@@ -321,6 +321,83 @@ on-prem unless you choose a hosted provider.
 
 ---
 
+## Choosing a model
+
+The model you pick changes three things, and they pull against each other.
+
+- **Quality.** Models differ in how well they stay grounded in your documents, how often
+  they copy the prompt's own examples instead of your requirements, and how often their
+  output is malformed. wardenIQ filters generated candidates (copied examples, cases with
+  no support in the source text, duplicates) and reports how many each filter rejected;
+  the evaluation below measures exactly that.
+- **Cost.** Hosted providers bill per token. A local Ollama model has no per-token cost
+  but needs RAM and disk, and a larger one means a longer first download.
+- **Speed.** A local model runs on your hardware, and on a CPU a single generation run can
+  take many minutes. A hosted model is usually faster but depends on the network.
+
+> **Status: no recommendation yet.** This section is the scaffold for model guidance. It
+> does not yet say which model to use, what the minimum viable model is, or whether the
+> bundled default (`qwen2.5:3b`) should change. A first baseline for the bundled default has
+> been measured on one sample document, which is not enough to recommend anything. Results
+> for further models will be added here after they are measured.
+
+### What the evaluation measures
+
+`scripts/eval_generation.py` runs the real generation pipeline on one fixed document and
+records what the pipeline itself reports:
+
+- candidates **generated**, **persisted** and **rejected**, and why: a copy of the prompt's
+  own example (`exemplar-copy`), prompt scaffolding (`hybrid-scaffold`), no support in the
+  source text (`no-source-grounding`), or a duplicate. Rates are against the candidates the
+  model produced *before* filtering.
+- how many grounded entities, APIs and UI components survived the grounding pass (read from
+  the pipeline's progress message, so it is blank if that wording changes);
+- the pipeline's own requirement-gap list, plus a **keyword heuristic** for requirement
+  coverage against hand-labelled requirements in `tests/eval/generation_fixture.py`. The
+  heuristic only shows that some case mentions a requirement's key terms; it does not judge
+  whether the case is correct;
+- wall-clock time per pipeline stage and per model call, and token usage.
+
+Each run records the model and its digest, the git commit, a hash of the corpus and of the
+labels, the seed, and the hardware, so a result can be reproduced and interpreted later.
+
+### Limits of the current evidence
+
+- **One document.** The corpus is `examples/sample-prd.md`, a simple password-reset PRD. It
+  is an initial fixed corpus, not a representative benchmark, and says nothing about other
+  kinds of documents.
+- **Non-determinism.** Runs send a seed to Ollama and are repeated, but model output still
+  varies. Treat the numbers as descriptions of those repeats on that machine.
+- **Hardware.** Speed depends heavily on the machine and on how Ollama runs (for example in
+  Docker on CPU versus natively).
+- **The ingest summary.** The app asks the model under test to write the feature summary at
+  ingest, so that summary is part of what each model is judged on.
+- **Search backend.** The runner uses a plain MongoDB, so retrieval uses the app's exact
+  fallback rather than the bundled stack's vector search.
+- **Cost.** Token counts are recorded, but a local model has no per-token cost, and no
+  hosted model has been run.
+
+### Running it yourself
+
+The runner never touches your wardenIQ settings or database. Each repeat uses its own
+throwaway `wardeniq_eval_*` database and drops it afterwards. It only uses a local Ollama,
+reads no API keys, and never downloads a model.
+
+```bash
+# a disposable MongoDB for the runner to create throwaway databases on
+docker run -d --rm --name wardeniq-eval-mongo -p 127.0.0.1:27099:27017 mongo:7
+
+ollama pull <model>          # the runner will not do this for you
+
+python scripts/eval_generation.py --model <model> --repeats 3 \
+  --mongo-uri 'mongodb://127.0.0.1:27099/?directConnection=true' \
+  --out docs/eval-results/generation-<model>.json
+```
+
+The first baseline, for the bundled default, is archived at
+`docs/eval-results/generation-qwen2.5-3b-baseline.json`. It is a reference point for the
+method, not a recommendation.
+
 ---
 
 ## Roles & access
