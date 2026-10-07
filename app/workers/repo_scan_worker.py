@@ -5,9 +5,10 @@ import time
 
 from core import state
 from core.config import (
-    GITHUB_API, IMPORT_SEMANTIC_MATCH, IMPORT_SEMANTIC_THRESHOLD, STEP_AUTO,
+    GITHUB_API, GITLAB_BASE_URL, IMPORT_SEMANTIC_MATCH, IMPORT_SEMANTIC_THRESHOLD, STEP_AUTO,
 )
 from core.deps import current_llm, project_github_token, project_gitlab_token
+from core.logging_setup import get_logger
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
                                # mutated, never rebound)
 import automation as auto_cov
@@ -15,6 +16,8 @@ import github
 import sheet_import as sheet_mod
 
 from workers.registry import JOB_WORKERS
+
+log = get_logger("repo_scan")
 
 
 def _test_repo_scan_worker(jid, params):
@@ -67,7 +70,8 @@ def _test_repo_scan_worker(jid, params):
             import httpx as _httpx
             import urllib.parse as _up
             store.update_job_progress(jid, "Downloading GitLab archive…", 18)
-            url = (f"https://gitlab.com/api/v4/projects/"
+            gitlab_api = f"{GITLAB_BASE_URL}/api/v4"
+            url = (f"{gitlab_api}/projects/"
                    f"{_up.quote(repo['full_name'], safe='')}"
                    f"/repository/archive.tar.gz")
             r = _httpx.get(url, headers={"PRIVATE-TOKEN": token},
@@ -77,7 +81,7 @@ def _test_repo_scan_worker(jid, params):
                 # Try the repo's default branch from /projects endpoint.
                 try:
                     proj = _httpx.get(
-                        f"https://gitlab.com/api/v4/projects/"
+                        f"{gitlab_api}/projects/"
                         f"{_up.quote(repo['full_name'], safe='')}",
                         headers={"PRIVATE-TOKEN": token}, timeout=30.0).json()
                     db = proj.get("default_branch") or "main"
@@ -93,7 +97,7 @@ def _test_repo_scan_worker(jid, params):
             # Capture HEAD SHA for the chosen branch so commit links work.
             try:
                 commits = _httpx.get(
-                    f"https://gitlab.com/api/v4/projects/"
+                    f"{gitlab_api}/projects/"
                     f"{_up.quote(repo['full_name'], safe='')}/repository/commits",
                     headers={"PRIVATE-TOKEN": token},
                     params={"ref_name": default_branch, "per_page": 1},
@@ -132,8 +136,8 @@ def _test_repo_scan_worker(jid, params):
                     "commit_sha": commit_sha,
                 })
         store.replace_test_repo_cases(pid, repo_id, scanned)
-        print(f"[scan] {repo['full_name']}: {files_seen} files seen, "
-              f"{len(scanned)} tests extracted", flush=True)
+        log.info("%s: %d files seen, %d tests extracted",
+                repo["full_name"], files_seen, len(scanned))
 
         store.update_job_progress(jid, "Matching to generated cases…", 60)
         all_features = store.list_features(project_id=pid)
@@ -168,8 +172,7 @@ def _test_repo_scan_worker(jid, params):
                     progress_fn=_prog)
             except Exception as match_err:  # noqa: BLE001
                 # Match failure on one feature must NOT kill the whole scan.
-                print(f"[scan] match error on feature {f.get('name')}: "
-                      f"{match_err}", flush=True)
+                log.warning("match error on feature %s: %s", f.get("name"), match_err)
                 matches = [{"generated_id": g["id"], "match": None}
                            for g in gen]
 
@@ -220,8 +223,7 @@ def _test_repo_scan_worker(jid, params):
             })
         scan_outcome = {"status": "done", "error": ""}
     except Exception as scan_err:  # noqa: BLE001
-        import traceback as _tb
-        print(f"[scan] FATAL: {scan_err}\n{_tb.format_exc()}", flush=True)
+        log.error("FATAL: %s", scan_err, exc_info=True)
         scan_outcome = {"status": "failed",
                         "error": f"{type(scan_err).__name__}: {scan_err}"[:300]}
     finally:
@@ -395,7 +397,7 @@ def _feature_doc_for_import_context(feature: dict) -> dict:
     try:
         unified = store.build_unified_context(feature_id, version) if feature_id else {}
     except Exception as exc:  # noqa: BLE001
-        print(f"[import] unified context unavailable; using feature doc: {exc}", flush=True)
+        log.debug("[import] unified context unavailable; using feature doc: %s", exc)
         unified = {}
 
     text_parts = [

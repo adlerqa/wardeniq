@@ -21,8 +21,11 @@ import email_send
 from core.audit import _audit
 from core.config import APP_WORKSPACE_NAME
 from core.deps import _smtp_cfg, _user_public, _webhook_base_url
+from core.logging_setup import get_logger
 from core.security import _current_user
 from core.state import store
+
+log = get_logger("users")
 
 router = APIRouter()
 
@@ -59,7 +62,7 @@ def _issue_invite_link(u, request=None, inviter_name=""):
     link = f"{base}/invite?token={token}" if base else f"/invite?token={token}"
     cfg = _smtp_cfg()
     if not cfg:
-        print(f"[wardenIQ][invite refused] SMTP not configured for {u['email']}", flush=True)
+        log.warning("[invite refused] SMTP not configured for %s", u["email"])
         return ("refused", "smtp not configured"), token
     ok, err = email_send.send_invite(
         cfg, u["email"], link, inviter=inviter_name,
@@ -67,7 +70,7 @@ def _issue_invite_link(u, request=None, inviter_name=""):
         recipient_name=u.get("name") or "")
     if ok:
         return ("sent", link), token
-    print(f"[wardenIQ][invite send failed for {u['email']}: {err}]", flush=True)
+    log.warning("invite send failed for %s: %s", u["email"], err)
     return ("error", err), token
 
 

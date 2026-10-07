@@ -64,12 +64,31 @@ class DashboardMixin(_Base):
         return n
 
     def _covered_and_dev_sets(self):
+        """`dev` (the "automated" set) has two independent sources, and a case only
+        needs ONE of them to count (issue #99): `by_dev_test` from PR-coverage
+        analysis (self.coverage / pr_coverage — a developer-written test noticed
+        while reviewing a PR's diff), and a match recorded by the automation
+        scan (self.automation_coverage — a connected test repo's automated test
+        matched to a generated case, app/workers/repo_scan_worker.py). These are
+        genuinely different discovery mechanisms for the same question ("is
+        there an automated test for this case"), and a project can have real,
+        matched automation coverage with zero PR-coverage runs ever having
+        happened — before this fix, that combination silently reported 0%
+        automation on the Dashboard while the feature-level Automation Test
+        Coverage panel (which already reads self.automation_coverage directly,
+        see get_automation_coverage() in store/code_coverage.py) showed the
+        real, non-zero count.
+        """
         covered, dev = set(), set()
         for c in self.coverage.find({}):
             for x in c.get("covered", []):
                 covered.add(x.get("test_case_id"))
                 if x.get("by_dev_test"):
                     dev.add(x.get("test_case_id"))
+        for doc in self.automation_coverage.find({}, {"items": 1}):
+            for item in doc.get("items", []):
+                if item.get("status") == "covered" and item.get("generated_id"):
+                    dev.add(item["generated_id"])
         return covered, dev
 
     def dashboard(self):

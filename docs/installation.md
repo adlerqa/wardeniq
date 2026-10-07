@@ -64,6 +64,18 @@ compose files entirely.
 
 ---
 
+### Alternative datastore: Percona Server for MongoDB + Percona Search (validation only)
+
+`docker-compose.mongodb-percona.yml` lets an operator run the bundled database against
+**Percona Server for MongoDB + Percona Search** (Percona's mongot fork, technical
+preview) instead of the default MongoDB Community + mongot, for evaluation. **This is
+not the default and is not officially supported or recommended** — it exists to gather
+evidence for [#41](https://github.com/adlerqa/wardeniq/issues/41), a still-open
+maintainer decision. See
+[docs/percona-search-validation.md](percona-search-validation.md) for exactly what was
+tested and what wasn't, including a finding that Percona likely does **not** avoid the
+kernel ≥ 6.19 limitation described in [#27](https://github.com/adlerqa/wardeniq/issues/27).
+
 ---
 
 ### Using the bundled Ollama (local models)

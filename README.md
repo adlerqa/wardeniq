@@ -49,7 +49,9 @@ is also available if you just want to try it out first — see
 
 - **Generate test cases from docs** — upload PRD/HLD/LLD files (PDF, DOCX, Markdown);
   get **Functional, E2E, API, and Non-functional** cases. A *depth* dial sets how
-  many; *focus sliders* set the mix.
+  many; *focus sliders* set the mix. Before you confirm, a rough **cost estimate**
+  (based on document size and case count) shows what a hosted model would charge —
+  local Ollama runs show no dollar figure since cost isn't meaningful there.
 - **Keep them clean & reusable** — cases are built from atomic **steps**; edit a step
   once and it updates everywhere. Duplicates are merged across features automatically.
 - **Version safely** — re-upload changed docs as a new **version**; still-valid cases
@@ -118,6 +120,19 @@ Then open **http://localhost:8001**.
 > **First launch takes a few minutes** — it initializes the MongoDB replica set and
 > downloads the local models. Grab a coffee; it's a one-time cost.
 
+> **Docker Desktop on a Linux kernel ≥ 6.19?** The bundled MongoDB/mongot stack
+> cannot start — MongoDB's `tcmalloc` allocator has a known incompatibility with
+> kernel ≥ 6.19, and there is currently no bundled MongoDB/mongot version
+> combination that avoids it. This is an upstream limitation, not a wardenIQ bug
+> (tracked in [#27](https://github.com/adlerqa/wardeniq/issues/27)); `run.sh`
+> detects it and refuses to start with an explanation rather than failing silently.
+> Check your kernel with `docker info --format '{{.KernelVersion}}'`. If you're
+> affected, the supported path is an **external MongoDB** (Atlas M10+ or
+> self-managed with `mongot`) instead of the bundled stack — see
+> [Installation & deployment](docs/installation.md#cloud--lightweight-deployment-recommended-for-real-use).
+> See [Troubleshooting](docs/troubleshooting.md) if you're already running the
+> affected stack and need to recover admin access.
+
 ### Signing in the very first time
 
 wardenIQ always requires a login. When SMTP (email delivery) is not yet set up, there's
@@ -150,6 +165,11 @@ Prefer to seed the admin ahead of time? Set `ADMIN_EMAIL=you@company.com` in `.e
 > email address with the Admin role, have them accept the invite and sign in, and
 > the local admin's Disable/Delete options unlock automatically once a second
 > active admin exists.
+
+> **No PRD handy?** Upload [`examples/sample-prd.md`](examples/sample-prd.md) when
+> you create your first feature — a small password-reset PRD detailed enough to
+> generate Functional, E2E, API, and Non-functional test cases, so you can see the
+> whole flow work without writing a requirement document of your own first.
 
 ---
 

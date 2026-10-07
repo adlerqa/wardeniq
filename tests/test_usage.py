@@ -67,3 +67,85 @@ class TestPricing:
                               "calls": 1, "kind": "llm"}}
         s = usage.summarize(rec, prices={})
         assert s["by_model"]["qwen2.5:7b"]["cost_usd"] == 0.0
+
+
+class TestEstimateGenerationTokens:
+    """Pure token-count math (issue #22) -- no pricing involved."""
+
+    def test_scales_with_total(self):
+        small = usage.estimate_generation_tokens(text_length=4000, total=4)
+        large = usage.estimate_generation_tokens(text_length=4000, total=40)
+        assert large["prompt_tokens_mid"] > small["prompt_tokens_mid"]
+        assert large["completion_tokens_mid"] > small["completion_tokens_mid"]
+
+    def test_scales_with_document_length(self):
+        short_doc = usage.estimate_generation_tokens(text_length=400, total=16)
+        long_doc = usage.estimate_generation_tokens(text_length=40_000, total=16)
+        assert long_doc["prompt_tokens_mid"] > short_doc["prompt_tokens_mid"]
+        # Only the (discovery) input side depends on document length.
+        assert long_doc["completion_tokens_mid"] == short_doc["completion_tokens_mid"]
+
+    def test_document_length_input_is_capped_per_pass(self):
+        # Well past the per-pass cap: further growth must stop moving the estimate.
+        huge = usage.estimate_generation_tokens(text_length=10_000_000, total=16)
+        bigger = usage.estimate_generation_tokens(text_length=100_000_000, total=16)
+        assert huge["prompt_tokens_mid"] == bigger["prompt_tokens_mid"]
+
+    def test_zero_and_negative_inputs_do_not_crash(self):
+        z = usage.estimate_generation_tokens(text_length=0, total=0)
+        assert z["prompt_tokens_mid"] >= 0
+        assert z["completion_tokens_mid"] >= 0
+        neg = usage.estimate_generation_tokens(text_length=-5, total=-5)
+        assert neg["prompt_tokens_mid"] >= 0
+        assert neg["completion_tokens_mid"] >= 0
+
+    def test_none_inputs_do_not_crash(self):
+        r = usage.estimate_generation_tokens(text_length=None, total=None)
+        assert r["prompt_tokens_mid"] >= 0
+        assert r["completion_tokens_mid"] >= 0
+
+
+class TestEstimateGenerationCost:
+    def test_ollama_provider_has_no_dollar_figure(self):
+        r = usage.estimate_generation_cost(4000, 16, provider="ollama", model="qwen2.5:7b")
+        assert r["low"] is None
+        assert r["high"] is None
+        assert "local" in r["note"].lower()
+
+    def test_default_provider_is_treated_as_ollama(self):
+        r = usage.estimate_generation_cost(4000, 16, provider="", model="")
+        assert r["low"] is None
+        assert r["high"] is None
+
+    def test_unknown_hosted_model_reports_no_dollar_figure(self):
+        r = usage.estimate_generation_cost(4000, 16, provider="openai",
+                                           model="totally-unknown-model-xyz", prices={})
+        assert r["low"] is None
+        assert r["high"] is None
+        assert "no pricing known" in r["note"].lower()
+
+    def test_known_hosted_model_returns_a_range(self):
+        r = usage.estimate_generation_cost(4000, 16, provider="openai", model="gpt-4o")
+        assert r["low"] is not None and r["high"] is not None
+        assert r["low"] <= r["high"]
+        assert r["low"] > 0
+        assert r["currency"] == "USD"
+
+    def test_settings_price_override_is_honoured(self):
+        cheap = usage.estimate_generation_cost(
+            4000, 16, provider="openai", model="my-custom-model",
+            prices={"my-custom-model": {"in": 0.01, "out": 0.01}})
+        pricey = usage.estimate_generation_cost(
+            4000, 16, provider="openai", model="my-custom-model",
+            prices={"my-custom-model": {"in": 100.0, "out": 100.0}})
+        assert cheap["low"] < pricey["low"]
+
+    def test_larger_total_increases_the_estimate(self):
+        small = usage.estimate_generation_cost(4000, 4, provider="openai", model="gpt-4o")
+        large = usage.estimate_generation_cost(4000, 40, provider="openai", model="gpt-4o")
+        assert large["low"] > small["low"]
+
+    def test_range_is_a_band_around_the_midpoint(self):
+        r = usage.estimate_generation_cost(4000, 16, provider="openai", model="gpt-4o")
+        mid = (r["prompt_tokens_mid"] / 1e6) * 2.50 + (r["completion_tokens_mid"] / 1e6) * 10.00
+        assert r["low"] < mid < r["high"]

@@ -28,9 +28,11 @@ No duplicate method/property name exists across any mixin (see
 picking one implementation and shadowing another, which would be undetectable at import
 time).
 """
+from store.api_tokens import ApiTokensMixin
 from store.audit import AuditMixin
 from store.base import BaseStore
 from store.code_coverage import CodeCoverageMixin
+from store.coverage_snapshots import CoverageSnapshotsMixin
 from store.dashboard import DashboardMixin
 from store.documents import DocumentsMixin
 from store.features import FeaturesMixin
@@ -54,6 +56,7 @@ class Store(
     JobsMixin,
     UsageMixin,
     UsersAuthMixin,
+    ApiTokensMixin,
     ReposPrsMixin,
     CodeCoverageMixin,
     ValidatorRunsMixin,
@@ -64,6 +67,7 @@ class Store(
     SheetImportMixin,
     AuditMixin,
     DashboardMixin,
+    CoverageSnapshotsMixin,
     BaseStore,
 ):
     """Composes every domain mixin. `BaseStore` is last so its `__init__` (the only

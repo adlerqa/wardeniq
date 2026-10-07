@@ -35,8 +35,8 @@ export default function ApplicationFrame() {
           <path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="currentColor" strokeWidth="1.8"></path>
         </svg>
         <span>
-          You&apos;re viewing in
-          <b>read-only</b>
+          You&apos;re viewing in{" "}
+          <b>read-only</b>{" "}
           mode. Your Viewer role can browse everything but can&apos;t create, edit, or delete. Ask an admin for Editor access to make changes.
         </span>
       </div>

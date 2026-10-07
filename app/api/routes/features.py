@@ -36,9 +36,12 @@ from core.deps import (
     _fallback_feature_summary, _gather_external, _generate_feature_summary,
     current_llm, figma_client, jira_client,
 )
+from core.logging_setup import get_logger
 from core.security import _allowed_project_ids, _current_user, _require_feature_project, _require_project
 from core.state import store
 from workers.registry import launch_job
+
+log = get_logger("features")
 
 router = APIRouter()
 
@@ -153,7 +156,7 @@ async def create_feature(request: Request, name: str = Form(...), project_id: st
                 meta["feature_id"] = fid
                 store.save_stored_document(meta)
             except Exception as e:
-                print(f"[wardenIQ][s3-auto-upload-warn] {e!r}", flush=True)
+                log.warning("[s3-auto-upload-warn] %r", e)
 
     if not external:
         # Fast path: only local docs / pasted text — index + generate inline (unchanged).

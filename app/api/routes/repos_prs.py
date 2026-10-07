@@ -35,7 +35,10 @@ from core.deps import (
     _ext_error, _oid, _repo_list_branches, _webhook_base_url,
     project_github_token, project_gitlab_token,
 )
+from core.logging_setup import get_logger
 from core.state import store
+
+log = get_logger("repos_prs")
 
 router = APIRouter()
 
@@ -166,6 +169,33 @@ class RepoIn(BaseModel):
     default_branch: str = "main"
 
 
+def _require_github_repo(client, owner: str, name: str) -> None:
+    """Raise a clean HTTPException unless GitHub confirms the repository is reachable.
+
+    Runs BEFORE anything is persisted or watched. Failures are kept distinct instead
+    of all meaning "not found": a 404 (GitHub also answers 404 for a private repo the
+    token cannot see), auth, forbidden, rate limiting and network/server errors each
+    get their own status, via the shared _ext_error mapping. A provider 401 comes back
+    as 400 there, because the UI treats any 401 as an expired login session.
+    """
+    import httpx
+    try:
+        client.get_repo(owner, name)
+    except httpx.HTTPStatusError as e:
+        resp = e.response
+        status = resp.status_code
+        if status == 404:
+            raise HTTPException(
+                404, f"GitHub repository {owner}/{name} was not found, or the "
+                     "configured token cannot access it — check the URL and the PAT")
+        if status == 403 and (resp.headers.get("x-ratelimit-remaining") == "0"
+                              or "retry-after" in resp.headers):
+            raise HTTPException(429, "GitHub: rate limited — please try again shortly")
+        raise _ext_error("GitHub", e)
+    except Exception as e:  # noqa: BLE001
+        raise _ext_error("GitHub", e)
+
+
 @router.post("/api/projects/{pid}/repos")
 def add_repo(pid: str, body: RepoIn, request: Request):
     provider = (body.git_provider or "github").lower()
@@ -206,6 +236,9 @@ def add_repo(pid: str, body: RepoIn, request: Request):
                 if not token:
                     raise HTTPException(400, "GitHub PAT not configured for this project")
                 client = github.GitHub(token, GITHUB_API)
+                # Not swallowed like the webhook calls below: reject a missing repo
+                # before any webhook, persistence or PR sync (issue #126).
+                _require_github_repo(client, owner, name)
                 # Reuse existing webhook for the same target_url if one exists.
                 existing = None
                 try:
@@ -214,13 +247,13 @@ def add_repo(pid: str, body: RepoIn, request: Request):
                             existing = hook
                             break
                 except Exception as e:  # noqa: BLE001
-                    print(f"[webhook] list failed (continuing): {e}", flush=True)
+                    log.warning("[webhook] list failed (continuing): %s", e)
                 if existing:
                     webhook_id = existing.get("id")
                     try:
                         client.update_pr_webhook(owner, name, webhook_id, webhook_url, secret)
                     except Exception as e:  # noqa: BLE001
-                        print(f"[webhook] patch failed: {e}", flush=True)
+                        log.warning("[webhook] patch failed: %s", e)
                 else:
                     hook = client.register_pr_webhook(owner, name, webhook_url, secret)
                     webhook_id = hook.get("id")
@@ -238,7 +271,7 @@ def add_repo(pid: str, body: RepoIn, request: Request):
         except Exception as e:  # noqa: BLE001
             # Don't fail the whole connect; persist the repo without webhook so the
             # user can retry later from the UI.
-            print(f"[webhook] register failed: {e}", flush=True)
+            log.warning("[webhook] register failed: %s", e)
 
     rid = store.add_repo(pid, owner, name,
                          (body.url or f"https://{provider}.com/{full_name}"),
@@ -330,5 +363,5 @@ def delete_repo(rid: str):
                     github.GitHub(token, GITHUB_API).delete_webhook(
                         repo["owner"], repo["name"], repo["webhook_id"])
         except Exception as e:  # noqa: BLE001
-            print(f"[webhook] delete failed (continuing): {e}", flush=True)
+            log.warning("[webhook] delete failed (continuing): %s", e)
     return store.delete_repo(rid)

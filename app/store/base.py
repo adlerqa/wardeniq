@@ -12,12 +12,17 @@ path reports through this one gate).
 
 import math
 import os
+import secrets
 import time
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from bson import ObjectId
 from pymongo import MongoClient
 from pymongo.operations import SearchIndexModel
+
+from core.logging_setup import get_logger
+
+log = get_logger("store")
 
 
 VECTOR_INDEX = "vector_index"
@@ -69,6 +74,14 @@ def cosine_atlas(a, b) -> float:
     return (1 + dot / (na * nb)) / 2
 
 
+# Shown (and raised) whenever a migration target turns out to be the database wardenIQ is
+# already using. migrate_to(overwrite=True) deletes the target's documents before copying, so
+# pointing it at its own source would erase the data it is about to copy.
+SELF_TARGET_MSG = ("The target is the database wardenIQ is already using. A migration copies "
+                   "your data to a DIFFERENT database; copying a database onto itself would "
+                   "erase it. Nothing was copied.")
+
+
 class BaseStore:
     def __init__(self, uri: str, db_name: str, dim: int):
         self.client = MongoClient(_with_durable_write_concern(uri))
@@ -88,6 +101,8 @@ class BaseStore:
         self.coverage = self.db["pr_coverage"]
         self.commit_analysis = self.db["commit_analysis"]
         self.users = self.db["users"]
+        self.api_tokens = self.db["api_tokens"]
+        self.api_token_failures = self.db["api_token_failures"]
         self.validator_runs = self.db["validator_runs"]
         self.validator_questions = self.db["validator_questions"]
         self.validator_answers = self.db["validator_answers"]
@@ -107,18 +122,20 @@ class BaseStore:
     def ensure_indexes(self):
         for name in ["projects", "features", "feature_chunks", "code_chunks", "code_coverage",
                      "test_steps", "test_cases", "associations", "repos", "pull_requests",
-                     "pr_coverage", "users", "validator_runs", "validator_questions",
+                     "pr_coverage", "users", "api_tokens", "api_token_failures",
+                     "validator_runs", "validator_questions",
                      "validator_answers", "test_plan_runs", "test_cycles", "counters",
                      "feature_imports", "project_imported_rows",
                      "project_imported_row_sources", "project_imported_row_feature_map",
                      "project_imported_row_promotions",
                      "project_imported_row_corrections", "import_analysis_status",
-                     "stored_documents"]:
+                     "stored_documents", "coverage_snapshots"]:
             if name not in self.db.list_collection_names():
                 self.db.create_collection(name)
         self.documents.create_index([("project_id", 1), ("created_at", -1)])
         self.documents.create_index([("feature_id", 1)])
         self.users.create_index([("email", 1)], unique=True)
+        self.api_tokens.create_index([("token_hash", 1)], unique=True)
         self.assoc.create_index([("feature_id", 1), ("test_case_id", 1)], unique=True)
         self.repos.create_index([("project_id", 1), ("full_name", 1)], unique=True)
         self.prs.create_index([("repo_id", 1), ("number", 1)], unique=True)
@@ -160,6 +177,8 @@ class BaseStore:
             ("import_batch_id", 1), ("project_imported_row_id", 1)
         ])
         self.project_imported_row_corrections.create_index([("import_batch_id", 1)])
+        self.db["coverage_snapshots"].create_index([("project_id", 1), ("at", -1)])
+        self.db["coverage_snapshots"].create_index([("project_id", 1), ("event", 1), ("at", -1)])
         self._backfill_case_display_ids()
         self.cases.create_index([("display_id", 1)], unique=True, sparse=True)
         self._renumber_display_ids()   # one-time: per-feature numbering (1..N)
@@ -365,10 +384,10 @@ class BaseStore:
         except Exception:  # noqa: BLE001
             n = 0
         if n > NUMPY_FALLBACK_MAX_DOCS:
-            print(f"[store] mongot unavailable and case store is large ({n} > "
-                  f"{NUMPY_FALLBACK_MAX_DOCS}); skipping exact numpy fallback for {what} "
-                  f"(degraded) to avoid OOM. Restore mongot to resume full search.",
-                  flush=True)
+            log.warning("mongot unavailable and case store is large (%d > %d); "
+                      "skipping exact numpy fallback for %s (degraded) to avoid OOM. "
+                      "Restore mongot to resume full search.",
+                      n, NUMPY_FALLBACK_MAX_DOCS, what)
             # Make it inspectable, not just printed: a log line in a container nobody is
             # tailing is not an alert. Callers turn this into a job warning / health flag.
             rec = self._degraded.setdefault(what, {"count": 0, "first_at": time.time()})
@@ -398,6 +417,31 @@ class BaseStore:
         else:
             self._degraded.pop(what, None)
 
+    def target_is_this_database(self, target_uri: str) -> bool:
+        """True if the database at `target_uri` (same database name as ours) IS the database
+        this store is using -- the same data, however the URI spells the server (localhost vs
+        127.0.0.1, an internal service name, an SRV record, a proxy).
+
+        Comparing connection strings cannot tell that, so this proves it instead: write a
+        uniquely named scratch collection into OUR database, then look for it through the
+        target connection. Visible there means same database. The collection name is unique
+        per call (concurrent checks cannot interfere) and is always dropped again. It is read
+        from the primary so replication lag cannot hide it. Any failure (cannot write, cannot
+        reach the target) raises: callers must treat "could not tell" as "do not copy"."""
+        from pymongo import ReadPreference
+        name = f"wardeniq_selfcheck_{secrets.token_hex(12)}"
+        c: MongoClient = MongoClient(target_uri, serverSelectionTimeoutMS=8000)
+        try:
+            self.db[name].insert_one({"_id": name})
+            try:
+                seen = c[self.db.name].get_collection(
+                    name, read_preference=ReadPreference.PRIMARY).find_one({"_id": name})
+                return seen is not None
+            finally:
+                self.db.drop_collection(name)
+        finally:
+            c.close()
+
     def target_has_data(self, target_uri: str) -> bool:
         """True if the target database already holds any app data (so we don't clobber
         someone's existing DB without consent)."""
@@ -419,9 +463,16 @@ class BaseStore:
         preserving _ids and embedded vectors. Indexes are NOT copied — the app
         recreates them (regular + vector/search) on next startup against the target.
         Returns {collection: docs_copied}. Documents are streamed in batches so large,
-        embedding-heavy datasets don't blow up memory."""
+        embedding-heavy datasets don't blow up memory.
+
+        Refuses (before reading or deleting anything) when the target is this very database:
+        with `overwrite` the target's documents are deleted before the copy, so a self-target
+        would erase the data it is about to copy. Enforced here, at the destructive
+        primitive, so no caller (route, retry, a future one) can bypass it."""
         from pymongo import MongoClient
         BATCH = 300
+        if self.target_is_this_database(target_uri):
+            raise RuntimeError(SELF_TARGET_MSG)
         c = MongoClient(target_uri, serverSelectionTimeoutMS=8000)
         try:
             tgt = c[self.db.name]
@@ -451,5 +502,71 @@ class BaseStore:
                     copied += len(batch)
                 counts[nm] = copied
             return counts
+        finally:
+            c.close()
+
+    def verify_migration(self, target_uri: str, copied_counts: dict,
+                         allow_source_drift: bool = False) -> dict:
+        """Post-copy verification of migrate_to() (#111). Run AFTER the copy, BEFORE the
+        app is pointed at the target.
+
+        What is counted: an EXACT count_documents({}) -- not estimated_document_count,
+        whose cached stats can lag right after a bulk insert -- for every collection
+        migrate_to() reported copying (`copied_counts`: {collection: docs_copied}),
+        taken NOW on the target and NOW on the source.
+
+        What must hold, per collection:
+          * target == copied  -- the target really holds everything that was streamed.
+            A shortfall is always a failure.
+          * source == copied  -- the source did not gain/lose documents while (or just
+            after) it was being copied, so the target is a complete snapshot. Documents
+            written after they were streamed exist only in the old database, so
+            restarting onto the target would lose them. A difference is a failure,
+            unless `allow_source_drift` (the caller started the migration with
+            override_busy, i.e. accepted a best-effort snapshot), in which case it is
+            recorded as a warning instead.
+        A collection that appeared on the source after the copy started was never
+        copied; it is reported under the same source-drift rule.
+
+        Counts that cannot be obtained raise -- the caller must treat that as "not
+        verified", never as success.
+
+        Returns {"ok": bool, "failures": [str], "warnings": [str],
+                 "collections": {name: {"copied", "target_now", "source_now",
+                                        "target_match", "source_match"}}}.
+        Messages contain collection names and counts only, never the connection string.
+
+        A "copy" onto this same database can never verify: comparing a database with itself
+        passes trivially (even after the copy erased it: 0 == 0), so that case fails closed."""
+        if self.target_is_this_database(target_uri):
+            return {"ok": False, "failures": [SELF_TARGET_MSG], "warnings": [],
+                    "collections": {}}
+        c: MongoClient = MongoClient(target_uri, serverSelectionTimeoutMS=8000)
+        try:
+            tgt = c[self.db.name]
+            collections: dict[str, dict] = {}
+            failures: list[str] = []
+            warnings: list[str] = []
+            drift = warnings if allow_source_drift else failures
+            for nm, copied in copied_counts.items():
+                target_now = tgt[nm].count_documents({})
+                source_now = self.db[nm].count_documents({})
+                target_match, source_match = target_now == copied, source_now == copied
+                collections[nm] = {"copied": copied, "target_now": target_now,
+                                   "source_now": source_now, "target_match": target_match,
+                                   "source_match": source_match}
+                if not target_match:
+                    failures.append(f"'{nm}': {copied} documents were copied but the target "
+                                    f"has {target_now}")
+                if not source_match:
+                    drift.append(f"'{nm}': {copied} documents were copied but the source now "
+                                 f"has {source_now} (it changed during the copy)")
+            created_since = sorted(n for n in self.db.list_collection_names()
+                                   if not n.startswith("system.") and n not in copied_counts)
+            for nm in created_since:
+                drift.append(f"'{nm}' was created on the source during the copy and was "
+                             "not copied")
+            return {"ok": not failures, "failures": failures, "warnings": warnings,
+                    "collections": collections}
         finally:
             c.close()

@@ -8,6 +8,7 @@ import time
 
 from bson import ObjectId
 
+from core.logging_setup import get_logger
 
 from typing import TYPE_CHECKING
 
@@ -21,6 +22,8 @@ if TYPE_CHECKING:
     from store.base import BaseStore as _Base
 else:
     _Base = object
+
+log = get_logger("jobs")
 
 
 class JobsMixin(_Base):
@@ -42,7 +45,7 @@ class JobsMixin(_Base):
         status = fields.get("status")
         progress = fields.get("progress")
         error = fields.get("error")
-        parts = [f"[Job {jid}]"]
+        parts = [f"job={jid}"]
         if status:
             parts.append(f"status={status}")
         if stage:
@@ -52,7 +55,7 @@ class JobsMixin(_Base):
         if error:
             parts.append(f"error='{error}'")
         if len(parts) > 1:
-            print(" ".join(parts), flush=True)
+            (log.error if error else log.info)(" ".join(parts))
 
     def update_job_progress(self, jid, stage, progress=None):
         now = time.time()
@@ -72,7 +75,7 @@ class JobsMixin(_Base):
             },
         )
         prog_str = f" ({fields['progress']}%). Log saved." if progress is not None else ""
-        print(f"[Job {jid}] {stage}{prog_str}", flush=True)
+        log.info("job=%s %s%s", jid, stage, prog_str)
 
     def merge_job_result(self, jid, **fields):
         upd = {f"result.{k}": v for k, v in fields.items()}
@@ -96,6 +99,36 @@ class JobsMixin(_Base):
             j["id"] = str(j.pop("_id"))
             out.append(j)
         return out
+
+    def latest_job(self, project_id, jtype):
+        """Most recent job of `jtype` for a project, or None. Used to explain an
+        empty Mind Map result: the job's own diagnostics (note, per_repo) outlive
+        the live watchJob() poll that first showed them."""
+        j = self.db["jobs"].find_one(
+            {"project_id": project_id, "type": jtype}, sort=[("_id", -1)]
+        )
+        if j:
+            j["id"] = str(j.pop("_id"))
+        return j
+
+    def has_running_job(self, only_types=(), exclude_types=()):
+        """The first job currently `status: "running"`, or None if idle. `only_types`
+        restricts the lookup to those job types, `exclude_types` ignores them. Used by
+        the migration idle check and the new-job guard (#111). Returns a small dict
+        (string `id`; params/logs/result stripped -- callers only need enough to say
+        *what* is running)."""
+        q = {"status": "running"}
+        types = {}
+        if only_types:
+            types["$in"] = list(only_types)
+        if exclude_types:
+            types["$nin"] = list(exclude_types)
+        if types:
+            q["type"] = types
+        j = self.db["jobs"].find_one(q, {"params": 0, "logs": 0, "result": 0})
+        if j:
+            j["id"] = str(j.pop("_id"))
+        return j
 
     def fail_orphaned_jobs(self):
         """Background threads do not survive an application process restart."""
@@ -129,7 +162,7 @@ class JobsMixin(_Base):
                 },
             )
         if orphaned:
-            print(f"[Jobs] Marked {len(orphaned)} orphaned running job(s) as failed.", flush=True)
+            log.warning("Marked %d orphaned running job(s) as failed.", len(orphaned))
         return len(orphaned)
 
     def sweep_stale_jobs(self, ttl_seconds=600):
@@ -173,5 +206,5 @@ class JobsMixin(_Base):
                 },
             )
         if stale:
-            print(f"[Jobs] Swept {len(stale)} stalled running job(s).", flush=True)
+            log.warning("Swept %d stalled running job(s).", len(stale))
         return len(stale)

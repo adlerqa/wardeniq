@@ -5,6 +5,7 @@ import re
 import time
 
 import usage
+from core.logging_setup import get_logger
 
 from testgen.prompt_builder import (
     build_api_agent_prompt,
@@ -19,9 +20,12 @@ from testgen.prompt_builder import (
     build_repair_prompt,
     build_ui_agent_prompt,
     filter_hallucinated_entities,
-    filter_prompt_exemplar_copies,
+    filter_prompt_exemplar_copies_with_reasons,
     is_few_shot_leak,
     is_prompt_exemplar_copy,
+    REASON_DUPLICATE,
+    REASON_EDGE_SUPPRESSED,
+    REASON_NO_SOURCE_GROUNDING,
 )
 from testgen.lineage import (
     REUSE_SIMILARITY_API,
@@ -36,6 +40,8 @@ from testgen.lineage import (
     scenario_kinds_incompatible,
     token_set_similarity,
 )
+log = get_logger("testgen")
+
 SYSTEM = (
     "You are a meticulous senior QA engineer. Read the supplied evidence and produce "
     "grounded, concrete, non-redundant test cases. Respond with one valid JSON object."
@@ -55,7 +61,7 @@ REQUIREMENT_MARKERS = re.compile(
 
 def log_progress(update_fn, stage: str, progress: int | None = None):
     suffix = f" ({progress}%)" if progress is not None else ""
-    print(f"[TestGen] {stage}{suffix}", flush=True)
+    log.info("%s%s", stage, suffix)
     if update_fn:
         try:
             update_fn(stage=stage, progress=progress)
@@ -139,7 +145,7 @@ def _json_object(raw):
         if isinstance(parsed, dict) and parsed:
             return parsed
     except Exception as repair_exc:
-        print(f"[TestGen] json-repair failed to parse raw text: {repair_exc}", flush=True)
+        log.debug("json-repair failed to parse raw text: %s", repair_exc)
 
     start, end = text.find("{"), text.rfind("}")
     candidate = text[start:end + 1] if start >= 0 and end > start else text
@@ -182,7 +188,7 @@ def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=4000,
             return _json_object(raw_text)
         except Exception as exc:  # noqa: BLE001
             last_error = exc
-            print(f"[TestGen] LLM attempt {attempt}/{attempts} failed: {exc}", flush=True)
+            log.warning("LLM attempt %d/%d failed: %s", attempt, attempts, exc)
             if (raw_text or "").strip():
                 repair_prompt = (
                     "Repair the following malformed or truncated JSON. Preserve all recoverable "
@@ -190,7 +196,7 @@ def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=4000,
                     f"PARSE ERROR:\n{last_error}\n\nINVALID RESPONSE:\n{raw_text}"
                 )
                 try:
-                    print(f"[TestGen] Attempting to repair malformed JSON (length {len(raw_text)})...", flush=True)
+                    log.info("Attempting to repair malformed JSON (length %d)...", len(raw_text))
                     repaired = _raw_llm_call(
                         llm,
                         "You repair JSON syntax and output JSON only.",
@@ -202,7 +208,7 @@ def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=4000,
                     )
                     return _json_object(repaired)
                 except Exception as repair_exc:  # noqa: BLE001
-                    print(f"[TestGen] Repair attempt failed: {repair_exc}", flush=True)
+                    log.warning("Repair attempt failed: %s", repair_exc)
                     last_error = repair_exc
             if attempt < attempts:
                 time.sleep(min(2 ** (attempt - 1), 4))
@@ -515,9 +521,9 @@ def _normal_steps(case: dict) -> list[dict]:
     return out
 
 
-def _deduplicate(cases: list, category: str) -> list[dict]:
+def _deduplicate_with_reasons(cases: list, category: str) -> tuple[list[dict], list[tuple[dict, str]]]:
     seen_hashes = set()
-    out = []
+    out, rejected = [], []
     for raw in cases:
         if not isinstance(raw, dict):
             continue
@@ -530,12 +536,19 @@ def _deduplicate(cases: list, category: str) -> list[dict]:
         identity_hash = generate_test_identity_hash(case)
         slug = generate_test_slug(case)
         if identity_hash in seen_hashes:
+            rejected.append((case, REASON_DUPLICATE))
             continue
         seen_hashes.add(identity_hash)
         case["identity_hash"] = identity_hash
         case["test_slug"] = slug
         out.append(case)
-    return sorted(out, key=lambda c: PRIORITY_ORDER.get(str(c.get("priority") or "P2").upper(), 2))
+    out.sort(key=lambda c: PRIORITY_ORDER.get(str(c.get("priority") or "P2").upper(), 2))
+    return out, rejected
+
+
+def _deduplicate(cases: list, category: str) -> list[dict]:
+    kept, _ = _deduplicate_with_reasons(cases, category)
+    return kept
 
 
 def _filter_api_tests(cases: list, api_surface: list[dict]) -> list[dict]:
@@ -745,11 +758,23 @@ def _case_has_source_grounding(case: dict, corpus: str) -> bool:
     return any(re.search(rf"\b{re.escape(token)}\b", corpus_l) for token in tokens)
 
 
+def _filter_ungrounded_suite_cases_with_reasons(
+    cases: list[dict], corpus: str
+) -> tuple[list[dict], list[tuple[dict, str]]]:
+    kept, rejected = [], []
+    for case in (cases or []):
+        if not isinstance(case, dict):
+            continue
+        if _case_has_source_grounding(case, corpus):
+            kept.append(case)
+        else:
+            rejected.append((case, REASON_NO_SOURCE_GROUNDING))
+    return kept, rejected
+
+
 def _filter_ungrounded_suite_cases(cases: list[dict], corpus: str) -> list[dict]:
-    return [
-        case for case in (cases or [])
-        if isinstance(case, dict) and _case_has_source_grounding(case, corpus)
-    ]
+    kept, _ = _filter_ungrounded_suite_cases_with_reasons(cases, corpus)
+    return kept
 
 
 # --- Category evidence sufficiency (deterministic, pre-generation) -------------------
@@ -1457,11 +1482,8 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         top_k = _category_top_k(category, is_ollama)
         query_text = (query_text or "").strip()
         if not query_text:
-            print(
-                f"[TestGen][rag] category={category} feature_id={feature_id} "
-                f"k={top_k} query_chars=0 results=0 note=empty_query_no_retrieval",
-                flush=True,
-            )
+            log.debug("[rag] category=%s feature_id=%s k=%s query_chars=0 results=0 "
+                     "note=empty_query_no_retrieval", category, feature_id, top_k)
             return _to_rag_context(rag_context.get("summary", ""), [])
         # Retrieval degrades, it never crashes generation. Store.search_feature_chunks()
         # already has this posture internally for its own two paths (a mongot outage
@@ -1481,21 +1503,16 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                 query_embedding, feature_id, limit=top_k, category=category
             )
         except Exception as exc:  # noqa: BLE001
-            print(
-                f"[TestGen][rag] category={category} feature_id={feature_id} k={top_k} "
-                f"query_chars={len(query_text)} results=0 "
-                f"note=retrieval_failed_degraded_to_empty error={exc}",
-                flush=True,
-            )
+            log.warning("[rag] category=%s feature_id=%s k=%s query_chars=%d results=0 "
+                      "note=retrieval_failed_degraded_to_empty error=%s",
+                      category, feature_id, top_k, len(query_text), exc)
             return _to_rag_context(rag_context.get("summary", ""), [])
-        print(
-            f"[TestGen][rag] category={category} feature_id={feature_id} k={top_k} "
-            f"query_chars={len(query_text)} results={len(chunks)} "
-            f"chunk_ids={[c.get('chunk_id') for c in chunks]} "
-            f"chunk_indexes={[c.get('chunk_index') for c in chunks]} "
-            f"scores={[c.get('score') for c in chunks]}",
-            flush=True,
-        )
+        log.debug("[rag] category=%s feature_id=%s k=%s query_chars=%d results=%d "
+                 "chunk_ids=%s chunk_indexes=%s scores=%s",
+                 category, feature_id, top_k, len(query_text), len(chunks),
+                 [c.get("chunk_id") for c in chunks],
+                 [c.get("chunk_index") for c in chunks],
+                 [c.get("score") for c in chunks])
         return _to_rag_context(rag_context.get("summary", ""), chunks)
 
     api_query_text = _build_api_retrieval_query(entities, api_surface, context.get("businessContext"))
@@ -1798,12 +1815,22 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         except Exception as exc:  # noqa: BLE001
             errors.append(f"Business fallback failed: {exc}")
 
+    # #64: every case a filter below drops is recorded here as (case, reason), so the
+    # run can report a generated/persisted/rejected summary instead of dropping cases
+    # silently. Reasons are the fixed REASON_* vocabulary from prompt_builder.py.
+    filter_rejections: list[tuple[dict, str]] = []
+
+    def _dedup_tracked(cases, category):
+        kept, rejected = _deduplicate_with_reasons(cases, category)
+        filter_rejections.extend(rejected)
+        return kept
+
     suites = {
-        "api_tests": _deduplicate(api_tests, "api_tests"),
+        "api_tests": _dedup_tracked(api_tests, "api_tests"),
         "ui_validations": ui_tests,
-        "e2e_tests": _deduplicate(e2e_tests, "e2e_tests"),
-        "edge_cases": _deduplicate(_as_list(e2e_result.get("edge_cases")), "edge_cases"),
-        "business_tests": _deduplicate(business_tests, "business_tests"),
+        "e2e_tests": _dedup_tracked(e2e_tests, "e2e_tests"),
+        "edge_cases": _dedup_tracked(_as_list(e2e_result.get("edge_cases")), "edge_cases"),
+        "business_tests": _dedup_tracked(business_tests, "business_tests"),
     }
     log_progress(
         update_job_fn,
@@ -1858,7 +1885,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                     hashed[suite_name], repair.get(delta_name) or {}, suite_name
                 )
             suites["api_tests"] = _filter_api_tests(suites["api_tests"], api_surface)
-            suites["api_tests"] = _deduplicate(
+            suites["api_tests"] = _dedup_tracked(
                 _ensure_api_endpoint_coverage(suites["api_tests"], api_surface), "api_tests"
             )
         except Exception as exc:  # noqa: BLE001
@@ -1875,18 +1902,21 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     }
     # Prompt few-shots are examples, not the user's feature. Reject verbatim and
     # hybrid copies on every suite before persist (issue #36).
-    suites = {
-        name: filter_prompt_exemplar_copies(cases, corpus)
-        for name, cases in suites.items()
-    }
+    for name, cases in suites.items():
+        kept, rejected = filter_prompt_exemplar_copies_with_reasons(cases, corpus)
+        suites[name] = kept
+        filter_rejections.extend(rejected)
     # e2e / nfr must have some source overlap. Category-level "feature has a
     # description" was enough to let an ungrounded E2E exemplar ship.
     for suite_name in ("e2e_tests", "edge_cases"):
-        suites[suite_name] = _filter_ungrounded_suite_cases(suites[suite_name], corpus)
+        kept, rejected = _filter_ungrounded_suite_cases_with_reasons(suites[suite_name], corpus)
+        suites[suite_name] = kept
+        filter_rejections.extend(rejected)
     # When edge evidence was insufficient we still ran the shared E2E call, and
     # whatever came back in edge_cases was persisted as nfr. Drop that suppressed
     # block; copies stuffed into e2e_tests are already removed above.
     if not evidence_sufficient.get("edge"):
+        filter_rejections.extend((case, REASON_EDGE_SUPPRESSED) for case in suites["edge_cases"])
         suites["edge_cases"] = []
 
     suites = _budget_suites(
@@ -1896,6 +1926,25 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     if generated_count == 0 and inherited_reused + inherited_rebuilt == 0:
         raise RuntimeError("EmptyGenerationError: no valid test cases survived normalization and evidence guards")
     _mark("rag_validation")
+
+    # #64: log one line per rejected case (id/reason/title), plus a summary of
+    # candidates -> persisted, so silent over- or under-filtering is visible instead
+    # of only showing up as a smaller-than-expected suite with no explanation.
+    for case, reason in filter_rejections:
+        case_id = case.get("id") or case.get("test_slug") or "?"
+        title = case.get("title") or ""
+        log.info('[TestGen][filter] rejected id=%s reason=%s title="%s"', case_id, reason, title)
+    rejected_by_reason: dict[str, int] = {}
+    for _case, reason in filter_rejections:
+        rejected_by_reason[reason] = rejected_by_reason.get(reason, 0) + 1
+    total_candidates = generated_count + len(filter_rejections)
+    if filter_rejections:
+        breakdown = ", ".join(f"{count} {reason}" for reason, count in sorted(rejected_by_reason.items()))
+        log_progress(
+            update_job_fn,
+            f"Filter: {total_candidates} generated, {generated_count} persisted ({breakdown})",
+            80,
+        )
 
     log_progress(update_job_fn, "Persisting normalized and deduplicated test cases", 82)
     cases_new = cases_reused = steps_new = steps_reused = 0
@@ -1939,6 +1988,15 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         "discovered_api_count": len(api_surface),
         "rag_gap_count": len(gaps),
         "errors": errors,
+        # #64: generated/persisted/rejected summary for the exemplar/grounding/dedup
+        # filters above, so the UI can show why a run produced fewer cases than
+        # candidates without anyone having to read container logs.
+        "testgen_filter": {
+            "generated": total_candidates,
+            "persisted": generated_count,
+            "rejected": len(filter_rejections),
+            "rejected_by_reason": rejected_by_reason,
+        },
         # Wall-clock profiling (issue #48): per-stage seconds, plus the sum of all
         # of them as a convenience total. Purely observational -- nothing here
         # changes what gets generated or how.

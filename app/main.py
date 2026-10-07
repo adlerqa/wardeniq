@@ -40,9 +40,13 @@ app = FastAPI(title="wardenIQ — Test Intelligence Platform", version=VERSION,
 
 # Phase 2 (REFACTOR_PLAN.md): the InvalidId exception + its handler now live in
 # app/core/exceptions.py. Registration stays here — it needs the `app` instance.
-from core.exceptions import _InvalidId, invalid_id_handler  # noqa: E402
+from core.exceptions import (  # noqa: E402
+    MigrationInProgress, _InvalidId, invalid_id_handler, migration_in_progress_handler,
+)
 
 app.exception_handler(_InvalidId)(invalid_id_handler)
+# #111: any NEW background job is refused with a clean 409 while a database migration runs.
+app.exception_handler(MigrationInProgress)(migration_in_progress_handler)
 
 
 # Phase 2 (REFACTOR_PLAN.md): RBAC, the auth gateway + security-headers
@@ -72,9 +76,16 @@ from core.security import _filter_projects_for, _allowed_project_ids, _require_p
 from core.security import (  # noqa: E402,F401
     VIEWER_POST_OK, _is_public, _min_role, _target_project_for_path,
     _user_all_projects, _user_can_access_project,
-    register_principal_resolver, resolve_principal,  # public extension point; no call
-                                                       # site in this repo registers one
+    register_principal_resolver, resolve_principal,
 )
+# API-token bearer authentication (issue #37): the one call site that populates
+# the principal-resolver registry above. Registered against "/api/" (every API
+# path) rather than a narrower prefix — the resolver itself already fails
+# closed on any request without a valid Authorization: Bearer token, and a
+# token's own role (viewer/editor only — see api/routes/api_tokens.py) is what
+# actually limits which endpoints it can use, exactly like a cookie user.
+from core.token_auth import bearer_token_principal  # noqa: E402
+register_principal_resolver("/api/", bearer_token_principal)
 
 # Registration order preserved exactly: auth_gateway was declared (and thus
 # registered) before security_headers in the original file.
@@ -89,6 +100,7 @@ from api.routes import test_cycles as _test_cycles_routes  # noqa: E402
 from api.routes import reports_exports as _reports_exports_routes  # noqa: E402
 from api.routes import auth as _auth_routes  # noqa: E402
 from api.routes import users as _users_routes  # noqa: E402
+from api.routes import api_tokens as _api_tokens_routes  # noqa: E402
 from api.routes import settings as _settings_routes  # noqa: E402
 from api.routes import jira_atlassian as _jira_routes  # noqa: E402
 from api.routes import repos_prs as _repos_prs_routes  # noqa: E402
@@ -112,6 +124,7 @@ app.include_router(_test_cycles_routes.router)
 app.include_router(_reports_exports_routes.router)
 app.include_router(_auth_routes.router)
 app.include_router(_users_routes.router)
+app.include_router(_api_tokens_routes.router)
 app.include_router(_settings_routes.router)
 app.include_router(_jira_routes.router)
 app.include_router(_repos_prs_routes.router)

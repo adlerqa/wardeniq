@@ -26,8 +26,11 @@ from extract import chunk as chunk_doc
 from core import state
 from core.config import GEN_TOTAL, WEBHOOK_SECRET
 from core.deps import _ext_error, jira_client
+from core.logging_setup import get_logger
 from core.state import store
 from workers.registry import launch_job
+
+log = get_logger("jira")
 
 router = APIRouter()
 
@@ -162,8 +165,7 @@ async def jira_webhook(request: Request):
     with no secret configured it refuses (rather than silently accepting
     unauthenticated writes)."""
     if not WEBHOOK_SECRET:
-        print("[wardenIQ][jira-webhook] refused: WEBHOOK_SECRET not configured",
-              flush=True)
+        log.warning("[jira-webhook] refused: WEBHOOK_SECRET not configured")
         raise HTTPException(503, "webhook receiver not configured (set WEBHOOK_SECRET)")
     supplied = request.headers.get("X-Webhook-Token", "") or ""
     if not hmac.compare_digest(supplied, WEBHOOK_SECRET):

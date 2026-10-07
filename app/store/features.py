@@ -8,6 +8,7 @@ import time
 
 from bson import ObjectId
 
+from core.logging_setup import get_logger
 from store.base import VECTOR_INDEX
 
 
@@ -23,6 +24,8 @@ if TYPE_CHECKING:
     from store.base import BaseStore as _Base
 else:
     _Base = object
+
+log = get_logger("store.features")
 
 
 class FeaturesMixin(_Base):
@@ -184,11 +187,8 @@ class FeaturesMixin(_Base):
         except Exception as exc:  # noqa: BLE001 -- dimension mismatch / malformed stored
                                    # embedding / any other cosine-math failure -> degrade
                                    # to empty, matching the atlas branch's posture above.
-            print(
-                f"[store][feature_chunks] numpy fallback failed for feature_id={feature_id}: "
-                f"{exc}",
-                flush=True,
-            )
+            log.warning("[feature_chunks] numpy fallback failed for feature_id=%s: %s",
+                      feature_id, exc)
             self._log_feature_chunk_retrieval(feature_id, 0, "numpy_failed", time.time() - t0, category)
             return []
         self._log_feature_chunk_retrieval(feature_id, len(out), "numpy", time.time() - t0, category)
@@ -201,11 +201,8 @@ class FeaturesMixin(_Base):
         the caller having to know that detail. Deliberately omits chunk text.
         testgen.service adds the query-text/chunk-id/score-level log on top of this."""
         cat = f"category={category} " if category else ""
-        print(
-            f"[store][feature_chunks] {cat}feature_id={feature_id} source={source} "
-            f"results={count} duration_ms={round(duration_s * 1000)}",
-            flush=True,
-        )
+        log.debug("[feature_chunks] %sfeature_id=%s source=%s results=%d duration_ms=%d",
+                 cat, feature_id, source, count, round(duration_s * 1000))
 
     def features_by_key(self, project_id, key):
         return [str(f["_id"]) for f in

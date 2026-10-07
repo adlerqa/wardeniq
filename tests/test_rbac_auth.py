@@ -148,6 +148,7 @@ class TestMinRole:
     @pytest.mark.parametrize("path", [
         "/api/users", "/api/users/abc", "/api/settings",
         "/api/llm/test", "/api/jira/test", "/api/smtp/test",
+        "/api/api-tokens", "/api/api-tokens/abc",
     ])
     def test_admin_paths(self, path):
         assert self.main._min_role("POST", path) == "admin"

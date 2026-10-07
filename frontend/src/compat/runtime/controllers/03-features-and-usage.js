@@ -52,6 +52,7 @@ async function showFeatureCreate() {
   $("#f-status").textContent = "";
   $("#f-log").textContent = "";
   $("#f-log").style.display = "none";
+  if ($("#f-cost-estimate")) $("#f-cost-estimate").textContent = "";
   if ($("#f-match-key")) $("#f-match-key").value = "";
   await loadFeatureTicketOptions();
   updateBackbar();
@@ -60,12 +61,81 @@ if ($("#feature-new-btn"))
   $("#feature-new-btn").onclick = () => showFeatureCreate();
 if ($("#feature-create-back"))
   $("#feature-create-back").onclick = showFeatureList;
-$("#f-file").onchange = (e) => {
-  const fs = [...e.target.files].map((f) => f.name);
-  $("#f-filelist").textContent = fs.length
-    ? `${fs.length} file(s): ${fs.join(", ")}`
-    : "";
+$("#f-file").onchange = () => {
+  renderFeatureFileList();
+  scheduleCostEstimate();
 };
+// Renders the selected files as individually removable rows (issue #108: there was
+// previously no way to drop one unwanted file short of reselecting all of them).
+// A native <input type="file"> FileList is read-only, so removal works by rebuilding
+// it via DataTransfer and reassigning input.files -- the existing upload path (further
+// below, `for (const f of $("#f-file").files) ...`) already reads from that same
+// input element, so it picks up the change with no other code path touched.
+function renderFeatureFileList() {
+  const files = [...$("#f-file").files];
+  $("#f-filelist").innerHTML = files.length
+    ? `<div>${files.length} file(s):</div>` +
+      files
+        .map(
+          (f, i) => `
+      <div class="f-file-row">
+        <span class="f-file-name">${esc(f.name)}</span>
+        <button class="iconbtn" type="button" title="Remove ${esc(f.name)}" aria-label="Remove ${esc(f.name)}" onclick="rmUploadFile(${i})">×</button>
+      </div>`,
+        )
+        .join("")
+    : "";
+}
+window.rmUploadFile = (i) => {
+  const input = $("#f-file");
+  const dt = new DataTransfer();
+  [...input.files].forEach((f, idx) => {
+    if (idx !== i) dt.items.add(f);
+  });
+  input.files = dt.files;
+  renderFeatureFileList();
+  scheduleCostEstimate();
+};
+if ($("#f-text")) $("#f-text").addEventListener("input", scheduleCostEstimate);
+
+// ---- pre-run cost estimate (issue #22) ----
+// Uses File.size as a rough stand-in for extracted character count (files aren't
+// parsed until the real /api/features upload) — an order-of-magnitude estimate,
+// not an exact one; the backend estimate itself is explicitly labelled as rough.
+let costEstimateTimer = null;
+function scheduleCostEstimate() {
+  clearTimeout(costEstimateTimer);
+  costEstimateTimer = setTimeout(updateCostEstimate, 400);
+}
+async function updateCostEstimate() {
+  const el = $("#f-cost-estimate");
+  if (!el) return;
+  const fileEl = $("#f-file");
+  const textEl = $("#f-text");
+  const textLen = (textEl && textEl.value ? textEl.value.length : 0);
+  const fileBytes = fileEl
+    ? [...fileEl.files].reduce((sum, f) => sum + (f.size || 0), 0)
+    : 0;
+  const textLength = textLen + fileBytes;
+  if (!textLength) {
+    el.textContent = "";
+    return;
+  }
+  el.textContent = "Estimating cost…";
+  try {
+    const r = await api("/api/usage/estimate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text_length: textLength }),
+    });
+    el.textContent =
+      r.low != null && r.high != null
+        ? `Estimated cost: ${fmtUsd(r.low)}–${fmtUsd(r.high)} (${r.note})`
+        : r.note || "";
+  } catch (e) {
+    el.textContent = "";
+  }
+}
 const FOCUS_TYPES = ["functional", "ui", "e2e", "api", "nfr"];
 function focusVals() {
   return FOCUS_TYPES.reduce((o, t) => {
@@ -651,6 +721,18 @@ function watchJob(jobId, onTick, intervalMs) {
     finish();
   };
 }
+// #64: "N generated, M persisted (2 exemplar-copy, 1 no-source-grounding)" — the
+// filters in testgen/service.py already reject bad cases before persist; this
+// surfaces the counts so over- or under-filtering is visible, not just quieter.
+function filterSummaryLine(res) {
+  const f = res && res.testgen_filter;
+  if (!f || !f.rejected) return "";
+  const breakdown = Object.entries(f.rejected_by_reason || {})
+    .sort((a, b) => b[1] - a[1])
+    .map(([reason, count]) => `${count} ${reason}`)
+    .join(", ");
+  return `${f.generated} generated, ${f.persisted} persisted (${breakdown})`;
+}
 function watchGen(jobId, fid) {
   if (!jobId) {
     $("#f-go").disabled = false;
@@ -661,12 +743,13 @@ function watchGen(jobId, fid) {
     const res = j.result || {};
     renderJobLog("#f-log", j);
     const line = `${res.cases_new || 0} new + ${res.cases_reused || 0} reused cases · ${res.steps_new || 0} new + ${res.steps_reused || 0} reused steps`;
+    const filterLine = filterSummaryLine(res);
     $("#f-status").innerHTML =
       j.status === "running"
         ? `<span class="muted">${esc(j.stage)}</span> — ${line}`
         : j.status === "failed"
           ? `<span class="err">✕ Generation failed: ${esc(j.error || "unknown error")}</span>`
-          : `<span class="ok">✓ Done</span> — ${line}${res.warnings && res.warnings.length ? `<br><span class="warn">${esc(res.warnings.join("; "))}</span>` : ""}${res.errors && res.errors.length ? `<br><span class="err">${esc(res.errors.join("; "))}</span>` : ""}`;
+          : `<span class="ok">✓ Done</span> — ${line}${filterLine ? `<br><span class="muted">${esc(filterLine)}</span>` : ""}${res.warnings && res.warnings.length ? `<br><span class="warn">${esc(res.warnings.join("; "))}</span>` : ""}${res.errors && res.errors.length ? `<br><span class="err">${esc(res.errors.join("; "))}</span>` : ""}`;
     if (j.status !== "running") {
       $("#f-go").disabled = false;
       setBusy("#f-go", false);

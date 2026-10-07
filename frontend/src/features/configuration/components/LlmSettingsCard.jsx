@@ -10,11 +10,11 @@ export default function LlmSettingsCard() {
         <span className="cfg-badge req">Required</span>
       </div>
       <div className="sub">
-        <b>Ollama (built-in)</b>
-        runs the AI inside this Docker stack — free, private, no API key, nothing to install (this is the default). Or pick a hosted provider — OpenAI, Anthropic (Claude), Google Gemini, Mistral, or any OpenAI-compatible endpoint — with your own API key. Or
-        <b>AWS Bedrock</b>
-        for enterprise / air-gapped deployments. Every provider uses the same fields below — just fill the ones it needs (hover each
-        <b>i</b>
+        <b>Ollama (built-in)</b>{" "}
+        runs the AI inside this Docker stack — free, private, no API key, nothing to install (this is the default). Or pick a hosted provider — OpenAI, Anthropic (Claude), Google Gemini, Mistral, or any OpenAI-compatible endpoint — with your own API key. Or{" "}
+        <b>AWS Bedrock</b>{" "}
+        for enterprise / air-gapped deployments. Every provider uses the same fields below — just fill the ones it needs (hover each{" "}
+        <b>i</b>{" "}
         for guidance). Used for all generation, code review, coverage, and impact analysis.
       </div>
       <div className="cfg-field">

@@ -221,6 +221,73 @@ def price_for(model, prices):
     return None
 
 
+# ---------------------------------------------------------- pre-run cost estimate
+# Rough, order-of-magnitude constants for the pre-run cost estimate (issue #22).
+# NOT measured from production telemetry -- deliberately simple, so the estimate
+# stays honestly approximate rather than fake-precise. Two inputs drive it: the
+# extracted document's character count, and the target case count ("coverage
+# depth"). If #48's profiling work later produces real per-stage token numbers,
+# these constants are the place to refine.
+_CHARS_PER_TOKEN = 4                  # rough chars-per-token ratio for English prose
+_DISCOVERY_PASSES = 3                 # Pass 0/1/2 each read (a capped slice of) the doc
+_DISCOVERY_INPUT_CAP_TOKENS = 6000    # matches the pipeline's own context-window posture
+_DISCOVERY_OUTPUT_TOKENS_EACH = 400   # structured JSON extraction output, per pass
+_INPUT_TOKENS_PER_CASE = 350          # retrieved evidence + prompt overhead per case
+_OUTPUT_TOKENS_PER_CASE = 180         # a generated case's title/steps/expected result
+_ESTIMATE_UNCERTAINTY = 0.4           # +/-40% band around the midpoint estimate
+
+
+def estimate_generation_tokens(text_length, total):
+    """Rough token estimate for a generation run, given the extracted document's
+    character count and the target case count. See the constants above for the
+    (documented, approximate) model this is built from."""
+    doc_tokens = max(0, int(text_length or 0)) // _CHARS_PER_TOKEN
+    total = max(1, int(total or 0))
+
+    discovery_input = _DISCOVERY_PASSES * min(doc_tokens, _DISCOVERY_INPUT_CAP_TOKENS)
+    discovery_output = _DISCOVERY_PASSES * _DISCOVERY_OUTPUT_TOKENS_EACH
+    generation_input = total * _INPUT_TOKENS_PER_CASE
+    generation_output = total * _OUTPUT_TOKENS_PER_CASE
+
+    return {
+        "prompt_tokens_mid": discovery_input + generation_input,
+        "completion_tokens_mid": discovery_output + generation_output,
+    }
+
+
+def estimate_generation_cost(text_length, total, provider, model, prices=None):
+    """Pre-run cost estimate (issue #22): a labelled-approximate USD range, or
+    low=high=None with an explanatory `note` when a dollar figure wouldn't be
+    meaningful (a local Ollama model) or the model's price isn't known.
+
+    Deliberately reuses DEFAULT_PRICES/price_for rather than a second pricing
+    table, so a price added in Configuration -> LLM pricing improves both the
+    post-run usage dashboard and this pre-run estimate together.
+    """
+    tok = estimate_generation_tokens(text_length, total)
+    mid_in, mid_out = tok["prompt_tokens_mid"], tok["completion_tokens_mid"]
+    base = {"currency": "USD", **tok}
+
+    if (provider or "ollama") == "ollama":
+        return {**base, "low": None, "high": None,
+                "note": "Local Ollama model — no per-token cost; generation time "
+                       "depends on your hardware instead."}
+
+    price_map = {**DEFAULT_PRICES, **(prices or {})}
+    p = price_for(model, price_map)
+    if p is None:
+        return {**base, "low": None, "high": None,
+                "note": f"No pricing known for '{model}' — add it in "
+                       "Configuration → LLM pricing for an estimate."}
+
+    mid_cost = (mid_in / 1e6) * float(p.get("in", 0)) + (mid_out / 1e6) * float(p.get("out", 0))
+    return {**base,
+            "low": round(mid_cost * (1 - _ESTIMATE_UNCERTAINTY), 4),
+            "high": round(mid_cost * (1 + _ESTIMATE_UNCERTAINTY), 4),
+            "note": "Rough estimate — actual cost depends on document complexity "
+                   "and model behavior."}
+
+
 def summarize(rec, prices=None):
     """Turn a raw recorder into {by_model, prompt_tokens, completion_tokens,
     total_tokens, cost_usd}. cost_usd is None when nothing could be priced."""

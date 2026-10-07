@@ -4,12 +4,12 @@ export default function InviteUserPanel() {
     <div className="card">
       <h2>Invite a user</h2>
       <div className="sub">
-        New users sign in passwordlessly with an emailed one-time code.
-        <b>Viewer</b>
-        = read-only,
-        <b>Editor</b>
-        = create/edit/generate,
-        <b>Admin</b>
+        New users sign in passwordlessly with an emailed one-time code.{" "}
+        <b>Viewer</b>{" "}
+        = read-only,{" "}
+        <b>Editor</b>{" "}
+        = create/edit/generate,{" "}
+        <b>Admin</b>{" "}
         = also manage users &amp; configuration.
       </div>
       <div className="row" style={{ alignItems: "flex-end" }}>

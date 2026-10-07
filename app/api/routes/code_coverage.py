@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 import automation as auto_cov
 
 from core.deps import _ext_error, _implementation_repo_docs, _is_app_repo, _oid, gh_client
+from core.logging_setup import get_logger
 from core.security import (
     _require_code_coverage_run_project, _require_commit_analysis_project, _require_project,
 )
@@ -40,6 +41,8 @@ from workers.code_coverage_worker import _fetch_pr_and_files, _pr_coverage, inge
 # nothing here binds a name from it: the import itself is what runs
 # `JOB_WORKERS["codeanalysis"] = _codeanalysis_worker` as a side effect.
 from workers import codeanalysis_worker  # noqa: F401
+
+log = get_logger("code_coverage")
 
 router = APIRouter()
 
@@ -412,7 +415,25 @@ def project_mindmap(pid: str):
                     "cases": cases, "repos": (cc or {}).get("repos", []),
                     "reviewed_files": (cc or {}).get("result", {}).get("reviewed_files", []),
                     "analyzed": bool(cc), "updated_at": (cc or {}).get("updated_at")})
-    return {"project_id": pid, "features": out}
+    # #21: the codeanalysis job's own diagnostics (which branch was read, how many
+    # source files survived test/spec exclusion, and why a run found nothing) only
+    # existed for as long as the live watchJob() poll that started it was open — a
+    # plain page load or a later visit to Mind Map had no way to see them. Surfacing
+    # the latest job's result here lets the UI explain an empty/stale result instead
+    # of just showing "not analyzed" with no reason.
+    last_job = store.latest_job(pid, "codeanalysis")
+    last_analysis = None
+    if last_job and last_job.get("status") != "running":
+        r = last_job.get("result") or {}
+        last_analysis = {
+            "at": last_job.get("updated_at"),
+            "status": last_job.get("status"),
+            "note": r.get("note"),
+            "features_mapped": r.get("features_mapped", 0),
+            "per_repo": r.get("per_repo", []),
+            "errors": r.get("errors", []),
+        }
+    return {"project_id": pid, "features": out, "last_analysis": last_analysis}
 
 
 class AnalyzeIn(BaseModel):
@@ -532,7 +553,7 @@ def assign_pr(pr_id: str, body: AssignPRIn):
                 project_id=(repo or {}).get("project_id"),
                 feature_id=body.feature_id)
         except Exception as e:  # noqa: BLE001
-            print(f"[wardenIQ][assign] coverage failed for PR {pr_id}: {e}", flush=True)
+            log.warning("[assign] coverage failed for PR %s: %s", pr_id, e)
 
     threading.Thread(target=_bg, daemon=True).start()
     return {"ok": True, "feature_id": body.feature_id, "status": "computing"}
