@@ -111,6 +111,105 @@ class FeaturesMixin(_Base):
                             "score": round(row["score"], 4)})
         return out
 
+    # Above this many stored chunks the in-memory fallback below is skipped (it would have to
+    # load every project chunk's vector); semantic mapping then degrades to "no suggestion".
+    SEMANTIC_FALLBACK_MAX_CHUNKS = 20000
+
+    def semantic_feature_scores(self, query_embedding, project_id, limit=5):
+        """Rank a project's features by how closely their documents match a query embedding:
+        the retrieval half of semantic PR -> feature mapping (issue #54).
+
+        Returns [{feature_id, name, key, score}], best first, one row per feature GROUP and
+        always naming the group's LATEST version (a PR is mapped to the current version, as
+        the keyword tiers do). `score` is the best chunk similarity on the (1 + cosine) / 2
+        scale that mongot reports for a cosine index; the in-memory fallback converts to the
+        same scale, so one floor means the same thing whichever path answered.
+
+        Degrades to [] instead of raising -- mapping must never break PR ingest.
+        """
+        if not project_id or not query_embedding:
+            return []
+        per_feature = {}
+        try:
+            stage = {"index": VECTOR_INDEX, "path": "embedding", "queryVector": query_embedding,
+                     "numCandidates": 200, "limit": 50,
+                     "filter": {"project_id": {"$eq": project_id}}}
+            for row in self.fchunks.aggregate([
+                    {"$vectorSearch": stage},
+                    {"$addFields": {"score": {"$meta": "vectorSearchScore"}}},
+                    {"$group": {"_id": "$feature_id", "score": {"$max": "$score"}}}]):
+                per_feature[row["_id"]] = float(row["score"])
+        except Exception:  # noqa: BLE001 -- no mongot / index -> in-memory fallback below
+            per_feature = {}
+        if not per_feature:
+            per_feature = self._memory_feature_scores(query_embedding, project_id)
+        return self._latest_version_rows(per_feature, project_id)[:max(int(limit), 1)]
+
+    def _memory_feature_scores(self, query_embedding, project_id) -> dict:
+        """Exact cosine over the project's chunks, best score per feature_id, on the same
+        (1 + cosine) / 2 scale as $vectorSearch. {} when it cannot answer (too many chunks,
+        no chunks, or an embedding dimension that does not match what is stored)."""
+        try:
+            import numpy as np
+            cap = self.SEMANTIC_FALLBACK_MAX_CHUNKS
+            fids, vecs = [], []
+            for d in self.fchunks.find({"project_id": project_id},
+                                       {"feature_id": 1, "embedding": 1}).limit(cap + 1):
+                fids.append(d.get("feature_id"))
+                vecs.append(d.get("embedding"))
+            if len(fids) > cap:
+                log.warning("[pr-semantic] in-memory fallback skipped for project_id=%s: more than "
+                            "%d chunks", project_id, cap)
+                return {}
+            if not fids:
+                return {}
+            qv = np.asarray(query_embedding, dtype=float)
+            M = np.asarray(vecs, dtype=float)
+            if qv.ndim != 1 or M.ndim != 2 or M.shape[1] != qv.shape[0]:
+                raise ValueError("embedding dimension mismatch between the query and the stored chunks")
+            norms = np.linalg.norm(M, axis=1)
+            norms[norms == 0] = 1.0
+            scores = ((M @ qv) / (norms * (np.linalg.norm(qv) or 1.0)) + 1.0) / 2.0
+            best: dict = {}
+            for fid, sc in zip(fids, scores):
+                if fid is not None and (fid not in best or float(sc) > best[fid]):
+                    best[fid] = float(sc)
+            return best
+        except Exception as exc:  # noqa: BLE001 -- dimension mismatch / malformed vectors
+            log.warning("[pr-semantic] in-memory fallback failed for project_id=%s: %s",
+                        project_id, exc)
+            return {}
+
+    def _latest_version_rows(self, per_feature: dict, project_id) -> list:
+        """Collapse {feature_id: score} to one row per feature group, scored by the best of
+        its versions and naming the latest version; best first."""
+        ids = [ObjectId(f) for f in per_feature if ObjectId.is_valid(f)]
+        if not ids:
+            return []
+        group_of = {str(d["_id"]): d.get("group_id") or str(d["_id"])
+                    for d in self.features.find({"_id": {"$in": ids}}, {"group_id": 1})}
+        group_score: dict = {}
+        for fid, sc in per_feature.items():
+            g = group_of.get(fid)
+            if g is not None and sc > group_score.get(g, float("-inf")):
+                group_score[g] = sc
+        if not group_score:
+            return []
+        groups = list(group_score)
+        latest: dict = {}
+        for f in self.features.find(
+                {"project_id": project_id,
+                 "$or": [{"group_id": {"$in": groups}},
+                         {"_id": {"$in": [ObjectId(g) for g in groups if ObjectId.is_valid(g)]}}]},
+                {"group_id": 1, "version": 1, "name": 1, "key": 1}):
+            g = f.get("group_id") or str(f["_id"])
+            if g in group_score and (g not in latest
+                                     or f.get("version", 1) > latest[g].get("version", 1)):
+                latest[g] = f
+        rows = [{"feature_id": str(f["_id"]), "name": f.get("name"), "key": f.get("key"),
+                 "score": round(group_score[g], 4)} for g, f in latest.items()]
+        return sorted(rows, key=lambda r: -r["score"])
+
     def search_feature_chunks(self, query_embedding, feature_id, limit=8, category=None):
         """Retrieve the most relevant chunks of ONE feature's own document(s) for a
         query embedding -- the retrieval half of test-generation RAG (the write side
