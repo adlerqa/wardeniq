@@ -19,12 +19,13 @@ REQUIRED_STAGES = {
 }
 
 
-def _run(store, llm, **params):
+def _run(store, llm, timing_sink=None, **params):
     return generate_fresh_testcases_pipeline(
         store, llm, FakeEmbedder(),
         {"feature_id": "feature-1", "total": 40,
          "focus": {"functional": 20, "e2e": 20, "api": 20, "nfr": 20, "ui": 20},
          **params},
+        timing_sink=timing_sink,
     )
 
 
@@ -101,6 +102,42 @@ class TestPipelineStageTimings:
         assert sink[0][0] == "_start"
         names = {name for name, _ in sink}
         assert REQUIRED_STAGES.issubset(names)
+
+
+class TestStageTimingsAndFilterSummaryCoexist:
+    """The pipeline's result carries BOTH the #48 profile (`stage_timings`) and the #64
+    filter accounting (`testgen_filter`). Both were added to the same return dict by
+    different changes, so this guards against one silently replacing the other when
+    that block is edited or merged."""
+
+    FILTER_KEYS = {"generated", "persisted", "rejected", "rejected_by_reason"}
+
+    def test_a_real_pipeline_result_contains_both(self):
+        res = _run(_delivery_store(), ScenarioLLM())
+        assert "stage_timings" in res and "testgen_filter" in res
+        assert REQUIRED_STAGES.issubset(res["stage_timings"].keys())
+        assert "total_seconds" in res["stage_timings"]
+        assert self.FILTER_KEYS.issubset(res["testgen_filter"].keys())
+
+    def test_both_are_well_formed_in_the_same_result(self):
+        res = _run(_delivery_store(), ScenarioLLM())
+        summary = res["testgen_filter"]
+        assert isinstance(summary["generated"], int) and isinstance(summary["persisted"], int)
+        assert isinstance(summary["rejected"], int) and isinstance(summary["rejected_by_reason"], dict)
+        assert summary["generated"] >= summary["persisted"] >= 0
+        assert all(isinstance(v, (int, float)) and v >= 0 for v in res["stage_timings"].values())
+
+    def test_profiling_does_not_change_the_filter_summary(self):
+        # Same fixtures, with and without a caller-supplied timing sink: the filter
+        # accounting (what was kept or rejected) must be identical -- profiling only observes.
+        plain = _run(_delivery_store(), ScenarioLLM())
+        sink = []
+        sunk = _run(_delivery_store(), ScenarioLLM(), timing_sink=sink)
+        assert sink, "the explicit timing sink was not populated"
+        assert plain["testgen_filter"] == sunk["testgen_filter"]
+        for key in ("cases_new", "cases_reused", "steps_new", "steps_reused", "by_type",
+                    "discovered_api_count", "rag_gap_count"):
+            assert plain[key] == sunk[key], key
 
 
 class _AlwaysFailingLLM(ScenarioLLM):
