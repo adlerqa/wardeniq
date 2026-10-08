@@ -164,10 +164,83 @@ async function loadMindmapRepos() {
   const pid = $("#mm-proj").value || currentProject;
   if (!pid) return;
   try {
-    const r = await api(`/api/projects/${pid}/repos?repo_type=app`); // app repos only (test repos excluded)
+    const r = await api(`/api/projects/${pid}/repos?repo_type=app`);
     $("#mm-repos").innerHTML = repoBranchRows(r.repos, "mm-repo");
     fillBranchDropdowns("mm-repo", r.repos);
   } catch (e) {}
+}
+
+async function loadMindmap() {
+  const pid = $("#mm-proj").value || currentProject;
+  // Guard: if we're called with no project, clear the loader
+  const mmEl = $("#mm-map");
+  if (!pid) {
+    if (mmEl)
+      mmEl.innerHTML = `<div class="card"><span class="muted">Pick a project to see its coverage map.</span></div>`;
+    return;
+  }
+  skIn("#mm-map", skeleton.rows(5, "Loading coverage map"));
+  try {
+    const r = await api(`/api/projects/${pid}/mindmap`);
+    MM_DATA = r;
+    MM_FOCUS = null;
+    
+    // THIS IS THE FIX: Restore diagnostics panel on page load/refresh
+    renderMindmapDiag(r.last_analysis?.per_repo || []);
+
+    renderMmGraph();
+    if (!r.features.length) {
+      $("#mm-map").innerHTML =
+        `<div class="card"><span class="muted">No features in this project yet.</span></div>`;
+      return;
+    }
+    const tot = { covered: 0, partial: 0, uncovered: 0 };
+    r.features.forEach((f) => {
+      tot.covered += f.counts.covered;
+      tot.partial += f.counts.partial;
+      tot.uncovered += f.counts.uncovered;
+    });
+    const grand = tot.covered + tot.partial + tot.uncovered;
+    const head = `<div class="mindmap-summary-card"><div class="mindmap-summary-head"><h2>Project coverage map</h2>
+      <div class="mindmap-chip-row">${mmChip("covered", tot.covered)} ${mmChip("partial", tot.partial)} ${mmChip("uncovered", tot.uncovered)}</div></div>
+      ${grand ? mmBar(tot, grand) : `<div class="sub">Not analyzed yet — click <b>Analyze codebase</b> to read the code and map coverage.</div>`}</div>
+      ${grand ? "" : analysisEmptyReasonHtml(r.last_analysis)}`;
+    const cards = r.features
+      .map((f) => {
+        const c = f.counts;
+        const t = c.covered + c.partial + c.uncovered;
+        const cases = (f.cases || [])
+          .slice()
+          .sort((x, y) => mmRank(x.status) - mmRank(y.status))
+          .map(
+            (cs) =>
+              `<div class="mindmap-case-item"><div class="mindmap-case-title">
+          <span class="mm-case-left"><span class="mm-dot ${cs.status}"></span>${cs.display_id ? `<code style="font-size:10px;background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px;color:#94a3b8">${esc(cs.display_id)}</code>` : ""}<b>${esc(cs.title)}</b></span>
+          <span class="mm-case-right"><span class="badge ${cs.type}">${esc(typeLabel(cs.type))}</span><span class="badge mm-${cs.status}">${cs.status}</span></span>
+          </div><div class="mindmap-case-body">${esc(cs.rationale || "")}${(cs.files || []).length ? `<br><span style="color:var(--accent2)">Files reviewed:</span> ${cs.files.map((ff) => `<code>${esc(ff)}</code>`).join(" ")}` : ""}</div></div>`,
+          )
+          .join("");
+        const open = c.uncovered > 0 || c.partial > 0 ? " open" : "";
+        return `<details class="mindmap-feature-card"${open}><summary>
+        <div class="mindmap-summary-main"><div class="mindmap-feature-title"><strong>${esc(f.feature)}</strong> <span class="pill">v${f.version}</span> ${f.analyzed ? "" : '<span class="badge">not analyzed</span>'}</div>
+        ${f.repos && f.repos.length ? `<div class="mindmap-feature-meta">Reviewed against ${f.repos.map((rp) => `<span class="pill">${esc(rp)}</span>`).join(" ")}</div>` : ""}</div>
+        <div class="mindmap-chip-row">${mmChip("covered", c.covered)} ${mmChip("partial", c.partial)} ${mmChip("uncovered", c.uncovered)}</div></summary>
+        <div class="mindmap-feature-body">
+        ${t ? mmBar(c, t) : `<div class="muted" style="margin:6px 0">${f.case_count || 0} test cases — run analysis to map them to code.</div>`}
+        ${
+          t && c.covered === 0 && c.partial === 0 && (f.reviewed_files || []).length
+            ? `<div class="warn" style="margin:6px 0;font-size:12px">All ${t} reviewed case${t === 1 ? "" : "s"} came back uncovered. ${f.reviewed_files.length} implementation file${f.reviewed_files.length === 1 ? " was" : "s were"} read for this feature — this may be an accurate gap, or the implementing code may live in a repo/branch that isn't connected here.</div>`
+            : ""
+        }
+        ${(f.reviewed_files || []).length ? `<details style="margin:6px 0 8px"><summary class="muted" style="cursor:pointer;font-size:11.5px">Files reviewed for this feature (${f.reviewed_files.length})</summary><div class="muted" style="margin-top:4px">${f.reviewed_files.map((ff) => `<code>${esc(ff)}</code>`).join(" ")}</div></details>` : ""}
+        <div class="mindmap-case-list">${cases}</div></div></details>`;
+      })
+      .join("");
+    $("#mm-map").innerHTML = head + cards;
+  } catch (e) {
+    $("#mm-map").innerHTML =
+      `<div class="card err">Couldn't load the coverage map. ${esc(e.message)}</div>`;
+  }
 }
 $("#mm-analyze").onclick = async () => {
   const ids = [...document.querySelectorAll(".mm-repo-chk")]
