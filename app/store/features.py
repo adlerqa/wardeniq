@@ -129,21 +129,76 @@ class FeaturesMixin(_Base):
         """
         if not project_id or not query_embedding:
             return []
-        per_feature = {}
+        rows = None
         try:
-            stage = {"index": VECTOR_INDEX, "path": "embedding", "queryVector": query_embedding,
-                     "numCandidates": 200, "limit": 50,
-                     "filter": {"project_id": {"$eq": project_id}}}
-            for row in self.fchunks.aggregate([
-                    {"$vectorSearch": stage},
-                    {"$addFields": {"score": {"$meta": "vectorSearchScore"}}},
-                    {"$group": {"_id": "$feature_id", "score": {"$max": "$score"}}}]):
-                per_feature[row["_id"]] = float(row["score"])
+            per_feature = self._vector_feature_scores(query_embedding, project_id)
+            rows = self._latest_version_rows(per_feature, project_id)
+            seen = set(per_feature)
+            # $vectorSearch returns the nearest CHUNKS, not features: one feature that owns
+            # all of the nearest chunks leaves no runner-up in the result, and a missing
+            # runner-up would read as "nothing else is close" and skip the margin check. When
+            # fewer than two feature groups came back, search again with the groups already
+            # seen excluded, so a runner-up is found if one exists. With two or more groups
+            # present, the second group's best chunk is by construction among the nearest, so
+            # no further query is needed (deleted features' leftover chunks can occupy the
+            # page too, hence the loop rather than a single retry).
+            for _ in range(self.SEMANTIC_RUNNER_UP_QUERIES):
+                if not per_feature or len(rows) >= 2:
+                    break
+                skip = seen | self._group_feature_ids(rows, project_id)
+                more = self._vector_feature_scores(query_embedding, project_id, exclude=skip)
+                if not more:
+                    break                       # no other feature has chunks: a true single-feature project
+                per_feature.update(more)
+                seen |= set(more)
+                rows = self._latest_version_rows(per_feature, project_id)
+            else:
+                if len(rows) < 2:
+                    # Every extra search kept returning other chunks and a runner-up is still
+                    # unconfirmed: let the exact scan decide rather than report a lone feature.
+                    per_feature, rows = {}, None
         except Exception:  # noqa: BLE001 -- no mongot / index -> in-memory fallback below
-            per_feature = {}
+            per_feature, rows = {}, None
         if not per_feature:
             per_feature = self._memory_feature_scores(query_embedding, project_id)
-        return self._latest_version_rows(per_feature, project_id)[:max(int(limit), 1)]
+            rows = None
+        if rows is None:
+            rows = self._latest_version_rows(per_feature, project_id)
+        return rows[:max(int(limit), 1)]
+
+    # How many extra searches may be spent looking past the groups already seen for a runner-up.
+    SEMANTIC_RUNNER_UP_QUERIES = 3
+
+    def _vector_feature_scores(self, query_embedding, project_id, exclude=()) -> dict:
+        """One $vectorSearch over the project's feature chunks -> {feature_id: best chunk
+        score}. `exclude` is a set of feature_ids whose chunks must not be returned. Raises
+        when mongot or the index is unavailable (the caller falls back to the exact scan)."""
+        flt: dict = {"project_id": {"$eq": project_id}}
+        if exclude:
+            flt = {"$and": [flt, {"feature_id": {"$nin": sorted(exclude)}}]}
+        stage = {"index": VECTOR_INDEX, "path": "embedding", "queryVector": query_embedding,
+                 "numCandidates": 200, "limit": 50, "filter": flt}
+        out = {}
+        for row in self.fchunks.aggregate([
+                {"$vectorSearch": stage},
+                {"$addFields": {"score": {"$meta": "vectorSearchScore"}}},
+                {"$group": {"_id": "$feature_id", "score": {"$max": "$score"}}}]):
+            out[row["_id"]] = float(row["score"])
+        return out
+
+    def _group_feature_ids(self, rows, project_id) -> set:
+        """Every feature_id (all versions) of the feature groups in `rows`, so that a
+        search for a runner-up cannot return another version of a group already found."""
+        ids = [ObjectId(r["feature_id"]) for r in rows if ObjectId.is_valid(r["feature_id"])]
+        if not ids:
+            return set()
+        groups = {d.get("group_id") or str(d["_id"])
+                  for d in self.features.find({"_id": {"$in": ids}}, {"group_id": 1})}
+        return {str(f["_id"]) for f in self.features.find(
+            {"project_id": project_id,
+             "$or": [{"group_id": {"$in": list(groups)}},
+                     {"_id": {"$in": [ObjectId(g) for g in groups if ObjectId.is_valid(g)]}}]},
+            {"_id": 1})}
 
     def _memory_feature_scores(self, query_embedding, project_id) -> dict:
         """Exact cosine over the project's chunks, best score per feature_id, on the same

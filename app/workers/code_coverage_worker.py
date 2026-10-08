@@ -212,6 +212,10 @@ def ingest_pr(repo: dict, pr: dict, feature_id_override: str | None = None):
             fid, score, method = cov.map_pr_to_feature(
                 store, jira_client(), base_doc, repo["project_id"])
     store.set_pr_mapping(pr_id, fid, score, method)
+    if fid:
+        # Unmapped PRs are logged by resolve_pr_mapping() below, with their semantic result.
+        log.info("[pr-map] %s#%s method=%s confidence=%.2f feature=%s",
+                 repo["full_name"], number, method, score, fid)
 
     feature = store.get_feature(fid) if fid else None
     version = (feature or {}).get("version", 1) if feature else None

@@ -8,6 +8,7 @@ explicit opt-in does.
 Duck-typed fakes, no MongoDB or embedding service required. The real store query behind
 `semantic_feature_scores` is covered in tests/test_pr_semantic_mapping_db.py.
 """
+import logging
 import types
 
 import pytest
@@ -329,6 +330,21 @@ class TestIngestPrWiring:
         ingest(store, {**GH_PR, "title": "[RESETS] " + GH_PR["title"]}, embedder=embedder)
         assert store.mappings[0][2] == "tag:RESETS" and store.mappings[0][0] == "f-tag"
         assert embedder.calls == [] and store.semantic_calls == [] and store.suggestions == []
+
+    def test_a_keyword_mapping_is_logged_with_its_method_and_score(self, ingest):
+        # The app's loggers do not propagate to the root logger, so attach a handler directly.
+        records = []
+        handler = logging.Handler()
+        handler.emit = records.append
+        logger = logging.getLogger("wardeniq.code_coverage")
+        logger.addHandler(handler)
+        try:
+            store = IngestStore(match_keys=[("f-tag", "RESETS")], ranked=CLEAR)
+            ingest(store, {**GH_PR, "title": "[RESETS] " + GH_PR["title"]})
+        finally:
+            logger.removeHandler(handler)
+        lines = [r.getMessage() for r in records if "[pr-map]" in r.getMessage()]
+        assert lines == ["[pr-map] acme/app#7 method=tag:RESETS confidence=1.00 feature=f-tag"]
 
     def test_a_pr_that_matches_nothing_clears_any_stale_suggestion(self, ingest):
         store = IngestStore(ranked=[row("f1", 0.5)])
