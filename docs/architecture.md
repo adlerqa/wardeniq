@@ -56,12 +56,19 @@ pytest too — either regressing fails the build). The `--coverage` section need
 LLM, so it deliberately stays a manual/on-demand benchmark rather than a CI gate — it
 reports per-status precision/recall plus an **overclaim rate** - how often a verdict claimed
 *more* coverage than the truth, tracked separately because saying "tested" about untested
-behaviour is a worse error than the reverse.
+behaviour is a worse error than the reverse. A requested section with nothing to score
+(an emptied corpus) **fails the run** rather than passing unscored, and the report counts
+any cases the model returned no verdict for (scored as `uncovered`) apart from real
+`uncovered` verdicts.
 
 Every run's `--json`/`--out` output includes a `meta` block (tool, UTC timestamp, a
 content-derived `dataset_fingerprint`, which sections ran, and — only when `--coverage`
 ran — the provider/model) so two runs can be compared and a result can be traced back to
-the exact corpus it was scored against. Never includes API keys or other secrets.
+the exact corpus it was scored against. The fingerprint hashes every input the scorers read
+(probe claims and excerpts, dedup pairs, coverage requirements, excerpts and cases, and the
+labels) and ignores only the free-text `note` fields. Never includes API keys or other
+secrets. With `--json`, stdout is the JSON payload and nothing else; the note that `--out`
+wrote a file goes to stderr.
 
 SMTP (for sign-in emails) is set under **Configuration → Email** (stored encrypted, takes
 precedence) or via `SMTP_*` vars in `.env`. Until SMTP exists, the first admin's code is

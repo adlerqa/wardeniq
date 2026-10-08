@@ -173,37 +173,61 @@ def run_coverage(llm, samples=1) -> dict:
                                        ex["cases"], ex["excerpts"], samples=samples)
         by_id = {c["test_case_id"]: c for c in res["cases"]}
         for cid, expected in ex["expected"].items():
-            got = by_id.get(cid) or {}
+            got = by_id.get(cid)
+            missing = got is None          # the model returned no verdict for this case
+            got = got or {}
             actual = got.get("status", "uncovered")
             pairs.append((expected, actual))
             rows.append({"example": ex["id"], "case": cid, "expected": expected,
                          "actual": actual, "confidence": got.get("confidence"),
                          "needs_review": got.get("needs_review"),
                          "rejected_citations": got.get("files_rejected") or [],
+                         "missing": missing,
                          "pass": actual == expected})
     conf = _confusion(pairs)
+    # A missing verdict is scored as "uncovered" (it is not a verdict of covered), but it is
+    # counted apart so a model that failed to answer is not read as one that answered badly.
     return {"section": "coverage", "rows": rows, "confusion": conf,
             "score": conf["accuracy"], "overclaim_rate": _overclaim_rate(pairs),
+            "missing_responses": sum(1 for r in rows if r["missing"]),
             "samples": samples}
 
 
 # --------------------------------------------------------------------------- run metadata
+# Free-text audit-trail fields: a wording fix to a `note` explaining a label must not
+# look like a corpus change. Everything else on an item is an input to scoring.
+_NON_SCORING_FIELDS = frozenset({"note"})
+
+
+def _scoring_corpus() -> dict:
+    """The corpus exactly as the scorers consume it: every field of every item, per section,
+    minus the non-scoring audit-trail fields. Items are ordered by id so the result does not
+    depend on how a section happens to be listed in dataset.py."""
+    sections = {
+        "hallucination_probes": dataset.HALLUCINATION_PROBES,
+        "dedup_pairs": dataset.DEDUP_PAIRS,
+        "known_limitation_pairs": dataset.KNOWN_LIMITATION_PAIRS,
+        "coverage_examples": dataset.COVERAGE_EXAMPLES,
+    }
+    return {name: [{k: v for k, v in item.items() if k not in _NON_SCORING_FIELDS}
+                   for item in sorted(items, key=lambda i: str(i.get("id")))]
+            for name, items in sections.items()}
+
+
 def _dataset_fingerprint() -> str:
     """A short, reproducible identifier for the exact corpus a run was scored against.
 
     Computed (not hand-maintained) so it can never go stale the way a manually-bumped
-    version constant would: it changes if and only if the actual dataset content
-    changes, which is exactly what "reproduce/interpret a run later" needs. Only the
-    fields that affect scoring go in (ids + the ground truth), not free-text notes —
-    a wording fix to a `note` explaining a label shouldn't look like a corpus change.
+    version constant would: it changes if and only if a scored input changes -- a probe's
+    claim or excerpts, a dedup pair's cases, a coverage example's requirement, excerpts or
+    cases, or any label -- and not when only a free-text `note` is reworded. It hashes a
+    canonical JSON form (sorted keys, items ordered by id), so it is identical for identical
+    content on every run and machine, and contains nothing from the run itself (no
+    timestamp, model, response, URL or key).
     """
-    material = repr((
-        [(p["id"], p["expected_status"]) for p in dataset.HALLUCINATION_PROBES],
-        [(p["id"], p["expected_same"]) for p in dataset.DEDUP_PAIRS],
-        [(p["id"], p["expected_same"]) for p in dataset.KNOWN_LIMITATION_PAIRS],
-        [(e["id"], tuple(sorted(e["expected"].items()))) for e in dataset.COVERAGE_EXAMPLES],
-    )).encode()
-    return hashlib.sha256(material).hexdigest()[:12]
+    canonical = json.dumps(_scoring_corpus(), sort_keys=True, separators=(",", ":"),
+                           ensure_ascii=True, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
 
 
 def _run_metadata(args, reports) -> dict:
@@ -233,6 +257,8 @@ def _print(report: dict):
               f"({report.get('passed', '?')}/{report.get('total', '?')})")
     if report.get("overclaim_rate") is not None:
         print(f"overclaim rate (worse than wrong): {report['overclaim_rate']}")
+    if report.get("missing_responses"):
+        print(f"missing model responses (scored as uncovered): {report['missing_responses']}")
     for k in ("false_merge", "missed_merge", "precision", "recall"):
         if report.get(k) is not None:
             print(f"{k}: {report[k]}")
@@ -260,6 +286,19 @@ def _print(report: dict):
         if bad:
             print("  -> token-set similarity cannot separate these classes; see "
                   "dataset.KNOWN_LIMITATION_PAIRS before changing any threshold.")
+
+
+def _gate(failures: list, name: str, report: dict, minimum: float) -> None:
+    """Record a failure when a requested section misses its threshold -- or has nothing to
+    score. A section with no scorable items has `score` None; skipping the comparison would
+    let an emptied or broken corpus pass the gate as if it had scored perfectly, so it fails
+    closed instead."""
+    score = report["score"]
+    if score is None:
+        failures.append(f"{name}: no scorable items (empty corpus) -- refusing to pass an "
+                        "unscored section")
+    elif score < minimum:
+        failures.append(f"{name} {score} < {minimum}")
 
 
 def main(argv=None):
@@ -293,21 +332,18 @@ def main(argv=None):
     if args.probes:
         r = run_probes()
         reports.append(r)
-        if r["score"] is not None and r["score"] < args.min_probes:
-            failures.append(f"probes {r['score']} < {args.min_probes}")
+        _gate(failures, "probes", r, args.min_probes)
     if args.dedup:
         r = run_dedup()
         reports.append(r)
-        if r["score"] is not None and r["score"] < args.min_dedup:
-            failures.append(f"dedup {r['score']} < {args.min_dedup}")
+        _gate(failures, "dedup", r, args.min_dedup)
     if args.coverage:
         from llm import LLM
         llm = LLM(provider=args.provider, model=args.model, api_key=args.api_key,
                   ollama_url=args.ollama_url)
         r = run_coverage(llm, samples=args.samples)
         reports.append(r)
-        if r["score"] is not None and r["score"] < args.min_coverage:
-            failures.append(f"coverage {r['score']} < {args.min_coverage}")
+        _gate(failures, "coverage", r, args.min_coverage)
 
     meta = _run_metadata(args, reports)
     payload = {"meta": meta, "reports": reports, "failures": failures}
@@ -328,7 +364,9 @@ def main(argv=None):
     if args.out:
         with open(args.out, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
-        print(f"\nresults written to {args.out}")
+        # With --json, stdout is the payload and must stay parseable: the note goes to stderr.
+        print(f"\nresults written to {args.out}",
+              file=sys.stderr if args.json else sys.stdout)
 
     return 1 if failures else 0
 
