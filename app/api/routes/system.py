@@ -3,7 +3,7 @@ health, thresholds), the dashboard summary, the global tag list, RAG
 "retrieve" (find existing test cases relevant to a new requirement), and the
 GitHub sync-poller status.
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router
+Extracted from app/main.py (docs/internal/REFACTOR_PLAN.md section 14, Phase 6, router
 19/20). Handler bodies are unchanged aside from the ``@app.`` -> ``@router.``
 decorator swap.
 

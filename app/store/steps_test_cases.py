@@ -1,7 +1,7 @@
 """Test steps and test cases: CRUD, display-id allocation, similarity search
 (mongot + numpy fallback), and case/feature association.
 
-Moved out of store.py (Phase 5 of REFACTOR_PLAN.md). `cosine_atlas` and
+Moved out of store.py (Phase 5 of docs/internal/REFACTOR_PLAN.md). `cosine_atlas` and
 `VECTOR_INDEX` are shared cross-domain constants defined in store/base.py.
 """
 

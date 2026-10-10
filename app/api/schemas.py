@@ -1,6 +1,6 @@
 """Pydantic models shared by 2+ routers.
 
-Per REFACTOR_PLAN.md section 14 step 1: "anything shared by two routers goes to
+Per docs/internal/REFACTOR_PLAN.md section 14 step 1: "anything shared by two routers goes to
 api/schemas.py or core/deps.py — never duplicated" and "avoids router-to-router
 imports, which would create a cycle." A model used by exactly one router stays
 defined in that router's own file; it only moves here once a second caller needs it.

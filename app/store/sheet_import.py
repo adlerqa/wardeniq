@@ -1,7 +1,7 @@
 """Imported test-sheet pipeline: feature imports, the project-wide imported-row
 pool, source/relevance tracking, promotion to features, and review corrections.
 
-Moved out of store.py (Phase 5 of REFACTOR_PLAN.md). This is the largest single
+Moved out of store.py (Phase 5 of docs/internal/REFACTOR_PLAN.md). This is the largest single
 domain (34 members) — it owns all 7 `@property`-exposed imported-row
 collections plus every `*_imported_*` / `*_pool*` method.
 """

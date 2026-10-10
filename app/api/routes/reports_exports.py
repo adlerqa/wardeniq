@@ -1,6 +1,6 @@
 """Feature PDF/CSV exports and Gap Analysis (PR coverage / automation) exports.
 
-Moved out of main.py (Phase 6 of REFACTOR_PLAN.md — contiguous block, part of the
+Moved out of main.py (Phase 6 of docs/internal/REFACTOR_PLAN.md — contiguous block, part of the
 plan's "ideal first" extraction group). Decorator changed from `@app.` to `@router.`
 only — same 7 paths, same status codes, same response shapes. `import report` is kept
 local to each handler (not hoisted), matching the original main.py style exactly.

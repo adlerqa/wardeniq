@@ -1,7 +1,7 @@
 """Test steps and test cases: step CRUD/edit, case CRUD/edit, case execution
 status updates, and unlinking a case from a feature.
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 9/20).
+Extracted from app/main.py (docs/internal/REFACTOR_PLAN.md section 14, Phase 6, router 9/20).
 Handler bodies are unchanged aside from the ``@app.`` -> ``@router.`` decorator swap.
 
 These 11 routes + 5 models were spread across 4 non-contiguous blocks in the

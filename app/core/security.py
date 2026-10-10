@@ -1,7 +1,7 @@
 """RBAC, the auth gateway middleware, security headers, and project-scope
 access control.
 
-Moved out of main.py (Phase 2 of REFACTOR_PLAN.md). `auth_gateway` and
+Moved out of main.py (Phase 2 of docs/internal/REFACTOR_PLAN.md). `auth_gateway` and
 `security_headers` are plain async functions here (no `@app.middleware`
 decorator — that needs the `app` instance, which lives in main.py to avoid a
 security<->main circular import). main.py registers them explicitly, in the
@@ -12,7 +12,7 @@ same order as the original decorators, via:
 
 which is exactly equivalent to the original `@app.middleware("http")` usage.
 
-Principal-resolver registry (REFACTOR_PLAN.md section 3.4): an upstream
+Principal-resolver registry (docs/internal/REFACTOR_PLAN.md section 3.4): an upstream
 extension point for a second authentication scheme (e.g. a bearer token)
 alongside the cookie session, without patching this file. main.py registers
 one resolver — core/token_auth.py's bearer_token_principal, for API tokens
@@ -150,7 +150,7 @@ def _min_role(method: str, path: str) -> str:
 
 
 # ----------------------------------------------------- principal-resolver registry
-# Public upstream extension point (REFACTOR_PLAN.md 3.4): empty by default. A
+# Public upstream extension point (docs/internal/REFACTOR_PLAN.md 3.4): empty by default. A
 # downstream distribution registers an additional resolver for a path prefix
 # instead of patching this file. Consulted before the cookie session; the first
 # non-None match wins. Falls through to the cookie session when the registry is
@@ -203,7 +203,7 @@ async def auth_gateway(request: Request, call_next):
         # Local import: core/audit.py imports _current_user from this module for its
         # generic actor-resolution fallback, so a module-level import here (security
         # -> audit -> security) would cycle. This is the one documented exception
-        # (REFACTOR_PLAN.md: "no function-level imports to hide cycles unless
+        # (docs/internal/REFACTOR_PLAN.md: "no function-level imports to hide cycles unless
         # absolutely unavoidable and documented").
         from core.audit import _audit
         _audit(request, "permission.denied", target=f"{request.method} {path}",

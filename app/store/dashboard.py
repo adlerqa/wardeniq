@@ -1,7 +1,7 @@
 """Cross-project dashboard aggregation: active feature/case sets (latest version
 per group) and the rollup counts/coverage the dashboard UI reads.
 
-Moved out of store.py (Phase 5 of REFACTOR_PLAN.md). `active_feature_ids` /
+Moved out of store.py (Phase 5 of docs/internal/REFACTOR_PLAN.md). `active_feature_ids` /
 `active_case_ids` / `counts` are named generically but live here (not
 projects.py or steps_test_cases.py) because their only callers are
 `dashboard()` and each other — this keeps that call graph in one file.

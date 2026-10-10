@@ -2,7 +2,7 @@
 and the webhook signature/action-filter helpers shared by the GitHub/GitLab
 webhook route handlers.
 
-Moved out of main.py (Phase 4 of REFACTOR_PLAN.md). `poller` is started
+Moved out of main.py (Phase 4 of docs/internal/REFACTOR_PLAN.md). `poller` is started
 exactly once per process by main.py's `@app.on_event("startup")` handler
 (`threading.Thread(target=poller, daemon=True).start()`) — this module only
 defines the loop, it does not start any threads itself.
@@ -10,7 +10,7 @@ defines the loop, it does not start any threads itself.
 The `/api/webhook/*` route handlers stay in main.py until Phase 6 (this phase
 moves only the logic they call — signature verification and the accepted-
 action sets — so that later extraction is a thin wrapper, per
-REFACTOR_PLAN.md section 12 item 4). main.py re-imports `_ACCEPTED_GH_ACTIONS`,
+docs/internal/REFACTOR_PLAN.md section 12 item 4). main.py re-imports `_ACCEPTED_GH_ACTIONS`,
 `_ACCEPTED_GL_ACTIONS`, and `_verify_github_signature` from this module.
 
 Signature logic is kept byte-identical to the original — `hmac.compare_digest`

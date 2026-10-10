@@ -134,7 +134,7 @@ def _reembed_worker(jid, params):
     """Switch the embedding model: rebuild all vector indexes at the new dimension
     and re-embed every stored vector. Search/dedup/Mind-Map are degraded until this
     finishes (the vectors and indexes are being replaced)."""
-    # CRITICAL (REFACTOR_PLAN.md 2.6): rebind via the qualified `state.embedder`
+    # CRITICAL (docs/internal/REFACTOR_PLAN.md 2.6): rebind via the qualified `state.embedder`
     # attribute, never `global embedder` — this is the app's one live-reassignment
     # of the embedder singleton, and every other consumer reads `state.embedder`
     # (not a name-imported local), so they must all observe this exact rebind.

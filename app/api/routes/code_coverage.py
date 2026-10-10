@@ -4,7 +4,7 @@ coverage (test-repo-scan-derived), test-repo rescan/reset-stuck-scan, Mind Map
 code analysis + project mindmap view, change-impact analysis + commit-analysis,
 and manual PR-to-feature mapping (analyze-pr / unmapped-prs / assign-pr).
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 16/20).
+Extracted from app/main.py (docs/internal/REFACTOR_PLAN.md section 14, Phase 6, router 16/20).
 Handler bodies are unchanged aside from the ``@app.`` -> ``@router.`` decorator swap.
 
 ``exclude_pr``, ``unmapped_prs``, and ``assign_pr`` were deliberately left in
@@ -36,7 +36,7 @@ from core.state import store
 from workers.registry import launch_job, run_tracked
 from workers.code_coverage_worker import _fetch_pr_and_files, _pr_coverage, ingest_pr
 
-# Phase 3 (REFACTOR_PLAN.md): the "codeanalysis" (Mind Map) job now lives in
+# Phase 3 (docs/internal/REFACTOR_PLAN.md): the "codeanalysis" (Mind Map) job now lives in
 # app/workers/codeanalysis_worker.py. Importing it is required even though
 # nothing here binds a name from it: the import itself is what runs
 # `JOB_WORKERS["codeanalysis"] = _codeanalysis_worker` as a side effect.

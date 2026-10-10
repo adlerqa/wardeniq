@@ -2,7 +2,7 @@
 linkage, default git provider, PAT-configured booleans surfaced via
 _project_public).
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 13/20).
+Extracted from app/main.py (docs/internal/REFACTOR_PLAN.md section 14, Phase 6, router 13/20).
 Handler bodies are unchanged aside from the ``@app.`` -> ``@router.`` decorator swap.
 
 These 5 routes + 2 models were two non-contiguous blocks in the original main.py

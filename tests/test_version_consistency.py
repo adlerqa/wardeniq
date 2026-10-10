@@ -30,7 +30,7 @@ def test_docker_compose_app_image_default_matches_canonical_source():
 
 
 def test_no_stale_beta_version_string_in_user_facing_files():
-    # refactor-baseline/ is an intentional historical snapshot and excluded.
-    for relative in ("README.md", "CONTRIBUTING.md", "SECURITY.md", "PROJECT_CONTEXT.md"):
+    
+    for relative in ("README.md", "CONTRIBUTING.md", "SECURITY.md", "docs/internal/PROJECT_CONTEXT.md"):
         text = (ROOT / relative).read_text(encoding="utf-8")
         assert "0.1.0-beta" not in text, f"{relative} still references the stale 0.1.0-beta version"

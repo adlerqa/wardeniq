@@ -1,7 +1,7 @@
 """Mongo client/db setup, shared collection attributes, index management, the
 search-degradation gate, and whole-database migration.
 
-Moved out of store.py (Phase 5 of REFACTOR_PLAN.md, Option A: mixin composition).
+Moved out of store.py (Phase 5 of docs/internal/REFACTOR_PLAN.md, Option A: mixin composition).
 BaseStore.__init__ is THE single place all 20 plain-attribute collections are
 cached (store/__init__.py's Store class puts BaseStore last in its MRO so this
 __init__ wins) — every domain mixin reads these via `self.<attr>`, never its own

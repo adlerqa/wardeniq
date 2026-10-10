@@ -142,7 +142,7 @@ keeps auth on. mongot is unaffected (it already authenticates as `mongotUser`). 
 ```
 app/            wardenIQ backend (FastAPI) + Dockerfile (also builds the UI)
                 (organized as core/, workers/, background/, api/routes/, store/ — see
-                PROJECT_CONTEXT.md §3 for the full annotated breakdown; invariants:
+                internal/PROJECT_CONTEXT.md §3 for the full annotated breakdown; invariants:
                 no DB access outside store/, no route handlers in main.py)
 frontend/       React UI (built into app/static-react/ and served by the app)
 config/         mongod.conf, mongot.conf, replica-set init, mongot password file
