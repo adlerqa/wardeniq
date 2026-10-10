@@ -1,7 +1,7 @@
 """Test Plan API: generate a test-plan run for a feature, fetch the latest run,
 stream run progress via SSE, and export a completed run as CSV/PDF.
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 11/20).
+Extracted from app/main.py (docs/internal/REFACTOR_PLAN.md section 14, Phase 6, router 11/20).
 Handler bodies are unchanged aside from the ``@app.`` -> ``@router.`` decorator swap.
 
 These 5 routes were one contiguous block in the original main.py; no Pydantic

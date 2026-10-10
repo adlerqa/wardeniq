@@ -1,7 +1,7 @@
 """Startup bootstrap: secret/production posture checks, DB connect + index
 build retry loop, legacy-feature migration, and admin seeding.
 
-Moved out of main.py (Phase 2 of REFACTOR_PLAN.md). `bootstrap()` itself is
+Moved out of main.py (Phase 2 of docs/internal/REFACTOR_PLAN.md). `bootstrap()` itself is
 still invoked from main.py's `_startup()` on-event handler (Phase 4 concern —
 background thread wiring hasn't moved yet), so this module does not change
 when or how often bootstrap runs.
@@ -13,7 +13,7 @@ at module level would be a real main<->core.bootstrap cycle (main imports
 `bootstrap` from here; this module would need to import back from main before
 main has finished defining anything). Both are therefore function-level
 imports, resolved only when the function actually runs — by which point
-main.py has fully executed and is in sys.modules — matching REFACTOR_PLAN.md's
+main.py has fully executed and is in sys.modules — matching docs/internal/REFACTOR_PLAN.md's
 "function-level imports to break a cycle only when absolutely unavoidable and
 documented" allowance.
 """

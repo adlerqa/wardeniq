@@ -1,10 +1,10 @@
 """Code analysis / Mind Map chunks, PR code-coverage runs, and automation
 (test-repo) coverage tracking.
 
-Moved out of store.py (Phase 5 of REFACTOR_PLAN.md). `feature_coverage_report`
+Moved out of store.py (Phase 5 of docs/internal/REFACTOR_PLAN.md). `feature_coverage_report`
 and `set_feature_ready_threshold` are named `*_feature*` but placed here rather
 than in features.py — both are fundamentally coverage-reporting operations that
-read the coverage/PR collections owned by this module, per REFACTOR_PLAN.md
+read the coverage/PR collections owned by this module, per docs/internal/REFACTOR_PLAN.md
 section 13's note that a few cross-domain joins should go where they most belong
 rather than force an artificial boundary.
 """

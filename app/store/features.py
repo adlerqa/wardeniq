@@ -1,7 +1,7 @@
 """Feature CRUD, versioning, Jira epic/match-key binding, and unified-context
 assembly for generation.
 
-Moved out of store.py (Phase 5 of REFACTOR_PLAN.md).
+Moved out of store.py (Phase 5 of docs/internal/REFACTOR_PLAN.md).
 """
 
 import time

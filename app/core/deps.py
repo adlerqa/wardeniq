@@ -1,9 +1,9 @@
 """Cross-cutting request-time dependencies: GitHub/GitLab clients, the LLM and
 embedder builders, and small repo/document helpers.
 
-Moved out of main.py (Phase 2 of REFACTOR_PLAN.md).
+Moved out of main.py (Phase 2 of docs/internal/REFACTOR_PLAN.md).
 
-CRITICAL — embedder wiring (see REFACTOR_PLAN.md section 2.6 and
+CRITICAL — embedder wiring (see docs/internal/REFACTOR_PLAN.md section 2.6 and
 core/state.py's docstring): `core/state.py` declares `embedder = None` as a
 placeholder. This module populates it, as an import-time side effect, once
 `current_embedder()` is defined below:
@@ -229,7 +229,7 @@ def _is_app_repo(repo: dict | None) -> bool:
 
 
 def _oid(s):
-    # Not in REFACTOR_PLAN.md's explicit deps.py list, but moved here (rather than
+    # Not in docs/internal/REFACTOR_PLAN.md's explicit deps.py list, but moved here (rather than
     # left in main.py) because _implementation_repo_docs (below, which IS listed)
     # needs it, and main.py importing it back from core.deps avoids a main<->deps
     # circular import. main.py still uses _oid extensively for its own route
@@ -252,7 +252,7 @@ def _implementation_repo_docs(project_id: str, repo_ids=None):
 
 
 def jira_client():
-    # Not in REFACTOR_PLAN.md's explicit deps.py list, but moved here (Phase 3,
+    # Not in docs/internal/REFACTOR_PLAN.md's explicit deps.py list, but moved here (Phase 3,
     # documented deviation — same reasoning as `_oid` above) because `ingest_pr`
     # / `_pr_coverage` (app/workers/code_coverage_worker.py) need it, and that
     # module importing it back from main.py would create a main<->workers
@@ -265,7 +265,7 @@ def jira_client():
 
 
 def _fallback_feature_summary(name: str, raw: str) -> str:
-    # Not in REFACTOR_PLAN.md's explicit deps.py list, but moved here (Phase 3,
+    # Not in docs/internal/REFACTOR_PLAN.md's explicit deps.py list, but moved here (Phase 3,
     # documented deviation — same reasoning as `_oid`/`jira_client` above)
     # because `_generate_feature_summary` (below) needs it, and `_ingest_worker`
     # (app/workers/generation.py) needs `_generate_feature_summary`. Keeping
@@ -420,7 +420,7 @@ def _gather_external(parts, sources, *, figma_urls=(), pdf_figma=(), confluence_
 
 
 def figma_client():
-    # Not in REFACTOR_PLAN.md's explicit deps.py list, but moved here (Phase 3,
+    # Not in docs/internal/REFACTOR_PLAN.md's explicit deps.py list, but moved here (Phase 3,
     # documented deviation) alongside `_gather_external` above, which needs it.
     # main.py's own figma-related route handlers keep using it via
     # `from core.deps import figma_client`.
@@ -447,7 +447,7 @@ def _write_env_var(path: str, key: str, value: str):
     Only an ACTIVE assignment is replaced; commented example lines are left intact.
     Returns (ok, error).
 
-    Not in REFACTOR_PLAN.md's explicit deps.py list, but moved here (Phase 3,
+    Not in docs/internal/REFACTOR_PLAN.md's explicit deps.py list, but moved here (Phase 3,
     documented deviation, same reasoning as the helpers above) because
     `_migrate_worker` (app/workers/generation.py) needs it, and several of
     main.py's own route handlers (settings, DB-migration endpoints — Phase 6
@@ -482,7 +482,7 @@ def _write_env_var(path: str, key: str, value: str):
         return False, str(e)
 
 
-# Phase 6 (REFACTOR_PLAN.md): _smtp_cfg_from_env/_smtp_cfg/_user_public moved here
+# Phase 6 (docs/internal/REFACTOR_PLAN.md): _smtp_cfg_from_env/_smtp_cfg/_user_public moved here
 # (documented deviation, same reasoning as _oid/jira_client above) because both the
 # api/routes/auth.py router AND the api/routes/users.py router (_issue_invite_link,
 # invite_user, resend-invite) call them. Moving to core/deps.py avoids either
@@ -572,7 +572,7 @@ def _user_public(u):
             "must_change_password": u.get("email") == "admin" and not bool(u.get("password_hash"))}
 
 
-# Phase 6 (REFACTOR_PLAN.md): _svc_error/_ext_error moved here (documented deviation,
+# Phase 6 (docs/internal/REFACTOR_PLAN.md): _svc_error/_ext_error moved here (documented deviation,
 # same reasoning as the other core/deps.py helpers above) because they're called from
 # a dozen-plus still-in-main.py routes across many not-yet-extracted domains (GitHub,
 # GitLab, Jira, Confluence, validator, embeddings, ...) as well as the new

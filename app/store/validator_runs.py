@@ -1,7 +1,7 @@
 """MCQ Validator run lifecycle: creation, status/result updates, and the
 question/answer sets for each run.
 
-Moved out of store.py (Phase 5 of REFACTOR_PLAN.md).
+Moved out of store.py (Phase 5 of docs/internal/REFACTOR_PLAN.md).
 """
 
 import time

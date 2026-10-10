@@ -1,6 +1,6 @@
 """Best-effort audit-log writer.
 
-Moved out of main.py (Phase 2 of REFACTOR_PLAN.md). Depends on
+Moved out of main.py (Phase 2 of docs/internal/REFACTOR_PLAN.md). Depends on
 `core.security._current_user` for its generic actor-resolution fallback (used
 when a caller doesn't pass `actor` explicitly) — `core/security.py`'s
 `auth_gateway` in turn needs to call `_audit`, which it does via a

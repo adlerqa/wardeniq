@@ -1,6 +1,6 @@
 """Global exception handlers.
 
-Moved out of main.py (Phase 2 of REFACTOR_PLAN.md). Registration itself
+Moved out of main.py (Phase 2 of docs/internal/REFACTOR_PLAN.md). Registration itself
 (`app.exception_handler(_InvalidId)(...)`) stays in main.py — it needs the
 `app` instance — but the handler function and the exception class it's keyed
 on live here.

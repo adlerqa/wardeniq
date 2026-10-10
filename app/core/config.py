@@ -1,6 +1,6 @@
 """Environment-derived configuration constants.
 
-Moved verbatim out of main.py (Phase 1 of REFACTOR_PLAN.md). These are pure
+Moved verbatim out of main.py (Phase 1 of docs/internal/REFACTOR_PLAN.md). These are pure
 env-var reads with defaults — no singletons, no side effects beyond os.getenv
 and the DEFAULT_ADMIN_PASSWORD policy check. Consumers should import the exact
 names they need explicitly (avoid `from core.config import *`) so ruff's
@@ -32,7 +32,7 @@ ENV_FILE_PATH = os.getenv("ENV_FILE_PATH", "/app/.env")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 EMBED_DIM = int(os.getenv("EMBED_DIM", "768"))
 GEN_MODEL = os.getenv("GEN_MODEL", "qwen2.5:3b")
-# Phase 6 (REFACTOR_PLAN.md): moved here (documented deviation, same reasoning as the
+# Phase 6 (docs/internal/REFACTOR_PLAN.md): moved here (documented deviation, same reasoning as the
 # other core/config.py constants) because both main.py's own generate-job code and the
 # new api/routes/jira_atlassian.py router's inbound jira_webhook need it.
 GEN_TOTAL = int(os.getenv("GEN_TOTAL", "16"))  # total target cases across all types
@@ -110,7 +110,7 @@ PROVIDER_LOCK = os.getenv("LLM_PROVIDER_LOCK", "").strip().lower()
 OTP_WINDOW_SECONDS = int(os.getenv("OTP_WINDOW_SECONDS", "900"))   # 15 min
 OTP_MAX_PER_WINDOW = int(os.getenv("OTP_MAX_PER_WINDOW", "5"))
 
-# Stale-job sweep (Phase 4, REFACTOR_PLAN.md): how long a "running" job can go without
+# Stale-job sweep (Phase 4, docs/internal/REFACTOR_PLAN.md): how long a "running" job can go without
 # a heartbeat before background/schedulers.py's `_stale_job_sweeper` fails it, and how
 # often the sweep runs.
 STALE_JOB_TTL_SECONDS = int(os.getenv("STALE_JOB_TTL_SECONDS", "600"))

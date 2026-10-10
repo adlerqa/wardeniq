@@ -1,6 +1,6 @@
 """User management + invite lifecycle routes.
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 5/20 —
+Extracted from app/main.py (docs/internal/REFACTOR_PLAN.md section 14, Phase 6, router 5/20 —
 grouped with auth.py as "security-sensitive"). Handler bodies are unchanged
 aside from the ``@app.`` -> ``@router.`` decorator swap.
 

@@ -2,7 +2,7 @@
 (including the APP_SECRET-based master reset), session, logout, and the current user's
 own invite (accept/decline).
 
-Moved out of main.py (Phase 6 of REFACTOR_PLAN.md — security-sensitive but contiguous
+Moved out of main.py (Phase 6 of docs/internal/REFACTOR_PLAN.md — security-sensitive but contiguous
 and self-contained, per the plan's suggested extraction order). Decorator changed from
 `@app.` to `@router.` only — same 13 paths, same status codes, same cookie behavior.
 

@@ -71,7 +71,7 @@ class TestTargetProjectForPath:
         assert M._target_project_for_path("GET", "/api/users") is None
 
     def test_feature_path_resolves_via_store(self, monkeypatch):
-        # REFACTOR_PLAN.md Phase 2: _target_project_for_path/_project_of_feature now
+        # docs/internal/REFACTOR_PLAN.md Phase 2: _target_project_for_path/_project_of_feature now
         # live in core/security.py, which has its own `store` name-import — patching
         # main.store doesn't reach them (main just re-exports the same function
         # object; it still runs with core.security's own globals).

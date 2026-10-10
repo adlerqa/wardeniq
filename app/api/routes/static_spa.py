@@ -3,11 +3,11 @@ directory, and serve ``index.html``/``favicon.ico``/``logo2.png``/the
 ``/invite`` landing page (client-side routing is hash-based, so no path
 catch-all is needed).
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router
+Extracted from app/main.py (docs/internal/REFACTOR_PLAN.md section 14, Phase 6, router
 20/20 — LAST). Handler bodies are unchanged aside from the ``@app.`` ->
 ``@router.`` decorator swap.
 
-Per REFACTOR_PLAN.md section 7/14, this router must be included **last** in
+Per docs/internal/REFACTOR_PLAN.md section 7/14, this router must be included **last** in
 main.py's ``app.include_router(...)`` sequence, exactly where the equivalent
 code sat at the end of the original main.py.
 

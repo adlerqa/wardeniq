@@ -5,7 +5,7 @@ session, resolved through core/security.py's principal-resolver registry
 scheme (auth.hash_token/token_matches) rather than inventing one — only the
 hash is ever stored, matching store/users_auth.py's invite-token pattern.
 
-Moved out to its own mixin (Phase 5 style, REFACTOR_PLAN.md Option A) rather
+Moved out to its own mixin (Phase 5 style, docs/internal/REFACTOR_PLAN.md Option A) rather
 than folded into users_auth.py: an API token is not a user account (no email,
 no invite lifecycle, no password) even though it shares the project-scoping
 shape.
