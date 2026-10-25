@@ -13,14 +13,32 @@ _GITLAB_HOST = urllib.parse.urlparse(GITLAB_BASE_URL).netloc or "gitlab.com"
 _URL_RE = re.compile(rf"{re.escape(_GITLAB_HOST)}[:/]+([^?#\s]+?)(?:\.git)?(?:[/?#]|$)")
 
 
+_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.+-]{1,255}$")
+
+
+def validate_project_path(path_with_namespace: str, min_segments: int = 2) -> str:
+    """'group/subgroup/project' with plain path segments only (no '.', '..',
+    empty segments or control/special characters)."""
+    p = str(path_with_namespace or "")
+    parts = p.split("/")
+    if len(parts) < min_segments or any(
+            not _SEGMENT_RE.fullmatch(x) or x in (".", "..") for x in parts):
+        raise ValueError(f"invalid GitLab project path: {p!r}")
+    return p
+
+
+def _seg(value) -> str:
+    return urllib.parse.quote(str(value), safe="")
+
+
 def parse_repo_url(url: str):
     """Accept https/ssh/path/with/namespace forms → 'namespace/path' string."""
     url = (url or "").strip().rstrip("/")
     m = _URL_RE.search(url)
     if m:
-        return m.group(1)
+        return validate_project_path(m.group(1), min_segments=1)
     if "/" in url and " " not in url:
-        return url.removesuffix(".git")
+        return validate_project_path(url.removesuffix(".git"), min_segments=1)
     raise ValueError(f"could not parse GitLab project path: {url!r}")
 
 
@@ -36,7 +54,7 @@ class GitLab:
         return h
 
     def _enc(self, path_with_namespace):
-        return urllib.parse.quote(path_with_namespace, safe="")
+        return urllib.parse.quote(validate_project_path(path_with_namespace), safe="")
 
     def _get(self, path, params=None):
         r = httpx.get(f"{self.api}{path}", headers=self._headers(),
@@ -74,7 +92,7 @@ class GitLab:
         return self._post(f"/projects/{self._enc(project_path)}/hooks", body)
 
     def delete_webhook(self, project_path, hook_id):
-        r = httpx.delete(f"{self.api}/projects/{self._enc(project_path)}/hooks/{hook_id}",
+        r = httpx.delete(f"{self.api}/projects/{self._enc(project_path)}/hooks/{_seg(hook_id)}",
                          headers=self._headers(), timeout=30.0)
         if r.status_code not in (200, 204, 404):
             r.raise_for_status()
@@ -82,10 +100,10 @@ class GitLab:
 
     # ---- MR / commits --------------------------------------------------------
     def get_mr(self, project_path, iid):
-        return self._get(f"/projects/{self._enc(project_path)}/merge_requests/{iid}")
+        return self._get(f"/projects/{self._enc(project_path)}/merge_requests/{_seg(iid)}")
 
     def get_mr_changes(self, project_path, iid):
-        return self._get(f"/projects/{self._enc(project_path)}/merge_requests/{iid}/changes")
+        return self._get(f"/projects/{self._enc(project_path)}/merge_requests/{_seg(iid)}/changes")
 
     def branch_sha(self, project_path, branch):
         return self._get(

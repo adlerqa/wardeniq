@@ -4,6 +4,8 @@ import json
 import os
 import re
 
+import github
+
 from core.logging_setup import get_logger
 
 log = get_logger("coverage")
@@ -51,7 +53,9 @@ def generate_feature_code(llm, language: str, feature_name: str,
     files = []
     for f in (data.get("files") or [])[:5]:
         if isinstance(f, dict) and f.get("path") and f.get("content"):
-            files.append({"path": str(f["path"]).lstrip("/")[:200], "content": str(f["content"])})
+            path = github.safe_repo_path(str(f["path"])[:200])
+            if path:   # unsafe/out-of-tree/CI-config paths are dropped, never written
+                files.append({"path": path, "content": str(f["content"])})
     if not files:
         return {"error": "model returned no files"}
     return {"files": files, "notes": str(data.get("notes", ""))[:300]}
