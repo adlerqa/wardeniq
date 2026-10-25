@@ -10,6 +10,7 @@ code_coverage domains), consolidated into one router file here since they're
 all genuinely the same domain (steps + test cases).
 """
 from fastapi import APIRouter, HTTPException, Request
+from llm import TEST_TYPES
 from pydantic import BaseModel
 
 from core import state
@@ -21,6 +22,17 @@ from core.security import (
 from core.state import store
 
 router = APIRouter()
+
+# Allowed test-case categories: the generated types plus the manual "ui" category
+# (and the derived "integration" grouping used by reports).
+CASE_TYPES = frozenset(TEST_TYPES) | {"ui", "integration"}
+
+
+def _validate_case_type(ctype: str) -> str:
+    ctype = (ctype or "").strip().lower()
+    if ctype not in CASE_TYPES:
+        raise HTTPException(422, "type must be one of: " + ", ".join(sorted(CASE_TYPES)))
+    return ctype
 
 
 @router.get("/api/steps")
@@ -89,9 +101,10 @@ class CaseExecutionUpdate(BaseModel):
 
 @router.put("/api/test-cases/{cid}")
 def update_case(cid: str, body: CaseEdit, request: Request):
-    _require_case_project(request, cid)
     """Full edit: metadata + steps (add/remove/reorder). Editing an existing
     step updates the shared step → propagates to every case that references it."""
+    _require_case_project(request, cid)
+    ctype = _validate_case_type(body.type)
     step_ids, propagated = [], 0
     for s in body.steps:
         action = (s.get("action") or "").strip()
@@ -109,7 +122,7 @@ def update_case(cid: str, body: CaseEdit, request: Request):
             step_ids.append(r["step_id"])
     cemb = state.embedder.embed(body.title + " " + " ".join(
         f"{s.get('action','')} {s.get('expected','')}" for s in body.steps))
-    store.update_case(cid, body.title, body.type, body.priority,
+    store.update_case(cid, body.title, ctype, body.priority,
                       body.preconditions, body.tags, step_ids, cemb)
     return {"updated": cid, "steps": len(step_ids),
             "other_cases_affected_by_step_edits": propagated}
@@ -138,6 +151,7 @@ class NewCaseIn(BaseModel):
 @router.post("/api/test-cases")
 def create_test_case(body: NewCaseIn, request: Request):
     _require_feature_project(request, body.feature_id)   # scope to the case's feature
+    ctype = _validate_case_type(body.type)
     step_ids = []
     for s in body.steps:
         a = (s.get("action") or "").strip(); e = (s.get("expected") or "").strip()
@@ -147,7 +161,7 @@ def create_test_case(body: NewCaseIn, request: Request):
         step_ids.append(store.get_or_create_step(a, e, emb, STEP_AUTO)["step_id"])
     cemb = state.embedder.embed(body.title + " " + " ".join(
         f"{s.get('action','')} {s.get('expected','')}" for s in body.steps))
-    cid = store.create_case(body.title, body.type, body.priority, body.preconditions,
+    cid = store.create_case(body.title, ctype, body.priority, body.preconditions,
                             step_ids, body.tags, cemb, body.feature_id)
     store.associate(body.feature_id, cid, "manual", None)
     created = store.get_case(cid) or {}
