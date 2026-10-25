@@ -361,6 +361,11 @@ startup and secrets.
 | `ADMIN_PASSWORD` | _(empty)_ | Bootstrap password for the local `admin` login (the installer prompts for it). Set ⇒ replaces the `admin123` default. Blank ⇒ `admin123` with forced change on first login |
 | `COOKIE_SECURE` | `false` | Set `true` when serving over HTTPS |
 | `SESSION_TTL_SECONDS` / `OTP_TTL_SECONDS` | `604800` / `600` | Session lifetime (7 d) / code lifetime (10 min) |
+| `OTP_DEV_CODES` | `false` | Demo/evaluation only: without SMTP, log **and** show every sign-in code on the sign-in screen. Ignored when `APP_ENV=production`. Off ⇒ only the bootstrap admin's code is printed to the server log |
+| `AUTH_MAX_FAILURES_PER_ACCOUNT` / `AUTH_MAX_FAILURES_PER_IP` | `10` / `50` | Failed sign-in / code / reset attempts allowed per account and per client IP within `AUTH_FAILURE_WINDOW_SECONDS` before a lockout |
+| `AUTH_FAILURE_WINDOW_SECONDS` / `AUTH_LOCKOUT_SECONDS` | `900` / `900` | Failure-counting window and lockout duration (seconds) |
+| `RESET_CODE_MAX_PER_WINDOW` | `3` | Password-reset codes emailed to one account per `OTP_WINDOW_SECONDS` |
+| `TRUSTED_PROXIES` | _(empty)_ | Comma-separated reverse-proxy IPs/CIDRs whose `X-Forwarded-For` is trusted for client-IP rate limiting. Blank ⇒ the header is ignored |
 | `MONGO_URI` | _(empty = bundled DB)_ | Bring your own MongoDB; also settable in-app |
 | `MONGO_IMAGE` / `MONGOT_IMAGE` | pinned | Override the bundled MongoDB / mongot images. Bundled MongoDB must be **8.1+** because `config/mongod.conf` enables `useGrpcForSearch` for mongot's gRPC transport |
 | `APP_IMAGE` | `adlerqa/wardeniq:latest` _(set by the installer; empty = build from source)_ | Which published image tag to run. `latest` tracks every release; pin e.g. `adlerqa/wardeniq:0.2.0` to freeze a version |

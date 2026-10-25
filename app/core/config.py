@@ -109,6 +109,38 @@ PROVIDER_LOCK = os.getenv("LLM_PROVIDER_LOCK", "").strip().lower()
 # OTP_WINDOW_SECONDS (stops email-bombing / code brute-force churn).
 OTP_WINDOW_SECONDS = int(os.getenv("OTP_WINDOW_SECONDS", "900"))   # 15 min
 OTP_MAX_PER_WINDOW = int(os.getenv("OTP_MAX_PER_WINDOW", "5"))
+# Without SMTP, sign-in codes are only printed to the server log for the bootstrap
+# admin. OTP_DEV_CODES=true additionally logs every code and returns it to the sign-in
+# screen (demo/evaluation installs only) -- never honoured when APP_ENV=production.
+OTP_DEV_CODES = (os.getenv("OTP_DEV_CODES", "false").strip().lower() == "true"
+                 and not IS_PRODUCTION)
+
+
+def _env_int(name, default):
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+# Brute-force protection for password sign-in, OTP verification, password reset and
+# the APP_SECRET master reset: failures are counted per account and per client IP in
+# a rolling window; reaching the limit locks that key out for AUTH_LOCKOUT_SECONDS.
+AUTH_FAILURE_WINDOW_SECONDS = _env_int("AUTH_FAILURE_WINDOW_SECONDS", 900)
+AUTH_LOCKOUT_SECONDS = _env_int("AUTH_LOCKOUT_SECONDS", 900)
+AUTH_MAX_FAILURES_PER_ACCOUNT = _env_int("AUTH_MAX_FAILURES_PER_ACCOUNT", 10)
+AUTH_MAX_FAILURES_PER_IP = _env_int("AUTH_MAX_FAILURES_PER_IP", 50)
+# Password-reset codes issued to one account per window (throttled requests are not
+# counted and never reset the attempt counter of an outstanding code).
+RESET_CODE_MAX_PER_WINDOW = _env_int("RESET_CODE_MAX_PER_WINDOW", 3)
+# Comma-separated proxy IPs/CIDRs whose X-Forwarded-For header is trusted when
+# identifying the client IP for rate limiting. Empty = never trust the header.
+TRUSTED_PROXIES = [x.strip() for x in os.getenv("TRUSTED_PROXIES", "").split(",") if x.strip()]
+# Upload / download size caps (MB): request bodies for document/sheet uploads, the
+# total uncompressed size of .docx/.xlsx archives, and repository archives.
+MAX_UPLOAD_MB = _env_int("MAX_UPLOAD_MB", 25)
+MAX_ARCHIVE_UNCOMPRESSED_MB = _env_int("MAX_ARCHIVE_UNCOMPRESSED_MB", 200)
+MAX_REPO_ARCHIVE_MB = _env_int("MAX_REPO_ARCHIVE_MB", 500)
 
 # Stale-job sweep (Phase 4, REFACTOR_PLAN.md): how long a "running" job can go without
 # a heartbeat before background/schedulers.py's `_stale_job_sweeper` fails it, and how

@@ -129,13 +129,16 @@ class BaseStore:
                      "project_imported_row_sources", "project_imported_row_feature_map",
                      "project_imported_row_promotions",
                      "project_imported_row_corrections", "import_analysis_status",
-                     "stored_documents", "coverage_snapshots"]:
+                     "stored_documents", "coverage_snapshots", "auth_throttle"]:
             if name not in self.db.list_collection_names():
                 self.db.create_collection(name)
         self.documents.create_index([("project_id", 1), ("created_at", -1)])
         self.documents.create_index([("feature_id", 1)])
         self.users.create_index([("email", 1)], unique=True)
         self.api_tokens.create_index([("token_hash", 1)], unique=True)
+        # Rate-limit bookkeeping expires on its own (TTL indexes).
+        self.api_token_failures.create_index([("expires_at", 1)], expireAfterSeconds=0)
+        self.db["auth_throttle"].create_index([("expires_at", 1)], expireAfterSeconds=0)
         self.assoc.create_index([("feature_id", 1), ("test_case_id", 1)], unique=True)
         self.repos.create_index([("project_id", 1), ("full_name", 1)], unique=True)
         self.prs.create_index([("repo_id", 1), ("number", 1)], unique=True)
