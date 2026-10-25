@@ -202,6 +202,11 @@ async def auth_gateway(request: Request, call_next):
     if int(user.get("session_version", 0)) != int(tok_sv):
         return JSONResponse({"detail": "session expired — please sign in again"},
                             status_code=401)
+    # An invited user must accept the invite before using the app. Only the
+    # self-service invite/auth routes (public-listed above) stay reachable.
+    if user.get("invite_status") == "pending":
+        return JSONResponse({"detail": "accept your invitation before using the app"},
+                            status_code=403)
     if not auth.has_role(user.get("role", "viewer"), _min_role(request.method, path)):
         # Local import: core/audit.py imports _current_user from this module for its
         # generic actor-resolution fallback, so a module-level import here (security

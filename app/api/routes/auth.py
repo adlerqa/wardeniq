@@ -192,9 +192,11 @@ def verify_otp(body: OtpVerifyIn, response: Response, request: Request = None):
     if not auth.otp_matches(user["otp_hash"], body.code):
         store.inc_otp_attempts(user["id"])
         throttle.fail(store, tkeys)
+        _audit(request, "auth.login_failed", target=email, actor={}, detail="one-time code")
         raise HTTPException(401, "invalid email or code")
 
     throttle.succeed(store, tkeys)
+    _audit(request, "auth.login", target=email, actor=user, detail="one-time code")
     store.clear_otp(user["id"])
     if migrating:
         store.update_user(user["id"], {"email": email, "name": email.split("@")[0]})
@@ -281,6 +283,7 @@ def login_password(body: LoginPasswordIn, response: Response, request: Request =
                 status = public_boot_status()
                 raise HTTPException(503, " ".join(filter(None, [status["detail"], _NO_USERS_MESSAGE])))
             throttle.fail(store, tkeys)
+            _audit(request, "auth.login_failed", target=username, actor={}, detail="password")
             raise HTTPException(401, "Invalid username or password")
         user = store.create_user("admin", "Admin", "admin")
     else:
@@ -301,12 +304,16 @@ def login_password(body: LoginPasswordIn, response: Response, request: Request =
             ok = False
         if not ok:
             throttle.fail(store, tkeys)
+            _audit(request, "auth.login_failed", target=username, actor={}, detail="password")
             raise HTTPException(401, "Invalid username or password")
 
     if not user.get("active"):
+        _audit(request, "auth.login_failed", target=username, actor={},
+               detail="password; account deactivated")
         raise HTTPException(401, "User account is deactivated")
 
     throttle.succeed(store, tkeys)
+    _audit(request, "auth.login", target=user.get("email"), actor=user, detail="password")
     store.touch_login(user["id"])
     fresh = store.get_user(user["id"]) or user
     response.set_cookie(auth.SESSION_COOKIE,
@@ -485,6 +492,8 @@ def reset_password_master(body: ResetPasswordMasterIn, request: Request = None):
     effective_secret = auth._session_secret()
     if not hmac.compare_digest(provided_secret.encode(), effective_secret.encode()):
         throttle.fail(store, tkeys)
+        _audit(request, "auth.master_reset_failed", target=(body.username or "admin").strip(),
+               actor={}, detail="invalid master secret")
         raise HTTPException(401, "Invalid App Master Secret")
 
     target = (body.username or "admin").strip()
@@ -500,13 +509,23 @@ def reset_password_master(body: ResetPasswordMasterIn, request: Request = None):
 
     if not user.get("active"):
         raise HTTPException(401, "User account is deactivated")
+    # Recovery path for administrators only (incl. the bootstrap `admin` account);
+    # other accounts reset via an emailed code or an administrator.
+    if user.get("role") != "admin":
+        _audit(request, "auth.master_reset_failed", target=target, actor={},
+               detail="target is not an admin account")
+        raise HTTPException(403, "The master reset only applies to administrator accounts")
 
     errs = auth.password_policy_errors(body.new_password)
     if errs:
         raise HTTPException(400, "Password must have " + ", ".join(errs) + ".")
 
+    # set_user_password() bumps session_version, so every existing session of this
+    # account is signed out.
     store.set_user_password(user["id"], auth.hash_password(body.new_password))
     store.clear_reset_code(user["id"])
+    _audit(request, "auth.master_reset", target=user.get("email") or target, actor={},
+           detail="password reset with the master secret; sessions revoked")
     return {"reset": True, "message": "Password reset successfully using App Master Secret. You can now sign in."}
 
 

@@ -21,6 +21,9 @@ def _audit(request, action, target=None, old=None, new=None, actor=None, detail=
     Never raises — auditing must not break the action it records."""
     try:
         actor = actor if actor is not None else _current_user(request)
+        if isinstance(actor, dict) and actor.get("is_service_account") and not actor.get("email"):
+            # API-token principal: record which token acted (it has no email).
+            actor = {**actor, "email": f"api-token:{actor.get('name') or actor.get('token_id')}"}
         ip = None
         ua = None
         if request is not None:

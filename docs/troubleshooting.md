@@ -15,7 +15,7 @@
 - **I can't sign in / Forgot my password.**
   - **Via Web UI (Email or App Master Secret)**: Click **"Forgot password?"** on the sign-in screen.
     - **If SMTP is configured**: Enter your email address to receive a 6-digit reset code in your inbox.
-    - **If SMTP is NOT configured (Docker image users)**: Enter username (`admin`), your container's **App Master Secret** (`APP_SECRET` from your container environment), and your new password to reset directly in your web browser.
+    - **If SMTP is NOT configured (Docker image users)**: Enter username (`admin`), your container's **App Master Secret** (`APP_SECRET` from your container environment), and your new password to reset directly in your web browser. The master-secret reset only works for administrator accounts (including the bootstrap `admin`), signs out every existing session of that account, is recorded in the audit log, and is rate-limited per client IP.
   - **Via a helper script (from the host, no `docker exec -it` needed)**: Run
     `./scripts/reset-admin-password.sh` (or
     `./scripts/reset-admin-password.sh "NewPassword123"` non-interactively). It
