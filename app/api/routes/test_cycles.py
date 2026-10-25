@@ -8,6 +8,8 @@ same 17 paths, same status codes, same response shapes. Local imports
 Response`, `import report`) are kept exactly where they were (inside the handler
 body), not hoisted, so this diff is a pure move.
 """
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
@@ -78,13 +80,26 @@ class CycleStatusIn(BaseModel):
     notes: str = ""
 
 
+def _validate_defect_link(link: str) -> str:
+    """Defect links are rendered as links: only absolute http(s) URLs (or empty)."""
+    link = (link or "").strip()
+    if not link:
+        return ""
+    p = urlparse(link)
+    if p.scheme.lower() not in ("http", "https") or not p.netloc \
+            or any(c.isspace() or ord(c) < 32 for c in link):
+        raise HTTPException(400, "defect link must be an http(s) URL")
+    return link
+
+
 @router.patch("/api/test-cycles/{cid}/items")
 def set_cycle_status(cid: str, body: CycleStatusIn, request: Request):
     user = _current_user(request)
+    defect_link = _validate_defect_link(body.defect_link)
     try:
         item = store.set_cycle_item_status(
             cid, body.item_id or body.case_id or "", body.status,
-            body.actual_result, body.defect_link, body.notes,
+            body.actual_result, defect_link, body.notes,
             executed_by=(user or {}).get("email"),
         )
         return {"ok": True, "item": item, "cycle": store.get_cycle(cid)}

@@ -6,6 +6,9 @@ changed from `@app.` to `@router.` only — same paths, same status codes, same
 response shapes. `s3_storage` is imported locally inside each handler, exactly as it
 was in main.py (not hoisted to module level), so this diff is a pure move.
 """
+import re
+from urllib.parse import quote
+
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 
 from core.logging_setup import get_logger
@@ -17,6 +20,14 @@ from core.security import (
 from core.state import store
 
 log = get_logger("documents")
+
+
+def _content_disposition(filename: str) -> str:
+    """attachment header with an ASCII-safe fallback name plus the RFC 5987
+    `filename*` form, so a stored filename can't inject header parameters."""
+    name = (filename or "document").replace("\r", "").replace("\n", "")
+    fallback = re.sub(r'[^A-Za-z0-9._ -]', "_", name).strip() or "document"
+    return f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{quote(name, safe="")}'
 
 router = APIRouter()
 
@@ -59,7 +70,7 @@ async def upload_document_endpoint(
         return meta
     except Exception as e:
         log.error("[s3-upload-error] %r", e)
-        raise HTTPException(500, detail=f"Failed to upload document to AWS S3: {e}")
+        raise HTTPException(500, detail="Failed to upload document to storage — see server logs")
 
 
 @router.get("/api/documents")
@@ -110,11 +121,11 @@ def download_document_endpoint(doc_id: str, request: Request):
         return Response(
             content=content,
             media_type=content_type,
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers={"Content-Disposition": _content_disposition(filename)},
         )
     except Exception as e:
         log.error("[s3-download-error] %r", e)
-        raise HTTPException(500, detail=f"Failed to download document from AWS S3: {e}")
+        raise HTTPException(500, detail="Failed to download document from storage — see server logs")
 
 
 @router.delete("/api/documents/{doc_id}")

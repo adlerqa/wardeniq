@@ -471,7 +471,11 @@ def ollama_models():
     Ollama URL + the saved LLM token (for a secured/remote Ollama). Best-effort."""
     url = current_ollama_url().rstrip("/")
     s = store.get_settings()
-    key = crypto.decrypt(s.get("llm_api_key_enc", "")) if s.get("llm_api_key_enc") else ""
+    # The saved LLM key is only sent when it IS an Ollama token (provider=ollama);
+    # a hosted provider's key never goes to the Ollama endpoint.
+    key = (crypto.decrypt(s.get("llm_api_key_enc", ""))
+           if s.get("llm_api_key_enc") and (PROVIDER_LOCK or s.get("llm_provider", "ollama")) == "ollama"
+           else "")
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     try:
         import httpx

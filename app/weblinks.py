@@ -30,8 +30,14 @@ def _is_blocked_ip(ip: str) -> bool:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return True
-    return (addr.is_private or addr.is_loopback or addr.is_link_local
-            or addr.is_reserved or addr.is_multicast or addr.is_unspecified)
+    # IPv4-mapped / NAT64-style IPv6 forms are judged by the IPv4 address inside.
+    if addr.version == 6 and addr.ipv4_mapped is not None:
+        addr = addr.ipv4_mapped
+    # Only globally routable unicast addresses are allowed (this also excludes
+    # shared address space such as 100.64.0.0/10, documentation ranges, etc.).
+    return (not addr.is_global or addr.is_multicast or addr.is_private
+            or addr.is_loopback or addr.is_link_local or addr.is_reserved
+            or addr.is_unspecified)
 
 
 def _resolve_and_validate(url: str):

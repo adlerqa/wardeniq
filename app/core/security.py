@@ -58,8 +58,11 @@ ADMIN_PATHS = ("/api/users", "/api/settings", "/api/llm/test", "/api/jira/test",
                # Switching the embedding provider persists global config (and may
                # carry a credential), so it is a settings operation.
                "/api/embedding")
-# Read-style POSTs that viewers are allowed to call.
-VIEWER_POST_OK = ("/api/retrieve",)
+# Read-style POSTs that viewers are allowed to call, plus self-service account
+# routes every signed-in user (incl. viewers) may use on their OWN account.
+VIEWER_POST_OK = ("/api/retrieve", "/api/auth/change-password")
+# Reads that need at least editor (they reach out to configured services).
+EDITOR_READ_PATHS = ("/api/ollama/models",)
 # Secret-handling routes that live UNDER /api/projects/... (so they escape the
 # ADMIN_PATHS prefixes) but must still require admin. Storing/clearing a Git PAT or
 # creating a repo (which persists an encrypted webhook secret) is a credentials
@@ -149,6 +152,8 @@ def _min_role(method: str, path: str) -> str:
         return "admin"
     if method in ("POST", "PUT", "PATCH", "DELETE"):
         return "viewer" if path in VIEWER_POST_OK else "editor"
+    if path in EDITOR_READ_PATHS:
+        return "editor"
     return "viewer"
 
 

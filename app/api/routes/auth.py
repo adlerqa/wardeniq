@@ -542,7 +542,20 @@ def auth_me(request: Request):
 
 
 @router.post("/api/auth/logout")
-def logout(response: Response):
+def logout(request: Request, response: Response):
+    """Sign out. A valid, current session is also revoked server-side (the user's
+    session_version is bumped), so the cookie value can't be replayed afterwards.
+    Note this ends every session of that user, on all devices."""
+    sess = auth.verify_session(request.cookies.get(auth.SESSION_COOKIE))
+    if sess:
+        uid, tok_sv = sess
+        try:
+            user = store.get_user(uid)
+            if user and int(user.get("session_version", 0)) == int(tok_sv):
+                store.bump_session_version(uid)
+                _audit(request, "auth.logout", target=user.get("email"), actor=user)
+        except Exception as e:  # noqa: BLE001 — logout must always clear the cookie
+            log.warning("logout: could not revoke session for %s: %r", uid, e)
     response.delete_cookie(auth.SESSION_COOKIE, path="/")
     return {"ok": True}
 
