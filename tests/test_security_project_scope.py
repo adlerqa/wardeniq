@@ -107,7 +107,8 @@ def _value_for(field_name, annotation):
 def _request_kwargs(route: APIRoute):
     if not route.body_field:
         return {}
-    model = route.body_field.type_
+    bf = route.body_field
+    model = getattr(bf, "type_", None) or bf.field_info.annotation
     if model is dict:
         return {"json": {"case_ids": [OTHER], "item_ids": [OTHER], "status": "passed",
                          "testCaseIds": [OTHER], "feature_id": OTHER, "project_id": OTHER}}
@@ -127,28 +128,38 @@ def _request_kwargs(route: APIRoute):
     return {"json": {}}
 
 
+def _api_routes(routes, prefix=""):
+    """Every APIRoute with its full path. Newer FastAPI keeps included routers as
+    lazy `_IncludedRouter` entries in app.routes, so walk into those too."""
+    for r in routes:
+        if isinstance(r, APIRoute):
+            yield prefix + r.path, r
+        elif hasattr(r, "original_router"):
+            sub = getattr(getattr(r, "include_context", None), "prefix", "") or ""
+            yield from _api_routes(r.original_router.routes, prefix + sub)
+
+
 def _scoped_routes():
     out = []
-    for r in main.app.routes:
-        if not isinstance(r, APIRoute) or not r.path.startswith("/api/"):
-            continue
-        if r.path.startswith(SELF_SERVICE_PREFIXES):
+    for path, r in _api_routes(main.app.routes):
+        if not path.startswith("/api/") or path.startswith(SELF_SERVICE_PREFIXES):
             continue
         for m in sorted(r.methods):
-            key = (m, r.path)
+            key = (m, path)
             if key in NOT_PROJECT_SCOPED or key in FILTERED:
                 continue
-            out.append(pytest.param(m, r, id=f"{m} {r.path}"))
+            out.append(pytest.param(m, path, r, id=f"{m} {path}"))
+    assert len(out) > 100, "route enumeration found too few routes"
     return out
 
 
-@pytest.mark.parametrize("method,route", _scoped_routes())
-def test_scoped_user_refused_for_other_project(fake_store, method, route):
-    path = route.path
+@pytest.mark.parametrize("method,full_path,route", _scoped_routes())
+def test_scoped_user_refused_for_other_project(fake_store, method, full_path, route):
+    path = full_path
     for p in route.param_convertors:
         path = path.replace("{" + p + "}", "csv" if p == "fmt" else OTHER)
     r = client.request(method, path, cookies=_cookie(), **_request_kwargs(route))
-    assert r.status_code in (403, 404), (method, route.path, r.status_code, r.text[:300])
+    assert r.status_code in (403, 404), (method, full_path, r.status_code, r.text[:300])
 
 
 # ------------------------------------------------------------ filtered collections

@@ -1,12 +1,13 @@
-fastapi==0.115.6
+fastapi==0.142.4
+starlette==1.6.0         # pinned explicitly: patched release (FastAPI only sets a lower bound)
 uvicorn[standard]==0.34.0
-pymongo==4.10.1
+pymongo==4.18.2
 dnspython==2.7.0          # required for mongodb+srv:// URIs (MongoDB Atlas / cloud)
 httpx==0.28.1
-python-multipart==0.0.20
-pypdf==5.1.0
+python-multipart==0.0.32
+pypdf==6.21.2
 python-docx==1.1.2
-cryptography==44.0.0
+cryptography==50.0.2
 reportlab==4.2.5
 
 # --- code-intelligence: grounded parsing / matching / fast vector math ---
@@ -21,6 +22,6 @@ tree-sitter-go==0.25.0
 tree-sitter-java==0.23.5
 tree-sitter-ruby==0.23.1
 rank-bm25==0.2.2          # lexical BM25 for hybrid (lexical+vector) code retrieval
-json-repair==0.35.0
+json-repair==0.60.1
 openpyxl==3.1.5            # XLSX read/write for Import Sheet feature
 boto3==1.35.99            # AWS Bedrock provider (LLM + embeddings); imported lazily — only used when provider=bedrock

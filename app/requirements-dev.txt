@@ -1,7 +1,9 @@
 # Dev / test dependencies (not needed at runtime).
 # Install with:  pip install -r app/requirements.txt -r app/requirements-dev.txt
-pytest==8.3.4
+pytest==9.1.1
 pytest-mock==3.14.0
+# In-memory MongoDB used by the store-level tests (they skip without it).
+mongomock==4.3.0
 ruff==0.8.4
 # Used by the CI "typecheck" job (informational — see .github/workflows/ci.yml).
 mypy==1.13.0
