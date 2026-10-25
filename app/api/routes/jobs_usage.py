@@ -86,16 +86,22 @@ def switch_embedding(body: EmbeddingIn):
     if not model:
         raise HTTPException(400, "an embedding model name is required")
     s = store.get_settings()
-    # reuse the stored key if the caller didn't supply a new one
-    key = (body.api_key or "").strip() or (
-        crypto.decrypt(s.get("embed_api_key_enc", "")) if s.get("embed_api_key_enc") else "")
+    base_url = (body.base_url or "").strip()
+    # Reuse the stored key only when the caller didn't supply a new one AND the key
+    # would go to the same destination it was saved for (same provider + endpoint).
+    # A stored credential is never forwarded to a different provider or base URL.
+    same_target = (provider == (s.get("embed_provider") or "ollama")
+                   and base_url == (s.get("embed_base_url") or "").strip())
+    supplied = (body.api_key or "").strip()
+    reuse_stored = not supplied and same_target and bool(s.get("embed_api_key_enc"))
+    key = supplied or (crypto.decrypt(s.get("embed_api_key_enc", "")) if reuse_stored else "")
     region = (body.region or "").strip() if body.region is not None else s.get("embed_region", "")
     # Bedrock authenticates via region + (IAM role or access:secret in api_key),
     # so it doesn't require a standalone API key the way other hosted providers do.
     if provider not in ("ollama", "bedrock") and not key:
         raise HTTPException(400, f"{provider} needs an API key")
     trial = Embedder(provider=provider, model=model, api_key=key,
-                     base_url=(body.base_url or "").strip(), ollama_url=current_ollama_url(),
+                     base_url=base_url, ollama_url=current_ollama_url(),
                      region=region)
     # Probe: confirms connectivity/auth AND measures the true output dimension.
     try:
@@ -105,10 +111,14 @@ def switch_embedding(body: EmbeddingIn):
     if not dim or dim < 8:
         raise HTTPException(400, "embedding provider returned an invalid vector")
     upd = {"embed_provider": provider, "embed_model": model,
-           "embed_base_url": (body.base_url or "").strip(),
+           "embed_base_url": base_url,
            "embed_region": region, "embed_dim": int(dim)}
     if body.api_key is not None:
         upd["embed_api_key_enc"] = crypto.encrypt(body.api_key) if body.api_key else ""
+    elif not same_target:
+        # Destination changed without a new key: drop the old one so it is never
+        # sent to the new endpoint by later embedding calls.
+        upd["embed_api_key_enc"] = ""
     store.save_settings(upd)
     jid = launch_job("reembed", {"dim": int(dim)},
                      label=f"Re-embed all vectors → {provider}/{model} ({dim}-d)")

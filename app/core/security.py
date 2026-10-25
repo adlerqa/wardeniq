@@ -54,7 +54,10 @@ PUBLIC_PREFIX = ("/assets/",) if IS_PRODUCTION else ("/assets/", "/docs", "/redo
 # Admin-only areas (config + user management). Matched by exact or "<p>/..." prefix.
 ADMIN_PATHS = ("/api/users", "/api/settings", "/api/llm/test", "/api/jira/test",
                "/api/smtp/test", "/api/settings/s3/test", "/api/audit-logs", "/api/db-status", "/api/db-config",
-               "/api/db-migrate", "/api/api-tokens")
+               "/api/db-migrate", "/api/api-tokens",
+               # Switching the embedding provider persists global config (and may
+               # carry a credential), so it is a settings operation.
+               "/api/embedding")
 # Read-style POSTs that viewers are allowed to call.
 VIEWER_POST_OK = ("/api/retrieve",)
 # Secret-handling routes that live UNDER /api/projects/... (so they escape the
