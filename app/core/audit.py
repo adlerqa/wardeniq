@@ -7,6 +7,7 @@ when a caller doesn't pass `actor` explicitly) — `core/security.py`'s
 function-level import to avoid a module-level cycle (see the comment at that
 call site).
 """
+from core.client_ip import client_ip
 from core.logging_setup import get_logger
 from core.security import _current_user
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
@@ -23,8 +24,7 @@ def _audit(request, action, target=None, old=None, new=None, actor=None, detail=
         ip = None
         ua = None
         if request is not None:
-            ip = (request.headers.get("x-forwarded-for") or
-                  (request.client.host if request.client else None))
+            ip = client_ip(request)
             ua = request.headers.get("user-agent")
         store.add_audit(action, actor=actor, target=target, old=old, new=new,
                         ip=ip, user_agent=ua, detail=detail)

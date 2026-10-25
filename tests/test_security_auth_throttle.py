@@ -195,3 +195,34 @@ def test_client_ip_uses_forwarded_header_only_from_trusted_proxy():
     assert client_ip_mod.client_ip(_Req("10.0.0.5", "1.2.3.4, 10.0.0.9"), trusted) == "1.2.3.4"
     assert client_ip_mod.client_ip(_Req("8.8.8.8", "1.2.3.4"), trusted) == "8.8.8.8"
     assert client_ip_mod.client_ip(_Req("10.0.0.5", "garbage"), trusted) == "10.0.0.5"
+
+
+# ------------------------------------------------------------ API-token failures
+def test_token_failures_keyed_on_peer_not_forwarded_header(monkeypatch):
+    from core import token_auth
+    seen = []
+    fake = type("S", (), {
+        "api_token_failure_count": lambda self, k, w: seen.append(k) or 0,
+        "get_api_token_by_hash": lambda self, h: None,
+        "record_api_token_failure": lambda self, k, w: None,
+    })()
+    monkeypatch.setattr(token_auth, "store", fake)
+    req = _Req("203.0.113.7", "1.1.1.1")
+    req.headers["authorization"] = "Bearer wq_bad"
+    assert token_auth.bearer_token_principal(req) is None
+    assert seen == ["203.0.113.7"]
+
+
+def test_token_failure_docs_expire_and_are_capped(st):
+    for _ in range(60):
+        n = st.record_api_token_failure("198.51.100.1", 300)
+    doc = st.api_token_failures.find_one({"_id": "198.51.100.1"})
+    assert len(doc["attempts"]) == 50 and n == 50
+    assert doc["expires_at"] is not None
+
+
+def test_ensure_indexes_creates_ttl_indexes():
+    import inspect
+    src = inspect.getsource(store_base.BaseStore.ensure_indexes)
+    assert 'self.api_token_failures.create_index([("expires_at", 1)], expireAfterSeconds=0)' in src
+    assert 'self.db["auth_throttle"].create_index([("expires_at", 1)], expireAfterSeconds=0)' in src
