@@ -37,7 +37,10 @@ from core.deps import (
     current_llm, figma_client, jira_client,
 )
 from core.logging_setup import get_logger
-from core.security import _allowed_project_ids, _current_user, _require_feature_project, _require_project
+from core.security import (
+    _allowed_project_ids, _current_user, _require_cases_accessible, _require_feature_project,
+    _require_project,
+)
 from core.state import store
 from workers.registry import launch_job
 
@@ -81,6 +84,9 @@ async def create_feature(request: Request, name: str = Form(...), project_id: st
                          confluence_children: bool = Form(True),
                          figma_url: list[str] = Form(default=[]),
                          files: list[UploadFile] = File(None)):
+    # Check project access before reading/parsing anything.
+    if project_id:
+        _require_project(request, project_id)
     # Combine every uploaded doc (PRD/HLD/LLD/…) + pasted text into one corpus,
     # each section labelled so the LLM and the embeddings keep document context.
     parts, sources, pdf_urls = [], [], []
@@ -367,7 +373,8 @@ class AssociateIn(BaseModel):
 
 
 @router.post("/api/features/{fid}/associate")
-def associate(fid: str, body: AssociateIn):
+def associate(fid: str, body: AssociateIn, request: Request):
+    _require_cases_accessible(request, [body.case_id])
     store.associate(fid, body.case_id, "manual", None)
     return {"associated": body.case_id}
 

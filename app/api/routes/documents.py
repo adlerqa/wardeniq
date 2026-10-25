@@ -9,6 +9,10 @@ was in main.py (not hoisted to module level), so this diff is a pure move.
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 
 from core.logging_setup import get_logger
+from core.security import (
+    _allowed_project_ids, _current_user, _project_of_feature,
+    _require_document_project, _require_project,
+)
 from core.state import store
 
 log = get_logger("documents")
@@ -24,6 +28,10 @@ async def upload_document_endpoint(
     feature_id: str = Form(""),
 ):
     from s3_storage import s3_storage
+    if project_id or _allowed_project_ids(_current_user(request)) is not None:
+        _require_project(request, project_id)
+    if feature_id and _project_of_feature(feature_id) != (project_id or None):
+        raise HTTPException(400, detail="feature does not belong to this project")
     if not file or not file.filename:
         raise HTTPException(400, detail="No file provided")
     content = await file.read()
@@ -54,9 +62,14 @@ async def upload_document_endpoint(
 
 
 @router.get("/api/documents")
-def list_documents_endpoint(project_id: str = "", feature_id: str = ""):
+def list_documents_endpoint(request: Request, project_id: str = "", feature_id: str = ""):
     from s3_storage import s3_storage
+    if project_id:
+        _require_project(request, project_id)
     docs = store.list_stored_documents(project_id=project_id or None, feature_id=feature_id or None)
+    allowed = _allowed_project_ids(_current_user(request))
+    if allowed is not None:
+        docs = [d for d in docs if d.get("project_id") in allowed]
     is_s3 = s3_storage.is_configured()
     for d in docs:
         if is_s3 and d.get("s3_key"):
@@ -68,11 +81,12 @@ def list_documents_endpoint(project_id: str = "", feature_id: str = ""):
 
 
 @router.get("/api/documents/{doc_id}")
-def get_document_endpoint(doc_id: str):
+def get_document_endpoint(doc_id: str, request: Request):
     from s3_storage import s3_storage
     doc = store.get_stored_document(doc_id)
     if not doc:
         raise HTTPException(404, detail="Document not found")
+    _require_document_project(request, doc)
     if s3_storage.is_configured() and doc.get("s3_key"):
         try:
             doc["presigned_url"] = s3_storage.generate_presigned_url(doc["s3_key"])
@@ -82,11 +96,12 @@ def get_document_endpoint(doc_id: str):
 
 
 @router.get("/api/documents/{doc_id}/download")
-def download_document_endpoint(doc_id: str):
+def download_document_endpoint(doc_id: str, request: Request):
     from s3_storage import s3_storage
     doc = store.get_stored_document(doc_id)
     if not doc or not doc.get("s3_key"):
         raise HTTPException(404, detail="Document file not found")
+    _require_document_project(request, doc)
     try:
         content = s3_storage.download_document(doc["s3_key"], bucket=doc.get("s3_bucket"))
         filename = doc.get("filename", "document")
@@ -102,11 +117,12 @@ def download_document_endpoint(doc_id: str):
 
 
 @router.delete("/api/documents/{doc_id}")
-def delete_document_endpoint(doc_id: str):
+def delete_document_endpoint(doc_id: str, request: Request):
     from s3_storage import s3_storage
     doc = store.get_stored_document(doc_id)
     if not doc:
         raise HTTPException(404, detail="Document not found")
+    _require_document_project(request, doc)
     if doc.get("s3_key"):
         s3_storage.delete_document(doc["s3_key"], bucket=doc.get("s3_bucket"))
     deleted = store.delete_stored_document(doc_id)

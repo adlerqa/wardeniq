@@ -11,7 +11,9 @@ body), not hoisted, so this diff is a pure move.
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from core.security import _current_user, _require_project
+from core.security import (
+    _current_user, _require_cases_accessible, _require_cycle_template_project, _require_project,
+)
 from core.state import store
 
 router = APIRouter()
@@ -34,6 +36,7 @@ class CycleIn(BaseModel):
 def create_cycle(body: CycleIn, request: Request):
     user = _current_user(request)
     _require_project(request, body.project_id)
+    _require_cases_accessible(request, body.case_ids)
     try:
         cid = store.create_cycle(
             body.project_id, body.name, body.case_ids, body.source,
@@ -102,6 +105,7 @@ def update_cycle(cid: str, body: dict, request: Request):
 @router.post("/api/test-cycles/{cid}/items")
 def add_cycle_items(cid: str, body: dict, request: Request):
     user = _current_user(request)
+    _require_cases_accessible(request, (body or {}).get("case_ids") or [])
     try:
         count = store.add_cycle_items(
             cid, (body or {}).get("case_ids") or [],
@@ -197,6 +201,8 @@ def list_cycle_templates(pid: str):
 def create_cycle_from_template(tid: str, body: TemplateIn, request: Request):
     from pymongo.errors import DuplicateKeyError
     user = _current_user(request)
+    tpl = _require_cycle_template_project(request, tid)
+    _require_cases_accessible(request, tpl.get("case_ids") or [])
     try:
         cid = store.create_cycle_from_template(tid, body.name, created_by=(user or {}).get("email"))
     except ValueError as exc:

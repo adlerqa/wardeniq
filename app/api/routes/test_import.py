@@ -32,7 +32,7 @@ from pydantic import BaseModel
 
 import sheet_import as sheet_mod
 
-from core.security import _current_user
+from core.security import _current_user, _project_of_feature, _require_import_of_feature
 from core.state import store
 from workers import test_import_worker  # noqa: F401
 from workers.registry import launch_job
@@ -50,6 +50,9 @@ router = APIRouter()
 async def upload_test_sheet(pid: str, fid: str, file: UploadFile = File(...)):
     """Upload a CSV/XLSX/TSV sheet of pre-existing tests. Returns a job_id +
     feature_import_id the UI uses for polling."""
+    # The gateway checks access to {pid}; the feature must live in that project.
+    if _project_of_feature(fid) != pid:
+        raise HTTPException(404, "feature not found in this project")
     if not file.filename:
         raise HTTPException(400, "filename required")
     raw = await file.read()
@@ -127,6 +130,7 @@ async def upload_test_sheet(pid: str, fid: str, file: UploadFile = File(...)):
 
 @router.get("/api/features/{fid}/tests/import/{import_id}/status")
 def get_import_status(fid: str, import_id: str):
+    _require_import_of_feature(fid, import_id)
     status = store.get_import_analysis_status(import_id) or {}
     if not status:
         raise HTTPException(404, "import not found")
@@ -139,6 +143,7 @@ def get_import_status(fid: str, import_id: str):
 
 @router.get("/api/features/{fid}/tests/import/{import_id}/analysis-result")
 def get_import_analysis_result(fid: str, import_id: str):
+    _require_import_of_feature(fid, import_id)
     status = store.get_import_analysis_status(import_id) or {}
     if not status:
         raise HTTPException(404, "import not found")
@@ -150,6 +155,7 @@ def get_import_review(fid: str, import_id: str):
     """Return each imported row with its EFFECTIVE decision — the scorer's action
     (matched/stored_for_later) overridden by any reviewer correction — so the UI can
     render an editable Include / Keep-for-later toggle + note per row."""
+    _require_import_of_feature(fid, import_id)
     status = store.get_import_analysis_status(import_id) or {}
     if not status:
         raise HTTPException(404, "import not found")
@@ -194,6 +200,7 @@ def submit_import_review(fid: str, import_id: str, body: ImportReviewIn, request
     if not feature:
         raise HTTPException(404, "feature not found")
     pid = feature["project_id"]
+    _require_import_of_feature(fid, import_id)
     status = store.get_import_analysis_status(import_id) or {}
     result = status.get("result_json") or {}
     batch_id = result.get("import_batch_id") or import_id

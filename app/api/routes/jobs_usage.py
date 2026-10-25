@@ -40,11 +40,16 @@ def jobs_list(request: Request, status: str | None = None, type: str | None = No
 
 
 @router.get("/api/usage")
-def usage_dashboard(project_id: str | None = None):
+def usage_dashboard(request: Request, project_id: str | None = None):
     """LLM/embedding token usage + cost: totals, per-model, per-project, and
-    recent processes. Cost is priced live from the current Settings price table."""
+    recent processes. Cost is priced live from the current Settings price table.
+    Users limited to some projects only see usage of those projects."""
+    allowed = _allowed_project_ids(_current_user(request))
+    if project_id and allowed is not None and project_id not in allowed:
+        raise HTTPException(403, "you don't have access to this project")
     prices = store.get_settings().get("llm_prices") or {}
-    return store.usage_summary(project_id=project_id, prices=prices)
+    return store.usage_summary(project_id=project_id, prices=prices,
+                               project_ids=None if project_id else allowed)
 
 
 class CostEstimateIn(BaseModel):
