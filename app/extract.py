@@ -5,6 +5,8 @@ import io
 import os
 import re
 import tarfile
+
+import size_limits
 from html.parser import HTMLParser
 
 
@@ -151,7 +153,7 @@ def source_files_from_tar(data: bytes, max_files=400, max_bytes=40000, return_st
     total_files = 0
     ext_counts = {}
     sample = []
-    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
+    with tarfile.open(fileobj=size_limits.as_fileobj(data), mode="r:gz") as tf:
         for m in tf.getmembers():
             if not m.isfile():
                 continue
@@ -245,6 +247,10 @@ def _pdf(data: bytes) -> str:
 
 def _docx(data: bytes) -> str:
     import docx
+    try:
+        size_limits.check_zip_container(data)
+    except size_limits.LimitExceeded as exc:
+        raise UnsupportedDocumentError(f"Document rejected: {exc}.") from exc
     d = docx.Document(io.BytesIO(data))
     parts = [p.text for p in d.paragraphs if p.text.strip()]
     # include table cells too

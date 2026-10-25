@@ -4,6 +4,8 @@ import re
 import urllib.parse
 import httpx
 
+import size_limits
+
 from core.config import GITLAB_BASE_URL
 
 # Host to accept in parse_repo_url(), derived from the configured instance
@@ -126,15 +128,10 @@ class GitLab:
 
     def get_archive(self, project_path, ref=""):
         params = {"sha": ref} if ref else None
-        r = httpx.get(
+        # Size-capped temporary file object (MAX_REPO_ARCHIVE_MB), not bytes in memory.
+        return size_limits.download_capped(
             f"{self.api}/projects/{self._enc(project_path)}/repository/archive.tar.gz",
-            headers=self._headers(),
-            params=params,
-            timeout=180.0,
-            follow_redirects=True,
-        )
-        r.raise_for_status()
-        return r.content
+            headers=self._headers(), params=params, timeout=180.0)
 
     def list_commits(self, project_path, since_iso, per_page=50, ref=""):
         params = {"since": since_iso, "per_page": per_page}

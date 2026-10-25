@@ -5,6 +5,8 @@ import urllib.parse
 
 import httpx
 
+import size_limits
+
 _URL_RE = re.compile(r"github\.com[:/]+([^/]+)/([^/.]+)")
 
 # Owner (user/org) and repository name formats. Validated before they are ever put
@@ -154,13 +156,12 @@ class GitHub:
                  "patch": (f.get("patch") or "")[:1500]} for f in files]
 
     def get_archive(self, owner, name, ref=""):
-        """Download the repo branch tarball (follows GitHub's redirect to codeload)."""
+        """Download the repo branch tarball (follows GitHub's redirect to codeload)
+        into a size-capped temporary file object (MAX_REPO_ARCHIVE_MB)."""
         path = f"{self._repo(owner, name)}/tarball" + (
             f"/{urllib.parse.quote(validate_ref(ref), safe='/')}" if ref else "")
-        r = httpx.get(f"{self.api}{path}", headers=self._headers(), timeout=180.0,
-                      follow_redirects=True)
-        r.raise_for_status()
-        return r.content
+        return size_limits.download_capped(f"{self.api}{path}", headers=self._headers(),
+                                           timeout=180.0)
 
     def list_commits(self, owner, name, since_iso, per_page=50, ref=""):
         params = {"since": since_iso, "per_page": per_page}

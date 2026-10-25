@@ -28,6 +28,7 @@ from pydantic import BaseModel
 import coverage as cov
 import extract as extractmod
 import figma
+from size_limits import read_upload_many
 from extract import chunk as chunk_doc, extract_text, UnsupportedDocumentError
 
 from core import state
@@ -91,10 +92,7 @@ async def create_feature(request: Request, name: str = Form(...), project_id: st
     # each section labelled so the LLM and the embeddings keep document context.
     parts, sources, pdf_urls = [], [], []
     raw_files_info = []
-    for f in (files or []):
-        if not f or not f.filename:
-            continue
-        data = await f.read()
+    for f, data in await read_upload_many(files):
         raw_files_info.append((f.filename, data, getattr(f, "content_type", None)))
         try:
             txt = extract_text(f.filename, data)
@@ -229,10 +227,7 @@ def regenerate(fid: str, body: dict):
 
 async def _read_corpus(files, text):
     parts, sources = [], []
-    for f in (files or []):
-        if not f or not f.filename:
-            continue
-        data = await f.read()
+    for f, data in await read_upload_many(files):
         try:
             txt = extract_text(f.filename, data)
         except UnsupportedDocumentError as exc:
@@ -258,10 +253,7 @@ async def new_version(fid: str, text: str = Form(""), name: str = Form(""), key:
         raise HTTPException(404, "feature not found")
     # Read uploaded docs + pasted text; collect any links embedded in PDFs.
     parts, sources, pdf_urls = [], [], []
-    for f in (files or []):
-        if not f or not f.filename:
-            continue
-        data = await f.read()
+    for f, data in await read_upload_many(files):
         try:
             txt = extract_text(f.filename, data)
         except UnsupportedDocumentError as exc:

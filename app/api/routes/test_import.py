@@ -31,6 +31,7 @@ from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFil
 from pydantic import BaseModel
 
 import sheet_import as sheet_mod
+from size_limits import read_upload
 
 from core.security import _current_user, _project_of_feature, _require_import_of_feature
 from core.state import store
@@ -55,7 +56,7 @@ async def upload_test_sheet(pid: str, fid: str, file: UploadFile = File(...)):
         raise HTTPException(404, "feature not found in this project")
     if not file.filename:
         raise HTTPException(400, "filename required")
-    raw = await file.read()
+    raw = await read_upload(file)
     if not raw:
         raise HTTPException(400, "empty file")
     # Compute fingerprints for dedup

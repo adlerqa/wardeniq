@@ -365,6 +365,9 @@ startup and secrets.
 | `AUTH_MAX_FAILURES_PER_ACCOUNT` / `AUTH_MAX_FAILURES_PER_IP` | `10` / `50` | Failed sign-in / code / reset attempts allowed per account and per client IP within `AUTH_FAILURE_WINDOW_SECONDS` before a lockout |
 | `AUTH_FAILURE_WINDOW_SECONDS` / `AUTH_LOCKOUT_SECONDS` | `900` / `900` | Failure-counting window and lockout duration (seconds) |
 | `RESET_CODE_MAX_PER_WINDOW` | `3` | Password-reset codes emailed to one account per `OTP_WINDOW_SECONDS` |
+| `MAX_UPLOAD_MB` | `25` | Largest accepted upload per file (HTTP 413 beyond); all files in one request together may total 4x this |
+| `MAX_ARCHIVE_UNCOMPRESSED_MB` | `200` | `.docx`/`.xlsx` uploads whose unpacked size (or compression ratio) exceeds this are rejected before parsing |
+| `MAX_REPO_ARCHIVE_MB` | `500` | Largest repository archive downloaded for scans/analysis (streamed to a temporary file) |
 | `TRUSTED_PROXIES` | _(empty)_ | Comma-separated reverse-proxy IPs/CIDRs whose `X-Forwarded-For` is trusted for client-IP rate limiting. Blank ⇒ the header is ignored |
 | `MONGO_URI` | _(empty = bundled DB)_ | Bring your own MongoDB; also settable in-app |
 | `MONGO_IMAGE` / `MONGOT_IMAGE` | pinned | Override the bundled MongoDB / mongot images. Bundled MongoDB must be **8.1+** because `config/mongod.conf` enables `useGrpcForSearch` for mongot's gRPC transport |

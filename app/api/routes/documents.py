@@ -9,6 +9,7 @@ was in main.py (not hoisted to module level), so this diff is a pure move.
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 
 from core.logging_setup import get_logger
+from size_limits import read_upload
 from core.security import (
     _allowed_project_ids, _current_user, _project_of_feature,
     _require_document_project, _require_project,
@@ -34,7 +35,7 @@ async def upload_document_endpoint(
         raise HTTPException(400, detail="feature does not belong to this project")
     if not file or not file.filename:
         raise HTTPException(400, detail="No file provided")
-    content = await file.read()
+    content = await read_upload(file)
     if not content:
         raise HTTPException(400, detail="File is empty")
     if not s3_storage.is_configured():
