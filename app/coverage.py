@@ -16,6 +16,14 @@ _LANG = {
     "go":         "Go",
 }
 
+
+def _response_list(data, key: str) -> list:
+    """Return a JSON array field only when the model supplied the expected shape."""
+    if not isinstance(data, dict):
+        return []
+    value = data.get(key)
+    return value if isinstance(value, list) else []
+
 _CODE_SYS = (
     "You are a senior software engineer. You write production-quality IMPLEMENTATION code that "
     "fulfils a feature requirement so that all of its acceptance test cases would pass. "
@@ -49,12 +57,13 @@ def generate_feature_code(llm, language: str, feature_name: str,
     except Exception as e:  # noqa: BLE001
         return {"error": str(e)}
     files = []
-    for f in (data.get("files") or [])[:5]:
+    for f in _response_list(data, "files")[:5]:
         if isinstance(f, dict) and f.get("path") and f.get("content"):
             files.append({"path": str(f["path"]).lstrip("/")[:200], "content": str(f["content"])})
     if not files:
         return {"error": "model returned no files"}
-    return {"files": files, "notes": str(data.get("notes", ""))[:300]}
+    notes = data.get("notes", "") if isinstance(data, dict) else ""
+    return {"files": files, "notes": str(notes)[:300]}
 
 # Heuristic: which files look like developer-authored tests/specs rather than the
 # production code that actually implements a requirement. This gates BOTH what gets
@@ -1097,7 +1106,7 @@ def review_code_coverage(llm, feature_name, requirement, cases, code_excerpts, b
                     errored = True
                     continue
                 seen_in_pass = set()
-                for x in (data or {}).get("cases", []):
+                for x in _response_list(data, "cases"):
                     if not (isinstance(x, dict) and x.get("test_case_id") in valid):
                         continue
                     cid = x["test_case_id"]
@@ -1284,7 +1293,7 @@ def verify_pr_implementation(llm, pr, prod_files, cases, batch_size=10, repo_fil
         except Exception:  # noqa: BLE001
             errored = True
             continue
-        for x in data.get("covered", []):
+        for x in _response_list(data, "covered"):
             if isinstance(x, dict) and x.get("test_case_id") in valid and x["test_case_id"] not in seen:
                 cid = x["test_case_id"]
                 seen.add(cid)
@@ -1357,7 +1366,7 @@ def analyze_impact(llm, change_summary: str, cases) -> dict:
         return {"impacted": [], "error": str(e)}
     valid = {c["id"] for c in cases}
     out, seen = [], set()
-    for x in data.get("impacted", []):
+    for x in _response_list(data, "impacted"):
         if isinstance(x, dict) and x.get("test_case_id") in valid and x["test_case_id"] not in seen:
             seen.add(x["test_case_id"])
             # Clamp to the documented enum — an unrecognised value would otherwise reach
@@ -1392,9 +1401,10 @@ def diff_versions(llm, old_text: str, new_text: str, prev_cases) -> dict:
     except Exception as e:  # noqa: BLE001
         return {"keep": [c["id"] for c in prev_cases], "retire": [], "error": str(e)}
     valid = {c["id"] for c in prev_cases}
-    keep = [i for i in data.get("keep", []) if i in valid]
+    keep = [i for i in _response_list(data, "keep") if i in valid]
     retire = [{"id": x["id"], "reason": str(x.get("reason", ""))[:300]}
-              for x in data.get("retire", []) if isinstance(x, dict) and x.get("id") in valid]
+              for x in _response_list(data, "retire")
+              if isinstance(x, dict) and x.get("id") in valid]
     retired_ids = {x["id"] for x in retire}
     # any case not explicitly classified -> default keep (safe)
     for cid in valid:
@@ -1434,11 +1444,12 @@ def review_coverage(llm, pr, files, feature_cases) -> dict:
                 "error": str(e)}
     valid_ids = {c["id"] for c in feature_cases}
     try:
-        top_conf = float(data.get("confidence", 0.0) or 0.0)
+        raw_confidence = data.get("confidence", 0.0) if isinstance(data, dict) else 0.0
+        top_conf = float(raw_confidence or 0.0)
     except (TypeError, ValueError):
         top_conf = 0.0
     covered, corrections = [], []
-    for c in data.get("covered", []):
+    for c in _response_list(data, "covered"):
         if isinstance(c, dict) and c.get("test_case_id") in valid_ids:
             status = c.get("status") if c.get("status") in ("covered", "partial") else "covered"
             by_dev = bool(c.get("by_dev_test"))

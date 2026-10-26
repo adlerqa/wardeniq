@@ -114,9 +114,12 @@ class LLM:
         for _ in range(retries + 1):
             try:
                 content = self._raw_chat(system, user, num_ctx, temperature, max_tokens)
-                return json.loads(_extract_json(content))
-            except json.JSONDecodeError as e:
-                last = e  # malformed → retry once
+                parsed = json.loads(_extract_json(content))
+                if not isinstance(parsed, dict):
+                    raise ValueError("LLM JSON response must be an object")
+                return parsed
+            except (json.JSONDecodeError, ValueError) as e:
+                last = e  # malformed or wrong top-level shape -> retry once
             except Exception as e:  # noqa: BLE001
                 raise RuntimeError(f"LLM request failed ({self.provider}): {e}") from e
         raise RuntimeError(f"LLM returned unparseable JSON ({self.provider}): {last}")
@@ -215,22 +218,32 @@ class LLM:
     # ---- test-case generation -----------------------------------------------
     def generate_testcases(self, test_type: str, requirement_text: str, target: int | None = None) -> list[dict]:
         data = self.chat_json(SYSTEM, build_prompt(test_type, requirement_text, target))
-        cases = data.get("test_cases", []) if isinstance(data, dict) else []
+        cases = data.get("test_cases", [])
+        if not isinstance(cases, list):
+            cases = []
         return [self._normalize(c, test_type) for c in cases if isinstance(c, dict)]
 
     @staticmethod
     def _normalize(case: dict, test_type: str) -> dict:
         steps = []
-        for s in case.get("steps", []):
+        raw_steps = case.get("steps", [])
+        if not isinstance(raw_steps, list):
+            raw_steps = []
+        for s in raw_steps:
             if isinstance(s, dict) and (s.get("action") or s.get("expected")):
                 steps.append({"action": str(s.get("action", "")).strip(),
                               "expected": str(s.get("expected", "")).strip()})
+        raw_tags = case.get("tags", [])
+        if isinstance(raw_tags, str):
+            raw_tags = [raw_tags]
+        elif not isinstance(raw_tags, list):
+            raw_tags = []
         return {
             "title": str(case.get("title", "Untitled")).strip(),
             "type": test_type,
             "priority": str(case.get("priority", "P2")).strip() or "P2",
             "preconditions": str(case.get("preconditions", "")).strip(),
-            "tags": [str(t).strip().lower() for t in case.get("tags", []) if str(t).strip()],
+            "tags": [str(t).strip().lower() for t in raw_tags if str(t).strip()],
             "steps": steps,
         }
 
