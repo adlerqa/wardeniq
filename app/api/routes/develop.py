@@ -1,7 +1,7 @@
 """Start Developing: launch the "develop" background job that has an LLM draft
 an implementation PR for a feature against one of its linked (non-test) repos.
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 17/20).
+Extracted from app/main.py (docs/internal/REFACTOR_PLAN.md section 14, Phase 6, router 17/20).
 Handler body is unchanged aside from the ``@app.`` -> ``@router.`` decorator swap.
 
 Single route + its one Pydantic model; no shared-helper deviation was needed —

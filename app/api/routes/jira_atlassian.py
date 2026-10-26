@@ -2,7 +2,7 @@
 per-project Jira epic listing, connectivity test, outbound coverage sync-to-issue, and
 the inbound Jira webhook (create a feature from a Jira issue).
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 7/20).
+Extracted from app/main.py (docs/internal/REFACTOR_PLAN.md section 14, Phase 6, router 7/20).
 Handler bodies are unchanged aside from the ``@app.`` -> ``@router.`` decorator swap.
 
 These 6 routes + 1 private helper (``_jira_text``) were NOT contiguous in the original

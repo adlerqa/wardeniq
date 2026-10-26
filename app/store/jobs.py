@@ -1,7 +1,7 @@
 """Background job bookkeeping: create/update/progress/result, listing, and the
 orphaned/stale sweeps used by background/schedulers.py.
 
-Moved out of store.py (Phase 5 of REFACTOR_PLAN.md).
+Moved out of store.py (Phase 5 of docs/internal/REFACTOR_PLAN.md).
 """
 
 import time

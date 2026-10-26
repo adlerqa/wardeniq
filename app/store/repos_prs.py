@@ -1,6 +1,6 @@
 """Connected repos (GitHub/GitLab) and pull-request bookkeeping.
 
-Moved out of store.py (Phase 5 of REFACTOR_PLAN.md). `_converge_repo_kinds` is a
+Moved out of store.py (Phase 5 of docs/internal/REFACTOR_PLAN.md). `_converge_repo_kinds` is a
 repo-maintenance one-off (not name-matched by `*_repo*`) placed here because it
 operates entirely on `self.repos`.
 """

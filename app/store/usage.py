@@ -1,8 +1,8 @@
 """Per-job token/cost usage: attaching a usage summary to a job record, and
 aggregating it project/model-wide for the usage dashboard.
 
-Moved out of store.py (Phase 5 of REFACTOR_PLAN.md) as its own domain file per
-REFACTOR_PLAN.md section 13's file list, separate from jobs.py even though both
+Moved out of store.py (Phase 5 of docs/internal/REFACTOR_PLAN.md) as its own domain file per
+docs/internal/REFACTOR_PLAN.md section 13's file list, separate from jobs.py even though both
 read/write the `jobs` collection.
 """
 

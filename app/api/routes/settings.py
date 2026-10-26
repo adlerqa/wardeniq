@@ -2,7 +2,7 @@
 LLM connectivity test, audit-log listing, DB status/config/migrate, and the SMTP/S3
 connectivity tests.
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 6/20).
+Extracted from app/main.py (docs/internal/REFACTOR_PLAN.md section 14, Phase 6, router 6/20).
 Handler bodies are unchanged aside from the ``@app.`` -> ``@router.`` decorator swap.
 
 This is one contiguous domain in the original main.py (get_settings through s3_test),

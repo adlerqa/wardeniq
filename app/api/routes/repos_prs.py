@@ -2,7 +2,7 @@
 browsing, connecting a repo (with webhook registration), listing/branches/watch/sync,
 deleting a repo, and GitHub rate-limit/my-repos lookups.
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 8/20).
+Extracted from app/main.py (docs/internal/REFACTOR_PLAN.md section 14, Phase 6, router 8/20).
 Handler bodies are unchanged aside from the ``@app.`` -> ``@router.`` decorator swap.
 
 DOCUMENTED DEVIATION — PR-workflow routes NOT moved here despite the "repos_prs"

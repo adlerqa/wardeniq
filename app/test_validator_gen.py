@@ -4,7 +4,7 @@ import json
 
 sys.path.insert(0, '/app')
 
-# REFACTOR_PLAN.md Phase 6 (router 19/20): current_llm's only remaining call
+# docs/internal/REFACTOR_PLAN.md Phase 6 (router 19/20): current_llm's only remaining call
 # site (status()) moved to api/routes/system.py, so main.py no longer
 # re-exports it — import it from its home (core/deps.py) directly.
 from main import store

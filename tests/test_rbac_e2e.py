@@ -119,7 +119,7 @@ def test_viewer_allowed_on_viewer_post_allowlist(monkeypatch):
         def embed(self, text, task="query"):
             return [0.0] * 8
 
-    # REFACTOR_PLAN.md 2.6: embedder now lives in core/state.py and every
+    # docs/internal/REFACTOR_PLAN.md 2.6: embedder now lives in core/state.py and every
     # consumer reads it via the qualified `state.embedder` — patch it there
     # (not `main.embedder`, which nothing reads anymore after Phase 2).
     monkeypatch.setattr(state, "embedder", _FakeEmbedder())

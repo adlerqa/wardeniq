@@ -3,7 +3,7 @@ analysis status, review/correct the scorer's include/exclude decisions, and the
 project-wide imported-sheet ("QA library") pool — list, add, remove, and
 on-demand rescore/promote against a feature.
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 12/20).
+Extracted from app/main.py (docs/internal/REFACTOR_PLAN.md section 14, Phase 6, router 12/20).
 Handler bodies are unchanged aside from the ``@app.`` -> ``@router.`` decorator swap.
 
 These 10 routes + 3 models were one contiguous block in the original main.py.
@@ -21,7 +21,7 @@ binds its name: the import itself is what runs
 workers.registry already does for JOB_WORKERS -- moved here (from main.py) since
 this router's ``upload_test_sheet`` is the only launcher of "test_import" jobs.
 
-Per REFACTOR_PLAN.md section 2.4, ``remove_imported_sheet_rows`` and
+Per docs/internal/REFACTOR_PLAN.md section 2.4, ``remove_imported_sheet_rows`` and
 ``LibraryHashesIn`` are re-exported from main.py (tests reach them via
 ``main.<name>``); see main.py's re-export block.
 """

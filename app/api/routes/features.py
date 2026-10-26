@@ -3,7 +3,7 @@ sources (Figma/Confluence), list/fetch features, regenerate, version, rename,
 delete, associate a case, set the manual PR match-key, and set the QA-readiness
 threshold.
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 14/20).
+Extracted from app/main.py (docs/internal/REFACTOR_PLAN.md section 14, Phase 6, router 14/20).
 Handler bodies are unchanged aside from the ``@app.`` -> ``@router.`` decorator swap.
 
 These 10 routes + 4 models were scattered across 4 non-contiguous regions in the

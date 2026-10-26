@@ -1,6 +1,6 @@
 """PR/MR code-coverage ingestion + the "code_coverage" manual-run job.
 
-Moved out of main.py (Phase 3 of REFACTOR_PLAN.md). This groups `ingest_pr`
+Moved out of main.py (Phase 3 of docs/internal/REFACTOR_PLAN.md). This groups `ingest_pr`
 (the shared PR-ingestion pipeline: register the PR, map it to a feature,
 fetch changed files, run grounded+LLM coverage) and its helpers together with
 the "code_coverage" job worker, since the worker is just a thin manual-trigger

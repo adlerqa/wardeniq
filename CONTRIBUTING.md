@@ -65,9 +65,9 @@ printed to the server log — `docker logs warden-app`). Configure SMTP under
 
 ## Repository layout
 
-See `PROJECT_CONTEXT.md` §3 for the full annotated breakdown. Highlights
+See `docs/internal/PROJECT_CONTEXT.md` §3 for the full annotated breakdown. Highlights
 (updated for the backend restructure — `app/main.py` and `app/store.py` were
-split into packages; behavior is unchanged, see REFACTOR_PLAN.md):
+split into packages; behavior is unchanged, see docs/internal/REFACTOR_PLAN.md):
 
 - `app/main.py` (201 lines) — app assembly only: `FastAPI()`, middleware
   registration, the 20 `api/routes/` router includes. **No route handlers

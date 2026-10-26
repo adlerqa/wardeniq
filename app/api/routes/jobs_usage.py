@@ -2,7 +2,7 @@
 model switch (which launches a re-embed migration job), and the usage/billing
 dashboard.
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 15/20).
+Extracted from app/main.py (docs/internal/REFACTOR_PLAN.md section 14, Phase 6, router 15/20).
 Handler bodies are unchanged aside from the ``@app.`` -> ``@router.`` decorator swap.
 
 These 6 routes + 1 model were one contiguous block in the original main.py; no

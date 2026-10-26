@@ -12,7 +12,7 @@ Key properties
   * A test case can be associated to many features (reuse without duplication).
   * Dedup uses cosine similarity (Atlas score space = (1+cos)/2).
 
-Split into store/ (Phase 5 of REFACTOR_PLAN.md, Option A: mixin composition) from a
+Split into store/ (Phase 5 of docs/internal/REFACTOR_PLAN.md, Option A: mixin composition) from a
 single 3,889-line store.py. Each domain file below defines a mixin holding only its
 own methods — no `__init__`, no collection setup — sharing the `self.db` / collection
 attributes that `BaseStore.__init__` (store/base.py) sets up. `Store` composes every
@@ -20,7 +20,7 @@ mixin plus `BaseStore` (last, so its `__init__` wins the MRO); every existing ca
 (`store.get_feature(x)`, `store.cases.find(...)`, etc.) resolves identically, unchanged,
 because Python resolves `self.<name>` against the instance's actual class regardless of
 which mixin's method body is running — this is what makes Option A a zero-call-site-edit
-split. See REFACTOR_PLAN.md section 13 for the full rationale and the per-file method
+split. See docs/internal/REFACTOR_PLAN.md section 13 for the full rationale and the per-file method
 accounting.
 
 No duplicate method/property name exists across any mixin (see

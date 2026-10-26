@@ -1,4 +1,4 @@
-"""Structural guard for the Phase 5 store/ mixin split (REFACTOR_PLAN.md section 13).
+"""Structural guard for the Phase 5 store/ mixin split (docs/internal/REFACTOR_PLAN.md section 13).
 
 `Store` is composed from ~16 domain mixins plus `BaseStore` (see store/__init__.py).
 Because Python's MRO silently picks the first match on a name collision, a duplicate

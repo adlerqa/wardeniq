@@ -1,6 +1,6 @@
 """Stored-document upload/list/get/download/delete routes (AWS S3-backed).
 
-Moved out of main.py (Phase 6 of REFACTOR_PLAN.md — first router extracted, per the
+Moved out of main.py (Phase 6 of docs/internal/REFACTOR_PLAN.md — first router extracted, per the
 plan's suggested order: contiguous, few dependencies, ideal first PR). Decorator
 changed from `@app.` to `@router.` only — same paths, same status codes, same
 response shapes. `s3_storage` is imported locally inside each handler, exactly as it

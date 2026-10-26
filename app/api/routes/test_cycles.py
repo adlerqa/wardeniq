@@ -1,7 +1,7 @@
 """Manual test-cycle execution: create/list/get cycles, per-item status updates,
 activity/report/CSV/PDF export, and cycle templates.
 
-Moved out of main.py (Phase 6 of REFACTOR_PLAN.md — contiguous block, extracted early
+Moved out of main.py (Phase 6 of docs/internal/REFACTOR_PLAN.md — contiguous block, extracted early
 per the plan's suggested order). Decorator changed from `@app.` to `@router.` only —
 same 17 paths, same status codes, same response shapes. Local imports
 (`from pymongo.errors import DuplicateKeyError`, `from fastapi.responses import

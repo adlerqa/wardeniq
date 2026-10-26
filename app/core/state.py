@@ -1,6 +1,6 @@
 """Live application singletons.
 
-Moved out of main.py (Phase 1 of REFACTOR_PLAN.md). This module owns the
+Moved out of main.py (Phase 1 of docs/internal/REFACTOR_PLAN.md). This module owns the
 process-wide mutable state: the single `Store` instance, the poller/sync
 status dict, and the `embedder` singleton.
 
@@ -37,7 +37,7 @@ store = Store(MONGO_URI, DB_NAME, EMBED_DIM)
 # background GitHub/GitLab poller loop. Deliberately left without a type
 # annotation, matching the original main.py: mypy's baseline "Need type
 # annotation for SYNC" error (and the ~10 downstream errors it causes at SYNC's
-# call sites) is pre-existing REFACTOR_PLAN.md baseline debt, not something to
+# call sites) is pre-existing docs/internal/REFACTOR_PLAN.md baseline debt, not something to
 # fix incidentally as part of this move.
 SYNC = {"running": False, "last": None, "ingested": 0, "mapped": 0, "errors": []}
 

@@ -2,7 +2,7 @@
 against each registered repo's own webhook secret, then kick off PR/MR coverage
 ingestion (``ingest_pr_tracked``) in a background thread per matching project.
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 18/20).
+Extracted from app/main.py (docs/internal/REFACTOR_PLAN.md section 14, Phase 6, router 18/20).
 Handler bodies are unchanged aside from the ``@app.`` -> ``@router.`` decorator
 swap. The inbound Jira webhook was already grouped with
 ``api/routes/jira_atlassian.py`` in an earlier router (a documented deviation
@@ -11,7 +11,7 @@ router's docstring; nothing further to do here.
 
 Signature verification (GitHub HMAC via ``hmac.compare_digest``, GitLab
 shared-token comparison) is a security boundary and moves verbatim, per
-REFACTOR_PLAN.md section 4 ("not a cleanup opportunity"). No new shared-helper
+docs/internal/REFACTOR_PLAN.md section 4 ("not a cleanup opportunity"). No new shared-helper
 deviation was needed: ``_ACCEPTED_GH_ACTIONS``/``_ACCEPTED_GL_ACTIONS``/
 ``_verify_github_signature`` (background/poller.py) and ``ingest_pr_tracked``
 (workers/code_coverage_worker.py) were already centralized in earlier phases.
