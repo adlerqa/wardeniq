@@ -10,6 +10,7 @@
   through to the generic branch and showed truncated raw driver text. Code
   31082 (or the message on its own) now classifies as search-unsupported, so
   the probe returns the "requires a MongoDB with Vector Search" message (#204).
+- Ollama health checks now send the configured bearer token, matching generation requests (#180).
 
 - Fixed the installer script links in `docs/configuration.md` to resolve to the
   repository root after the documentation move (#61).
