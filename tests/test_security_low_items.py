@@ -51,13 +51,15 @@ def test_ollama_models_only_sends_ollama_token(monkeypatch, provider, expect_aut
 # ------------------------------------------------------------ SSRF ranges
 @pytest.mark.parametrize("ip", ["100.64.0.1", "100.127.255.254", "192.0.2.1", "198.18.0.1",
                                 "::ffff:10.0.0.1", "::ffff:127.0.0.1", "fc00::1", "127.0.0.1",
-                                "169.254.169.254", "0.0.0.0"])
+                                "169.254.169.254", "0.0.0.0",
+                                "64:ff9b::7f00:1", "64:ff9b::a00:1", "64:ff9b::a9fe:a9fe"])
 def test_non_global_addresses_blocked(ip):
     assert weblinks._is_blocked_ip(ip)
 
 
 def test_public_address_allowed():
     assert not weblinks._is_blocked_ip("93.184.216.34")
+    assert not weblinks._is_blocked_ip("64:ff9b::5db8:d822")      # NAT64 form of a public IPv4
 
 
 # ------------------------------------------------------------ documents

@@ -368,7 +368,7 @@ startup and secrets.
 | `MAX_UPLOAD_MB` | `25` | Largest accepted upload per file (HTTP 413 beyond); all files in one request together may total 4x this |
 | `MAX_ARCHIVE_UNCOMPRESSED_MB` | `200` | `.docx`/`.xlsx` uploads whose unpacked size (or compression ratio) exceeds this are rejected before parsing |
 | `MAX_REPO_ARCHIVE_MB` | `500` | Largest repository archive downloaded for scans/analysis (streamed to a temporary file) |
-| `TRUSTED_PROXIES` | _(empty)_ | Comma-separated reverse-proxy IPs/CIDRs whose `X-Forwarded-For` is trusted for client-IP rate limiting. Blank ⇒ the header is ignored |
+| `TRUSTED_PROXIES` | _(empty)_ | Comma-separated reverse-proxy IPs/CIDRs whose `X-Forwarded-For` is trusted for client-IP rate limiting. Blank ⇒ the header is ignored, so behind a reverse proxy every user shares the proxy's address and one client's 50 failed attempts can lock sign-in for everyone: set this to the proxy's address when you run one |
 | `MONGO_URI` | _(empty = bundled DB)_ | Bring your own MongoDB; also settable in-app |
 | `MONGO_IMAGE` / `MONGOT_IMAGE` | pinned | Override the bundled MongoDB / mongot images. Bundled MongoDB must be **8.1+** because `config/mongod.conf` enables `useGrpcForSearch` for mongot's gRPC transport |
 | `APP_IMAGE` | `adlerqa/wardeniq:latest` _(set by the installer; empty = build from source)_ | Which published image tag to run. `latest` tracks every release; pin e.g. `adlerqa/wardeniq:0.2.0` to freeze a version |

@@ -226,3 +226,46 @@ def test_ensure_indexes_creates_ttl_indexes():
     src = inspect.getsource(store_base.BaseStore.ensure_indexes)
     assert 'self.api_token_failures.create_index([("expires_at", 1)], expireAfterSeconds=0)' in src
     assert 'self.db["auth_throttle"].create_index([("expires_at", 1)], expireAfterSeconds=0)' in src
+
+
+def test_success_keeps_the_ip_counter(st):
+    """A successful sign-in clears the ACCOUNT's counter only; otherwise anyone holding
+    one valid account could reset the per-IP limit between password guesses."""
+    for i in range(4):
+        assert _login(f"nobody{i}@example.com", "x").status_code == 401
+    assert _login("alice@example.com", GOOD).status_code == 200
+    assert _login("nobody9@example.com", "x").status_code == 401     # 5th failure from this IP
+    assert _login("alice@example.com", GOOD).status_code == 429
+
+
+def test_verify_otp_for_unknown_accounts_counts_against_the_ip(st):
+    for i in range(5):
+        r = client.post("/api/auth/verify-otp",
+                        json={"email": f"ghost{i}@example.com", "code": "000000"})
+        assert r.status_code == 401
+    r = client.post("/api/auth/verify-otp",
+                    json={"email": "ghost-last@example.com", "code": "000000"})
+    assert r.status_code == 429
+
+
+def test_migration_skips_the_ttl_throttle_collections(st, monkeypatch):
+    """The throttle counters are pruned by a TTL index mid-flight, so they are neither
+    copied nor allowed to fail the post-copy verification."""
+    import pymongo
+    from store.base import EPHEMERAL_COLLECTIONS
+
+    assert EPHEMERAL_COLLECTIONS == {"auth_throttle", "api_token_failures"}
+    target = mongomock.MongoClient()
+    monkeypatch.setattr(pymongo, "MongoClient", lambda *a, **k: target)      # migrate_to
+    monkeypatch.setattr(store_base, "MongoClient", lambda *a, **k: target)   # verify_migration
+    st.db["auth_throttle"].insert_one({"_id": "login:acct:alice", "count": 2})
+    st.db["api_token_failures"].insert_one({"_id": "tok", "count": 1})
+    counts = st.migrate_to("mongodb://target.example.test:27017")
+    assert counts["users"] == 1
+    assert not EPHEMERAL_COLLECTIONS & set(counts)
+    assert EPHEMERAL_COLLECTIONS.isdisjoint(target[st.db.name].list_collection_names())
+
+    st.db["auth_throttle"].delete_many({})                           # a TTL expiry mid-migration
+    st.db["api_token_failures"].insert_one({"_id": "tok2", "count": 1})
+    verdict = st.verify_migration("mongodb://target.example.test:27017", counts)
+    assert verdict["ok"] is True and verdict["warnings"] == [], verdict

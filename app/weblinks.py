@@ -25,14 +25,20 @@ MAX_BYTES = int(os.getenv("LINK_FOLLOW_MAX_BYTES", "2000000"))
 TIMEOUT = float(os.getenv("LINK_FOLLOW_TIMEOUT", "15"))
 
 
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")
+
+
 def _is_blocked_ip(ip: str) -> bool:
     try:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return True
-    # IPv4-mapped / NAT64-style IPv6 forms are judged by the IPv4 address inside.
-    if addr.version == 6 and addr.ipv4_mapped is not None:
-        addr = addr.ipv4_mapped
+    # IPv4-mapped and NAT64 (64:ff9b::/96) IPv6 forms are judged by the IPv4 address inside.
+    if addr.version == 6:
+        if addr.ipv4_mapped is not None:
+            addr = addr.ipv4_mapped
+        elif addr in _NAT64:
+            addr = ipaddress.IPv4Address(int(addr) & 0xFFFFFFFF)
     # Only globally routable unicast addresses are allowed (this also excludes
     # shared address space such as 100.64.0.0/10, documentation ranges, etc.).
     return (not addr.is_global or addr.is_multicast or addr.is_private

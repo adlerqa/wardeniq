@@ -67,6 +67,28 @@ def test_high_ratio_entry_rejected():
         size_limits.check_zip_container(_bomb(4 * size_limits.MB), max_total=10 ** 9)
 
 
+def _many_small_entries(n, size):
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for i in range(n):
+            z.writestr(f"word/part{i}.xml", b"\0" * size)      # each stays under the ratio check
+    return buf.getvalue()
+
+
+def test_too_many_entries_rejected(monkeypatch):
+    monkeypatch.setattr(size_limits, "MAX_ZIP_ENTRIES", 3)
+    with pytest.raises(size_limits.LimitExceeded, match="too many entries"):
+        size_limits.check_zip_container(_many_small_entries(5, 10))
+    size_limits.check_zip_container(_many_small_entries(3, 10))
+
+
+def test_total_unpacked_size_cap_rejected():
+    data = _many_small_entries(5, 100_000)                        # 500 KB unpacked in total
+    with pytest.raises(size_limits.LimitExceeded, match="expands beyond"):
+        size_limits.check_zip_container(data, max_total=300_000)
+    size_limits.check_zip_container(data, max_total=600_000)
+
+
 def test_zip_bomb_xlsx_rejected(monkeypatch):
     monkeypatch.setattr(size_limits, "MAX_ARCHIVE_UNCOMPRESSED_MB", 4)
     with pytest.raises(ValueError):

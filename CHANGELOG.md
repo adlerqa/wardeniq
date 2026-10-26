@@ -17,7 +17,9 @@
   routes; OTP and reset-code issuance limits are now atomic. New settings:
   `AUTH_MAX_FAILURES_PER_ACCOUNT`, `AUTH_MAX_FAILURES_PER_IP`,
   `AUTH_FAILURE_WINDOW_SECONDS`, `AUTH_LOCKOUT_SECONDS`,
-  `RESET_CODE_MAX_PER_WINDOW`, `TRUSTED_PROXIES`.
+  `RESET_CODE_MAX_PER_WINDOW`, `TRUSTED_PROXIES` (set it when running behind a
+  reverse proxy, otherwise all users share the proxy's address). The throttle
+  counters are not copied by the database migration.
 - Without SMTP, sign-in codes are no longer returned to the browser; only the
   bootstrap admin's code is printed to the server log. Demo installs can opt in
   with `OTP_DEV_CODES=true` (ignored when `APP_ENV=production`).
