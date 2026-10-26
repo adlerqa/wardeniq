@@ -216,11 +216,17 @@ def _search_unsupported(e) -> bool:
     opposed to a search service that's merely still starting)? A search-less server
     rejects the search-index commands outright ('no such command' / 'unrecognized'),
     which is worth failing fast on — unlike 'connecting to Search Index Management
-    service', which is transient while a bundled mongot boots."""
+    service', which is transient while a bundled mongot boots. A stock replica set
+    without mongot is the same class of failure: it rejects Atlas Search commands
+    with code 31082 ('requires additional configuration'), so that code — or the
+    message on its own, when no code is attached — counts as unsupported too."""
+    if getattr(e, "code", None) == 31082:
+        return True
     m = str(e).lower()
     return any(s in m for s in (
         "no such command", "unrecognized", "command not found",
         "notimplemented", "atlas search is not", "search is not supported",
+        "requires additional configuration",
     ))
 
 
