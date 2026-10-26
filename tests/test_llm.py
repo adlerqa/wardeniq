@@ -7,6 +7,44 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../a
 
 from llm import LLM
 
+
+def test_ollama_health_sends_configured_bearer_token():
+    ollama_llm = LLM(
+        provider="ollama",
+        model="qwen2.5:7b",
+        api_key="ollama-token",
+        ollama_url="https://ollama.example",
+    )
+    with patch("httpx.get") as mock_get:
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"models": [{"name": "qwen2.5:7b"}]}
+        mock_get.return_value = mock_response
+
+        result = ollama_llm.health()
+
+    mock_get.assert_called_once_with(
+        "https://ollama.example/api/tags",
+        timeout=10.0,
+        headers={"Authorization": "Bearer ollama-token"},
+    )
+    assert result == {"ok": True, "provider": "ollama", "models": ["qwen2.5:7b"]}
+
+
+def test_ollama_health_without_token_keeps_empty_headers():
+    ollama_llm = LLM(provider="ollama", model="qwen2.5:7b")
+    with patch("httpx.get") as mock_get:
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"models": []}
+        mock_get.return_value = mock_response
+
+        result = ollama_llm.health()
+
+    mock_get.assert_called_once_with(
+        "http://localhost:11434/api/tags", timeout=10.0, headers={}
+    )
+    assert result == {"ok": False, "provider": "ollama", "models": []}
+
+
 def test_llm_gemini_url():
     # Test initialization
     gemini_llm = LLM(provider="gemini", model="gemini-3.5-flash", api_key="test-key")

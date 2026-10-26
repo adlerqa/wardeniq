@@ -37,6 +37,8 @@
 
 ### Fixed
 
+- Ollama health checks now send the configured bearer token, matching generation requests (#180).
+
 - Fixed the installer script links in `docs/configuration.md` to resolve to the
   repository root after the documentation move (#61).
 
