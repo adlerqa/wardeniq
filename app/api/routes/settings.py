@@ -191,24 +191,49 @@ class SettingsIn(BaseModel):
     s3_prefix: str | None = None
 
 
+def _changed(new, stored) -> bool:
+    """True when a submitted value differs from the stored one (None = not sent)."""
+    return new is not None and str(new).strip() != str(stored or "").strip()
+
+
+def _secret_target_changed(body: SettingsIn, s: dict) -> dict:
+    """Per stored secret: has the destination it is sent to changed in this request?
+
+    A stored credential is only ever reused for the same destination it was saved
+    for. When the destination changes (provider/endpoint/host) and no new secret is
+    supplied, the stored one is neither used for validation nor kept afterwards."""
+    llm_target = (
+        _changed(body.llm_provider, s.get("llm_provider", "ollama"))
+        or _changed(body.llm_base_url, s.get("llm_base_url", ""))
+        # The LLM key is also sent to the Ollama endpoint (secured remote Ollama).
+        or (not _ENV_OLLAMA and _changed(body.ollama_url, s.get("ollama_url", "")))
+    )
+    return {
+        "llm": llm_target,
+        "jira": _changed(body.jira_base_url, s.get("jira_base_url", "")),
+        "smtp": _changed(body.smtp_host, s.get("smtp_host", "")),
+    }
+
+
 def _merged_settings_dict(body: SettingsIn):
     s = store.get_settings()
+    moved = _secret_target_changed(body, s)
     return {
         "llm_provider": body.llm_provider if body.llm_provider is not None else s.get("llm_provider", "ollama"),
         "llm_base_url": body.llm_base_url.strip() if body.llm_base_url is not None else s.get("llm_base_url", ""),
         "llm_model": body.llm_model if body.llm_model is not None else s.get("llm_model", GEN_MODEL),
         "llm_region": body.llm_region.strip() if body.llm_region is not None else s.get("llm_region", ""),
         "llm_api_key": body.llm_api_key.strip() if (body.llm_api_key is not None and body.llm_api_key.strip() != "") else (
-            crypto.decrypt(s.get("llm_api_key_enc", "")) if s.get("llm_api_key_enc") else ""
+            crypto.decrypt(s.get("llm_api_key_enc", "")) if (s.get("llm_api_key_enc") and not moved["llm"]) else ""
         ),
         "jira_base_url": body.jira_base_url.strip() if body.jira_base_url is not None else s.get("jira_base_url", ""),
         "jira_email": body.jira_email.strip() if body.jira_email is not None else s.get("jira_email", ""),
-        "jira_api_token": body.jira_api_token.strip() if (body.jira_api_token is not None and body.jira_api_token.strip() != "") else _jira_token_status(s)[2],
+        "jira_api_token": body.jira_api_token.strip() if (body.jira_api_token is not None and body.jira_api_token.strip() != "") else ("" if moved["jira"] else _jira_token_status(s)[2]),
         "smtp_host": body.smtp_host.strip() if body.smtp_host is not None else s.get("smtp_host", ""),
         "smtp_port": body.smtp_port if body.smtp_port is not None else s.get("smtp_port", ""),
         "smtp_user": body.smtp_user.strip() if body.smtp_user is not None else s.get("smtp_user", ""),
         "smtp_pass": body.smtp_pass if (body.smtp_pass is not None and body.smtp_pass != "") else (
-            crypto.decrypt(s.get("smtp_pass_enc", "")) if s.get("smtp_pass_enc") else ""
+            crypto.decrypt(s.get("smtp_pass_enc", "")) if (s.get("smtp_pass_enc") and not moved["smtp"]) else ""
         ),
         "smtp_from": body.smtp_from.strip() if body.smtp_from is not None else s.get("smtp_from", ""),
         "smtp_tls": body.smtp_tls if body.smtp_tls is not None else s.get("smtp_tls", True),
@@ -236,6 +261,12 @@ def put_settings(body: SettingsIn, request: Request):
         body.llm_api_key is not None or
         body.llm_region is not None
     )
+    if (llm_updated and s.get("llm_api_key_enc") and not merged["llm_api_key"]
+            and merged["llm_provider"] not in ("ollama", "bedrock")):
+        # The stored key is not reused for a different provider/endpoint.
+        raise HTTPException(status_code=400, detail=(
+            "LLM validation failed: the provider or endpoint changed — please "
+            "re-enter the API key."))
     if llm_updated:
         # Validate against the Ollama URL being submitted now (if any), not the stale
         # saved one — otherwise a combined provider+endpoint change pings the old host.
@@ -271,6 +302,11 @@ def put_settings(body: SettingsIn, request: Request):
                 # forgot to fill in fields you can see are already there", it's "the
                 # token you already entered can't be used anymore, re-enter it".
                 has_enc, readable, _ = _jira_token_status(s)
+                if (body.jira_api_token is None or body.jira_api_token.strip() == "") and has_enc \
+                        and _secret_target_changed(body, s)["jira"]:
+                    raise HTTPException(status_code=400, detail=(
+                        "Jira validation failed: the Jira base URL changed — please "
+                        "re-enter the API token for the new site."))
                 if (body.jira_api_token is None or body.jira_api_token.strip() == "") and has_enc and not readable:
                     raise HTTPException(status_code=400, detail=(
                         "Jira validation failed: the saved API token can no longer be "
@@ -323,6 +359,15 @@ def put_settings(body: SettingsIn, request: Request):
             raise HTTPException(status_code=400, detail=f"SMTP validation failed: {err}")
 
     upd = {}
+    moved = _secret_target_changed(body, s)
+    # Destination changed without a new secret: drop the stored one so it can never be
+    # sent to the new provider/endpoint/host by later calls.
+    if moved["llm"] and not (body.llm_api_key or "").strip():
+        upd["llm_api_key_enc"] = ""
+    if moved["jira"] and not (body.jira_api_token or "").strip():
+        upd["jira_api_token_enc"] = ""
+    if moved["smtp"] and not (body.smtp_pass or ""):
+        upd["smtp_pass_enc"] = ""
     if body.llm_provider is not None:
         upd["llm_provider"] = body.llm_provider
     if body.llm_base_url is not None:
@@ -426,7 +471,11 @@ def ollama_models():
     Ollama URL + the saved LLM token (for a secured/remote Ollama). Best-effort."""
     url = current_ollama_url().rstrip("/")
     s = store.get_settings()
-    key = crypto.decrypt(s.get("llm_api_key_enc", "")) if s.get("llm_api_key_enc") else ""
+    # The saved LLM key is only sent when it IS an Ollama token (provider=ollama);
+    # a hosted provider's key never goes to the Ollama endpoint.
+    key = (crypto.decrypt(s.get("llm_api_key_enc", ""))
+           if s.get("llm_api_key_enc") and (PROVIDER_LOCK or s.get("llm_provider", "ollama")) == "ollama"
+           else "")
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     try:
         import httpx

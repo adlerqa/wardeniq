@@ -17,6 +17,7 @@ principal identically to a human one, with no new code there.
 import os
 
 import auth
+from core.client_ip import client_ip
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
                                               # mutated, never rebound)
 
@@ -27,8 +28,9 @@ TOKEN_AUTH_MAX_FAILURES_PER_WINDOW = int(os.getenv("TOKEN_AUTH_MAX_FAILURES_PER_
 
 
 def _client_ip(request) -> str:
-    return (request.headers.get("x-forwarded-for") or
-            (request.client.host if request.client else "unknown"))
+    # X-Forwarded-For is only trusted from a configured proxy (TRUSTED_PROXIES);
+    # otherwise a caller could rotate it to dodge the limit or lock others out.
+    return client_ip(request)
 
 
 def bearer_token_principal(request):

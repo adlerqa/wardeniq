@@ -14,13 +14,14 @@ main.py (status; then dashboard/tags/RetrieveIn/retrieve; then sync_status,
 needed: store, BOOT, current_llm/current_poll_interval, and the core.config
 constants were already centralized in earlier phases.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from core import state
 from core.bootstrap import BOOT
 from core.config import CASE_AUTO, GITHUB_TOKEN, STEP_AUTO, SUGGEST, VERSION
 from core.deps import current_llm, current_poll_interval
+from core.security import _allowed_project_ids, _case_project_ids, _current_user
 from core.state import SYNC, store
 
 router = APIRouter()
@@ -44,16 +45,17 @@ def status():
 
 
 @router.get("/api/dashboard")
-def dashboard():
+def dashboard(request: Request):
+    allowed = _allowed_project_ids(_current_user(request))
     try:
-        return store.dashboard()
+        return store.dashboard(project_ids=allowed)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, str(e))
 
 
 @router.get("/api/tags")
-def tags():
-    return {"tags": store.all_tags()}
+def tags(request: Request):
+    return {"tags": store.all_tags(project_ids=_allowed_project_ids(_current_user(request)))}
 
 
 class RetrieveIn(BaseModel):
@@ -63,10 +65,22 @@ class RetrieveIn(BaseModel):
 
 
 @router.post("/api/retrieve")
-def retrieve(req: RetrieveIn):
+def retrieve(req: RetrieveIn, request: Request):
     """RAG: find existing test cases relevant to a new requirement (for reuse)."""
+    limit = max(1, min(int(req.limit or 8), 50))
+    allowed = _allowed_project_ids(_current_user(request))
     emb = state.embedder.embed(req.text, task="query")
-    results, pipeline = store.search_cases(emb, limit=req.limit, ctype=req.type)
+    # Scoped users only see cases linked to their projects: over-fetch, then filter.
+    results, pipeline = store.search_cases(emb, limit=limit if allowed is None else limit * 5,
+                                           ctype=req.type)
+    if allowed is not None:
+        def _visible(r):
+            try:
+                pids, _ = _case_project_ids(r.get("id"))
+            except HTTPException:
+                return False
+            return bool(pids & allowed)
+        results = [r for r in results if _visible(r)][:limit]
     return {"query": req.text, "results": results, "pipeline": _trunc(pipeline)}
 
 

@@ -4,9 +4,10 @@ Moved out of store.py (Phase 5 of REFACTOR_PLAN.md).
 """
 
 import time
+from datetime import datetime, timezone
 
 from bson import ObjectId
-from pymongo import timeout
+from pymongo import ReturnDocument, timeout
 
 
 from typing import TYPE_CHECKING
@@ -164,17 +165,80 @@ class UsersAuthMixin(_Base):
                               {"$set": {"otp_hash": otp_hash, "otp_expires": expires,
                                         "otp_attempts": 0}})
 
-    def otp_recent_issue_count(self, uid, window_seconds):
-        """Record an OTP issuance now and return how many were issued within the last
-        `window_seconds` (including this one). Used to rate-limit code requests.
-        Keeps only timestamps inside the window."""
+    def _try_record_issue(self, uid, field, window_seconds, max_per_window):
+        """Atomically record an issuance in `field` (array of timestamps) only if
+        fewer than `max_per_window` were issued in the last `window_seconds`.
+        Returns True if recorded (allowed), False if throttled -- a throttled request
+        is NOT recorded, so it can't extend a lockout."""
         now = time.time()
-        cutoff = now - window_seconds
+        oid = ObjectId(uid)
+        self.users.update_one({"_id": oid}, {"$pull": {field: {"$lt": now - window_seconds}}})
+        if max_per_window <= 0:
+            return False
+        res = self.users.update_one(
+            {"_id": oid, f"{field}.{max_per_window - 1}": {"$exists": False}},
+            {"$push": {field: now}})
+        return res.modified_count == 1
+
+    def otp_recent_issue_count(self, uid, window_seconds, max_per_window=None):
+        """Rate-limit OTP issuance. With `max_per_window`, atomically records this
+        issuance only when under the limit and returns the resulting count, or
+        `max_per_window + 1` when throttled (nothing recorded)."""
+        if max_per_window is not None:
+            if self._try_record_issue(uid, "otp_issues", window_seconds, max_per_window):
+                u = self.users.find_one({"_id": ObjectId(uid)}, {"otp_issues": 1}) or {}
+                return len(u.get("otp_issues") or [])
+            return max_per_window + 1
+        # Legacy form: record unconditionally and return the in-window count.
+        now = time.time()
+        self.users.update_one({"_id": ObjectId(uid)},
+                              {"$pull": {"otp_issues": {"$lt": now - window_seconds}}})
+        self.users.update_one({"_id": ObjectId(uid)}, {"$push": {"otp_issues": now}})
         u = self.users.find_one({"_id": ObjectId(uid)}, {"otp_issues": 1}) or {}
-        issues = [t for t in (u.get("otp_issues") or []) if t >= cutoff]
-        issues.append(now)
-        self.users.update_one({"_id": ObjectId(uid)}, {"$set": {"otp_issues": issues[-20:]}})
-        return len(issues)
+        return len(u.get("otp_issues") or [])
+
+    def reset_code_try_issue(self, uid, window_seconds, max_per_window):
+        """True if a new password-reset code may be issued now (and records it)."""
+        return self._try_record_issue(uid, "reset_issues", window_seconds, max_per_window)
+
+    # ---- brute-force throttle (sign-in, code verification, master reset) -----
+    # One small doc per key ("login:acct:<name>", "login:ip:<addr>", ...). Updates
+    # are single-document atomic operations; docs expire via a TTL index on
+    # `expires_at` (see BaseStore.ensure_indexes).
+    @property
+    def auth_throttle(self):
+        return self.db["auth_throttle"]
+
+    def throttle_locked_for(self, key):
+        """Seconds left on `key`'s lockout (0 when not locked)."""
+        doc = self.auth_throttle.find_one({"_id": key}, {"locked_until": 1}) or {}
+        return max(0.0, float(doc.get("locked_until") or 0) - time.time())
+
+    def throttle_record_failure(self, key, max_failures, window_seconds, lockout_seconds):
+        """Count a failure for `key`; lock it out once `max_failures` is reached
+        within `window_seconds`. Returns the failure count in the current window."""
+        now = time.time()
+        expires = datetime.fromtimestamp(now + max(window_seconds, lockout_seconds),
+                                         tz=timezone.utc)
+        # Start a fresh window when the current one has lapsed (atomic per doc).
+        self.auth_throttle.update_one(
+            {"_id": key, "window_start": {"$lt": now - window_seconds}},
+            {"$set": {"count": 0, "window_start": now}})
+        doc = self.auth_throttle.find_one_and_update(
+            {"_id": key},
+            {"$inc": {"count": 1}, "$setOnInsert": {"window_start": now},
+             "$set": {"expires_at": expires}},
+            upsert=True, return_document=ReturnDocument.AFTER)
+        count = int((doc or {}).get("count") or 0)
+        if count >= max_failures:
+            self.auth_throttle.update_one(
+                {"_id": key}, {"$set": {"locked_until": now + lockout_seconds,
+                                        "count": 0, "window_start": now,
+                                        "expires_at": expires}})
+        return count
+
+    def throttle_clear(self, key):
+        self.auth_throttle.delete_one({"_id": key})
 
     def inc_otp_attempts(self, uid):
         self.users.update_one({"_id": ObjectId(uid)}, {"$inc": {"otp_attempts": 1}})

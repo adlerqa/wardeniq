@@ -8,10 +8,14 @@ same 17 paths, same status codes, same response shapes. Local imports
 Response`, `import report`) are kept exactly where they were (inside the handler
 body), not hoisted, so this diff is a pure move.
 """
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
-from core.security import _current_user, _require_project
+from core.security import (
+    _current_user, _require_cases_accessible, _require_cycle_template_project, _require_project,
+)
 from core.state import store
 
 router = APIRouter()
@@ -34,6 +38,7 @@ class CycleIn(BaseModel):
 def create_cycle(body: CycleIn, request: Request):
     user = _current_user(request)
     _require_project(request, body.project_id)
+    _require_cases_accessible(request, body.case_ids)
     try:
         cid = store.create_cycle(
             body.project_id, body.name, body.case_ids, body.source,
@@ -75,13 +80,26 @@ class CycleStatusIn(BaseModel):
     notes: str = ""
 
 
+def _validate_defect_link(link: str) -> str:
+    """Defect links are rendered as links: only absolute http(s) URLs (or empty)."""
+    link = (link or "").strip()
+    if not link:
+        return ""
+    p = urlparse(link)
+    if p.scheme.lower() not in ("http", "https") or not p.netloc \
+            or any(c.isspace() or ord(c) < 32 for c in link):
+        raise HTTPException(400, "defect link must be an http(s) URL")
+    return link
+
+
 @router.patch("/api/test-cycles/{cid}/items")
 def set_cycle_status(cid: str, body: CycleStatusIn, request: Request):
     user = _current_user(request)
+    defect_link = _validate_defect_link(body.defect_link)
     try:
         item = store.set_cycle_item_status(
             cid, body.item_id or body.case_id or "", body.status,
-            body.actual_result, body.defect_link, body.notes,
+            body.actual_result, defect_link, body.notes,
             executed_by=(user or {}).get("email"),
         )
         return {"ok": True, "item": item, "cycle": store.get_cycle(cid)}
@@ -102,6 +120,7 @@ def update_cycle(cid: str, body: dict, request: Request):
 @router.post("/api/test-cycles/{cid}/items")
 def add_cycle_items(cid: str, body: dict, request: Request):
     user = _current_user(request)
+    _require_cases_accessible(request, (body or {}).get("case_ids") or [])
     try:
         count = store.add_cycle_items(
             cid, (body or {}).get("case_ids") or [],
@@ -197,6 +216,8 @@ def list_cycle_templates(pid: str):
 def create_cycle_from_template(tid: str, body: TemplateIn, request: Request):
     from pymongo.errors import DuplicateKeyError
     user = _current_user(request)
+    tpl = _require_cycle_template_project(request, tid)
+    _require_cases_accessible(request, tpl.get("case_ids") or [])
     try:
         cid = store.create_cycle_from_template(tid, body.name, created_by=(user or {}).get("email"))
     except ValueError as exc:

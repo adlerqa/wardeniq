@@ -24,11 +24,13 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from api.schemas import OtpRequestIn
+from core import throttle
 from core.audit import _audit
 from core.bootstrap import public_boot_status
+from core.client_ip import client_ip
 from core.config import (
-    APP_WORKSPACE_NAME, DEFAULT_ADMIN_PASSWORD, OTP_MAX_PER_WINDOW,
-    OTP_WINDOW_SECONDS,
+    ADMIN_EMAIL, APP_WORKSPACE_NAME, DEFAULT_ADMIN_PASSWORD, OTP_DEV_CODES,
+    OTP_MAX_PER_WINDOW, OTP_WINDOW_SECONDS, RESET_CODE_MAX_PER_WINDOW,
 )
 from core.deps import _smtp_cfg, _user_public
 from core.logging_setup import get_logger
@@ -45,35 +47,30 @@ router = APIRouter()
 _DUMMY_PASSWORD_HASH = auth.hash_password(secrets.token_urlsafe(16))
 
 
-def _deliver_otp(email, code, recipient_name="", is_admin=False):
-    """Returns ('sent'|'logged'|'error', detail).
-    - 'sent'    : emailed via SMTP.
-    - 'logged'  : no SMTP configured -> the code is printed to the server log AND
-                  returned to the caller so the sign-in screen can display it
-                  directly. This is the demo/dev-mode path: it makes wardenIQ
-                  usable without configuring email so contributors and evaluators
-                  can sign in and try the app. Once SMTP is configured every code
-                  is emailed and never logged or returned.
-    - 'error'   : SMTP configured but the send failed.
-
-    The `is_admin` argument is retained for callers/log context but no longer
-    gates the 'logged' path — see the note above on demo-mode behavior.
+def _deliver_otp(email, code, recipient_name="", is_admin=False, is_bootstrap=False):
+    """Returns ('sent'|'logged'|'unavailable'|'error', detail).
+    - 'sent'        : emailed via SMTP.
+    - 'logged'      : no SMTP configured. The code is printed to the server log for
+                      the bootstrap admin (the first admin / ADMIN_EMAIL) so they can
+                      sign in and set email up; `detail` is "" (nothing returned to
+                      the caller). Only with the explicit OTP_DEV_CODES=true opt-in
+                      (ignored when APP_ENV=production) is every code logged AND
+                      returned in `detail` for the sign-in screen (demo installs).
+    - 'unavailable' : no SMTP and neither of the above -- no code is delivered.
+    - 'error'       : SMTP configured but the send failed.
     """
     cfg = _smtp_cfg()
     if not cfg:
-        # No SMTP -> demo/dev mode. Log the code (operators reading `docker logs`
-        # can still fetch it) and return it so the UI can show it inline. Anyone
-        # who can hit the sign-in endpoint on this host is trusted at this point:
-        # a public deployment must configure SMTP before exposing wardenIQ.
+        if not (OTP_DEV_CODES or is_bootstrap):
+            return "unavailable", ""
         role_hint = "admin" if is_admin else "user"
         log.info("\n" + "=" * 64 +
                 "\nSMTP is not configured — one-time sign-in code"
                 "\n  %s (%s): %s"
-                "\nThe code is also shown on the sign-in screen. Set up"
-                "\nemail under Configuration → Email to disable this"
-                "\ndemo path (codes will then only be emailed).\n"
+                "\nSet up email under Configuration → Email; codes will then"
+                "\nonly be emailed.\n"
                 + "=" * 64 + "\n", email, role_hint, code)
-        return "logged", code
+        return "logged", (code if OTP_DEV_CODES else "")
 
     ok, err = email_send.send_otp(cfg, email, code, recipient_name)
     if ok:
@@ -110,7 +107,7 @@ OTP_MASKED_MESSAGE = "If an account exists for this email, a sign-in code has be
 
 
 @router.post("/api/auth/request-otp")
-def request_otp(body: OtpRequestIn):
+def request_otp(body: OtpRequestIn, request: Request = None):
     email = (body.email or "").strip().lower()
     if not auth.is_valid_email(email):
         raise HTTPException(400, "a valid email is required")
@@ -135,24 +132,31 @@ def request_otp(body: OtpRequestIn):
     # limit so we don't reveal that the account exists or is being targeted — and,
     # as above, no email is sent for this request, so the message must not claim
     # one was.
-    if store.otp_recent_issue_count(user["id"], OTP_WINDOW_SECONDS) > OTP_MAX_PER_WINDOW:
+    # Throttled requests are not recorded, so they can't extend the window.
+    if store.otp_recent_issue_count(user["id"], OTP_WINDOW_SECONDS,
+                                    OTP_MAX_PER_WINDOW) > OTP_MAX_PER_WINDOW:
         log.warning("OTP throttled: %s exceeded %d/%ds", email, OTP_MAX_PER_WINDOW,
                   OTP_WINDOW_SECONDS)
         return {"sent": True, "message": OTP_MASKED_MESSAGE}
     code = auth.gen_otp()
     store.set_otp(user["id"], auth.hash_otp(code), time.time() + auth.OTP_TTL)
+    is_admin = user.get("role") == "admin"
+    is_bootstrap = bootstrap or (is_admin and bool(ADMIN_EMAIL) and email == ADMIN_EMAIL)
     mode, detail = _deliver_otp(email, code, user.get("name") or email.split("@")[0],
-                                is_admin=(user.get("role") == "admin"))
+                                is_admin=is_admin, is_bootstrap=is_bootstrap)
+    if mode == "unavailable":
+        # Nothing was delivered; same masked answer as for an unknown account.
+        return {"sent": True, "message": OTP_MASKED_MESSAGE}
     if mode == "error":
         raise HTTPException(502, "could not send the sign-in email — please try again "
                                  "or contact your administrator")
-    # delivery: "email" (SMTP) or "log" (demo/dev mode — no SMTP configured, code
-    # is printed to the server log AND returned in `dev_code` for the sign-in UI).
+    # delivery: "email" (SMTP) or "log" (no SMTP: code printed to the server log;
+    # returned in `dev_code` only with the OTP_DEV_CODES opt-in).
     resp = {"sent": True, "bootstrap": bootstrap,
             "delivery": "log" if mode == "logged" else "email",
             "message": "Code sent. Check your inbox."}
-    if mode == "logged":
-        # `detail` holds the plaintext code in this mode (see _deliver_otp).
+    if mode == "logged" and detail:
+        # `detail` holds the plaintext code only under OTP_DEV_CODES (see _deliver_otp).
         resp["dev_code"] = detail
     return resp
 
@@ -163,8 +167,10 @@ class OtpVerifyIn(BaseModel):
 
 
 @router.post("/api/auth/verify-otp")
-def verify_otp(body: OtpVerifyIn, response: Response):
+def verify_otp(body: OtpVerifyIn, response: Response, request: Request = None):
     email = (body.email or "").strip().lower()
+    tkeys = throttle.keys("otp", email, client_ip(request) if request else None)
+    throttle.check(store, tkeys)
     user = store.get_user_by_email(email)
     migrating = False
     if not user:
@@ -176,15 +182,21 @@ def verify_otp(body: OtpVerifyIn, response: Response):
                 migrating = True
 
     if not user or not user.get("active"):
+        throttle.fail(store, tkeys)
         raise HTTPException(401, "invalid email or code")
     if not user.get("otp_hash") or user.get("otp_expires", 0) < time.time():
+        throttle.fail(store, tkeys)
         raise HTTPException(401, "code expired — request a new one")
     if user.get("otp_attempts", 0) >= auth.OTP_MAX_ATTEMPTS:
         raise HTTPException(429, "too many attempts — request a new code")
     if not auth.otp_matches(user["otp_hash"], body.code):
         store.inc_otp_attempts(user["id"])
+        throttle.fail(store, tkeys)
+        _audit(request, "auth.login_failed", target=email, actor={}, detail="one-time code")
         raise HTTPException(401, "invalid email or code")
 
+    throttle.succeed(store, tkeys)
+    _audit(request, "auth.login", target=email, actor=user, detail="one-time code")
     store.clear_otp(user["id"])
     if migrating:
         store.update_user(user["id"], {"email": email, "name": email.split("@")[0]})
@@ -237,13 +249,17 @@ class LoginPasswordIn(BaseModel):
 
 
 @router.post("/api/auth/login-password")
-def login_password(body: LoginPasswordIn, response: Response):
+def login_password(body: LoginPasswordIn, response: Response, request: Request = None):
     cfg = _smtp_cfg()
     if cfg is not None:
         raise HTTPException(400, "Password login is disabled because SMTP is configured. Please use email OTP.")
 
     username = (body.username or "").strip()
     password = body.password or ""
+    # Per-account and per-IP failure limits with a lockout window. A locked key is
+    # refused before any password check, and the refusal itself isn't counted.
+    tkeys = throttle.keys("login", username, client_ip(request) if request else None)
+    throttle.check(store, tkeys)
 
     # Accept the bootstrap `admin` username OR any account's email address — the
     # sign-in form is labelled "Username or email", and /api/auth/reset-password
@@ -266,6 +282,8 @@ def login_password(body: LoginPasswordIn, response: Response):
             if not has_users:
                 status = public_boot_status()
                 raise HTTPException(503, " ".join(filter(None, [status["detail"], _NO_USERS_MESSAGE])))
+            throttle.fail(store, tkeys)
+            _audit(request, "auth.login_failed", target=username, actor={}, detail="password")
             raise HTTPException(401, "Invalid username or password")
         user = store.create_user("admin", "Admin", "admin")
     else:
@@ -285,11 +303,17 @@ def login_password(body: LoginPasswordIn, response: Response):
             auth.password_matches(_DUMMY_PASSWORD_HASH, password)
             ok = False
         if not ok:
+            throttle.fail(store, tkeys)
+            _audit(request, "auth.login_failed", target=username, actor={}, detail="password")
             raise HTTPException(401, "Invalid username or password")
 
     if not user.get("active"):
+        _audit(request, "auth.login_failed", target=username, actor={},
+               detail="password; account deactivated")
         raise HTTPException(401, "User account is deactivated")
 
+    throttle.succeed(store, tkeys)
+    _audit(request, "auth.login", target=user.get("email"), actor=user, detail="password")
     store.touch_login(user["id"])
     fresh = store.get_user(user["id"]) or user
     response.set_cookie(auth.SESSION_COOKIE,
@@ -380,6 +404,18 @@ def request_password_reset(body: RequestPasswordResetIn):
         # Generic response to prevent user enumeration
         return {"sent": True, "smtp_configured": True, "message": "If an account exists, a 6-digit reset code has been sent to your email."}
 
+    # Limit how many codes one account can be sent. A throttled request is not
+    # recorded and does NOT replace the outstanding code (so it can't reset that
+    # code's attempt counter). Same generic answer as above.
+    try:
+        allowed = store.reset_code_try_issue(user["id"], OTP_WINDOW_SECONDS,
+                                             RESET_CODE_MAX_PER_WINDOW)
+    except AttributeError:
+        allowed = True
+    if not allowed:
+        log.warning("password-reset code throttled for %s", target)
+        return {"sent": True, "smtp_configured": True, "message": "If an account exists, a 6-digit reset code has been sent to your email."}
+
     code = auth.gen_otp()
     store.set_reset_code(user["id"], auth.hash_otp(code), time.time() + auth.OTP_TTL)
 
@@ -396,21 +432,25 @@ def request_password_reset(body: RequestPasswordResetIn):
 
 
 @router.post("/api/auth/reset-password")
-def reset_password(body: ResetPasswordIn):
+def reset_password(body: ResetPasswordIn, request: Request = None):
     target = (body.username_or_email or "").strip()
     if not target:
         raise HTTPException(400, "Username or email is required")
     if not body.code or not body.code.strip():
         raise HTTPException(400, "Reset code is required")
+    tkeys = throttle.keys("reset", target, client_ip(request) if request else None)
+    throttle.check(store, tkeys)
 
     user = store.get_user_by_email(target.lower())
     if not user and (target.lower() == "admin" or target == "admin"):
         user = store.get_user_by_email("admin")
 
     if not user or not user.get("active"):
+        throttle.fail(store, tkeys)
         raise HTTPException(401, "Invalid request or reset code")
 
     if not user.get("reset_hash") or user.get("reset_expires", 0) < time.time():
+        throttle.fail(store, tkeys)
         raise HTTPException(401, "Reset code expired — please request a new one")
 
     if user.get("reset_attempts", 0) >= auth.OTP_MAX_ATTEMPTS:
@@ -418,12 +458,14 @@ def reset_password(body: ResetPasswordIn):
 
     if not auth.otp_matches(user["reset_hash"], body.code.strip()):
         store.inc_reset_attempts(user["id"])
+        throttle.fail(store, tkeys)
         raise HTTPException(401, "Invalid reset code")
 
     errs = auth.password_policy_errors(body.new_password)
     if errs:
         raise HTTPException(400, "Password must have " + ", ".join(errs) + ".")
 
+    throttle.succeed(store, tkeys)
     store.clear_reset_code(user["id"])
     store.set_user_password(user["id"], auth.hash_password(body.new_password))
 
@@ -437,14 +479,21 @@ class ResetPasswordMasterIn(BaseModel):
 
 
 @router.post("/api/auth/reset-password-master")
-def reset_password_master(body: ResetPasswordMasterIn):
+def reset_password_master(body: ResetPasswordMasterIn, request: Request = None):
     """Web-native admin password reset using the container's APP_SECRET."""
     provided_secret = (body.app_secret or "").strip()
     if not provided_secret:
         raise HTTPException(400, "App Master Secret (APP_SECRET) is required")
+    # The master secret gets the stricter (per-account) limit, applied per client IP.
+    tkeys = [(k, throttle.AUTH_MAX_FAILURES_PER_ACCOUNT)
+             for k, _ in throttle.keys("master", None, client_ip(request) if request else None)]
+    throttle.check(store, tkeys)
 
     effective_secret = auth._session_secret()
-    if not hmac.compare_digest(provided_secret, effective_secret):
+    if not hmac.compare_digest(provided_secret.encode(), effective_secret.encode()):
+        throttle.fail(store, tkeys)
+        _audit(request, "auth.master_reset_failed", target=(body.username or "admin").strip(),
+               actor={}, detail="invalid master secret")
         raise HTTPException(401, "Invalid App Master Secret")
 
     target = (body.username or "admin").strip()
@@ -460,13 +509,23 @@ def reset_password_master(body: ResetPasswordMasterIn):
 
     if not user.get("active"):
         raise HTTPException(401, "User account is deactivated")
+    # Recovery path for administrators only (incl. the bootstrap `admin` account);
+    # other accounts reset via an emailed code or an administrator.
+    if user.get("role") != "admin":
+        _audit(request, "auth.master_reset_failed", target=target, actor={},
+               detail="target is not an admin account")
+        raise HTTPException(403, "The master reset only applies to administrator accounts")
 
     errs = auth.password_policy_errors(body.new_password)
     if errs:
         raise HTTPException(400, "Password must have " + ", ".join(errs) + ".")
 
+    # set_user_password() bumps session_version, so every existing session of this
+    # account is signed out.
     store.set_user_password(user["id"], auth.hash_password(body.new_password))
     store.clear_reset_code(user["id"])
+    _audit(request, "auth.master_reset", target=user.get("email") or target, actor={},
+           detail="password reset with the master secret; sessions revoked")
     return {"reset": True, "message": "Password reset successfully using App Master Secret. You can now sign in."}
 
 
@@ -483,7 +542,20 @@ def auth_me(request: Request):
 
 
 @router.post("/api/auth/logout")
-def logout(response: Response):
+def logout(request: Request, response: Response):
+    """Sign out. A valid, current session is also revoked server-side (the user's
+    session_version is bumped), so the cookie value can't be replayed afterwards.
+    Note this ends every session of that user, on all devices."""
+    sess = auth.verify_session(request.cookies.get(auth.SESSION_COOKIE))
+    if sess:
+        uid, tok_sv = sess
+        try:
+            user = store.get_user(uid)
+            if user and int(user.get("session_version", 0)) == int(tok_sv):
+                store.bump_session_version(uid)
+                _audit(request, "auth.logout", target=user.get("email"), actor=user)
+        except Exception as e:  # noqa: BLE001 — logout must always clear the cookie
+            log.warning("logout: could not revoke session for %s: %r", uid, e)
     response.delete_cookie(auth.SESSION_COOKIE, path="/")
     return {"ok": True}
 

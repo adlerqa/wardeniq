@@ -14,6 +14,7 @@ from core.state import store  # noqa: F401  (bare name-import is safe: store is
 import automation as auto_cov
 import github
 import sheet_import as sheet_mod
+import size_limits
 
 from workers.registry import JOB_WORKERS
 
@@ -74,10 +75,15 @@ def _test_repo_scan_worker(jid, params):
             url = (f"{gitlab_api}/projects/"
                    f"{_up.quote(repo['full_name'], safe='')}"
                    f"/repository/archive.tar.gz")
-            r = _httpx.get(url, headers={"PRIVATE-TOKEN": token},
-                           params={"sha": default_branch}, timeout=120.0,
-                           follow_redirects=True)
-            if r.status_code == 404:
+            def _fetch(branch):
+                try:
+                    return size_limits.download_capped(
+                        url, headers={"PRIVATE-TOKEN": token},
+                        params={"sha": branch}, timeout=120.0), None
+                except _httpx.HTTPStatusError as e:
+                    return None, e
+            tar_bytes, err = _fetch(default_branch)
+            if err is not None and err.response.status_code == 404:
                 # Try the repo's default branch from /projects endpoint.
                 try:
                     proj = _httpx.get(
@@ -87,13 +93,11 @@ def _test_repo_scan_worker(jid, params):
                     db = proj.get("default_branch") or "main"
                     if db != default_branch:
                         default_branch = db
-                        r = _httpx.get(url, headers={"PRIVATE-TOKEN": token},
-                                       params={"sha": default_branch},
-                                       timeout=120.0, follow_redirects=True)
+                        tar_bytes, err = _fetch(default_branch)
                 except Exception:  # noqa: BLE001
                     pass
-            r.raise_for_status()
-            tar_bytes = r.content
+            if err is not None:
+                raise err
             # Capture HEAD SHA for the chosen branch so commit links work.
             try:
                 commits = _httpx.get(
@@ -227,6 +231,8 @@ def _test_repo_scan_worker(jid, params):
         scan_outcome = {"status": "failed",
                         "error": f"{type(scan_err).__name__}: {scan_err}"[:300]}
     finally:
+        if hasattr(tar_bytes, "close"):
+            tar_bytes.close()      # temporary archive file
         # GUARANTEED status update — repo can never remain stuck "running".
         store.set_repo_scan_status(
             repo_id, scan_outcome["status"],

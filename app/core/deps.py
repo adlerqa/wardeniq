@@ -209,7 +209,11 @@ def _fetch_repo_snapshot_files(repo: dict, ref: str = "") -> list:
     """
     try:
         data = _repo_get_archive(repo, ref or repo.get("default_branch", ""))
-        files, _stats = extractmod.source_files_from_tar(data, return_stats=True)
+        try:
+            files, _stats = extractmod.source_files_from_tar(data, return_stats=True)
+        finally:
+            if hasattr(data, "close"):
+                data.close()      # temporary archive file
         return [{"path": p, "text": t} for p, t in files]
     except Exception as e:  # noqa: BLE001
         log.warning("[contracts] repo snapshot fetch failed for %s: %s",

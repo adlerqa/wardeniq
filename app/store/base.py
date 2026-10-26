@@ -28,6 +28,11 @@ log = get_logger("store")
 VECTOR_INDEX = "vector_index"
 TEXT_INDEX = "text_index"
 
+# Short-lived brute-force counters that a TTL index prunes on its own. They are not
+# application data: a migration must neither copy them nor demand that their counts
+# stay fixed (a record expiring mid-copy would otherwise fail the verification).
+EPHEMERAL_COLLECTIONS = frozenset({"auth_throttle", "api_token_failures"})
+
 
 def _with_durable_write_concern(uri: str) -> str:
     """Opt into a majority write concern (and retryWrites) unless the URI already
@@ -129,13 +134,16 @@ class BaseStore:
                      "project_imported_row_sources", "project_imported_row_feature_map",
                      "project_imported_row_promotions",
                      "project_imported_row_corrections", "import_analysis_status",
-                     "stored_documents", "coverage_snapshots"]:
+                     "stored_documents", "coverage_snapshots", "auth_throttle"]:
             if name not in self.db.list_collection_names():
                 self.db.create_collection(name)
         self.documents.create_index([("project_id", 1), ("created_at", -1)])
         self.documents.create_index([("feature_id", 1)])
         self.users.create_index([("email", 1)], unique=True)
         self.api_tokens.create_index([("token_hash", 1)], unique=True)
+        # Rate-limit bookkeeping expires on its own (TTL indexes).
+        self.api_token_failures.create_index([("expires_at", 1)], expireAfterSeconds=0)
+        self.db["auth_throttle"].create_index([("expires_at", 1)], expireAfterSeconds=0)
         self.assoc.create_index([("feature_id", 1), ("test_case_id", 1)], unique=True)
         self.repos.create_index([("project_id", 1), ("full_name", 1)], unique=True)
         self.prs.create_index([("repo_id", 1), ("number", 1)], unique=True)
@@ -459,7 +467,8 @@ class BaseStore:
             c.close()
 
     def migrate_to(self, target_uri: str, progress=None, overwrite: bool = False) -> dict:
-        """Copy EVERY collection from this database to the database at target_uri,
+        """Copy EVERY collection (except the TTL-pruned EPHEMERAL_COLLECTIONS, i.e. the login
+        throttle counters) from this database to the database at target_uri,
         preserving _ids and embedded vectors. Indexes are NOT copied — the app
         recreates them (regular + vector/search) on next startup against the target.
         Returns {collection: docs_copied}. Documents are streamed in batches so large,
@@ -476,7 +485,8 @@ class BaseStore:
         c = MongoClient(target_uri, serverSelectionTimeoutMS=8000)
         try:
             tgt = c[self.db.name]
-            names = [n for n in self.db.list_collection_names() if not n.startswith("system.")]
+            names = [n for n in self.db.list_collection_names()
+                     if not n.startswith("system.") and n not in EPHEMERAL_COLLECTIONS]
             if not overwrite:
                 for nm in names:
                     if tgt[nm].estimated_document_count() > 0:
@@ -562,7 +572,8 @@ class BaseStore:
                     drift.append(f"'{nm}': {copied} documents were copied but the source now "
                                  f"has {source_now} (it changed during the copy)")
             created_since = sorted(n for n in self.db.list_collection_names()
-                                   if not n.startswith("system.") and n not in copied_counts)
+                                   if not n.startswith("system.") and n not in copied_counts
+                                   and n not in EPHEMERAL_COLLECTIONS)
             for nm in created_since:
                 drift.append(f"'{nm}' was created on the source during the copy and was "
                              "not copied")

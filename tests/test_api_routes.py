@@ -96,7 +96,7 @@ def test_request_otp_bootstraps_first_admin(monkeypatch):
     monkeypatch.setattr(main.store, "get_user_by_email", lambda email: None)
     monkeypatch.setattr(main.store, "list_users", lambda: [])
     monkeypatch.setattr(main.store, "create_user", fake_create_user)
-    monkeypatch.setattr(main.store, "otp_recent_issue_count", lambda uid, window: 0)
+    monkeypatch.setattr(main.store, "otp_recent_issue_count", lambda uid, window, max_per_window=None: 0)
     monkeypatch.setattr(main.store, "set_otp", lambda uid, h, exp: None)
     # No SMTP configured -> "logged" delivery path, code returned in dev_code.
     # request_otp itself now lives in api/routes/auth.py (Phase 6 extraction),

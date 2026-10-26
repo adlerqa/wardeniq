@@ -28,6 +28,7 @@ from pydantic import BaseModel
 import coverage as cov
 import extract as extractmod
 import figma
+from size_limits import read_upload_many
 from extract import chunk as chunk_doc, extract_text, UnsupportedDocumentError
 
 from core import state
@@ -37,7 +38,10 @@ from core.deps import (
     current_llm, figma_client, jira_client,
 )
 from core.logging_setup import get_logger
-from core.security import _allowed_project_ids, _current_user, _require_feature_project, _require_project
+from core.security import (
+    _allowed_project_ids, _current_user, _require_cases_accessible, _require_feature_project,
+    _require_project,
+)
 from core.state import store
 from workers.registry import launch_job
 
@@ -81,14 +85,14 @@ async def create_feature(request: Request, name: str = Form(...), project_id: st
                          confluence_children: bool = Form(True),
                          figma_url: list[str] = Form(default=[]),
                          files: list[UploadFile] = File(None)):
+    # Check project access before reading/parsing anything.
+    if project_id:
+        _require_project(request, project_id)
     # Combine every uploaded doc (PRD/HLD/LLD/…) + pasted text into one corpus,
     # each section labelled so the LLM and the embeddings keep document context.
     parts, sources, pdf_urls = [], [], []
     raw_files_info = []
-    for f in (files or []):
-        if not f or not f.filename:
-            continue
-        data = await f.read()
+    for f, data in await read_upload_many(files):
         raw_files_info.append((f.filename, data, getattr(f, "content_type", None)))
         try:
             txt = extract_text(f.filename, data)
@@ -223,10 +227,7 @@ def regenerate(fid: str, body: dict):
 
 async def _read_corpus(files, text):
     parts, sources = [], []
-    for f in (files or []):
-        if not f or not f.filename:
-            continue
-        data = await f.read()
+    for f, data in await read_upload_many(files):
         try:
             txt = extract_text(f.filename, data)
         except UnsupportedDocumentError as exc:
@@ -252,10 +253,7 @@ async def new_version(fid: str, text: str = Form(""), name: str = Form(""), key:
         raise HTTPException(404, "feature not found")
     # Read uploaded docs + pasted text; collect any links embedded in PDFs.
     parts, sources, pdf_urls = [], [], []
-    for f in (files or []):
-        if not f or not f.filename:
-            continue
-        data = await f.read()
+    for f, data in await read_upload_many(files):
         try:
             txt = extract_text(f.filename, data)
         except UnsupportedDocumentError as exc:
@@ -367,7 +365,8 @@ class AssociateIn(BaseModel):
 
 
 @router.post("/api/features/{fid}/associate")
-def associate(fid: str, body: AssociateIn):
+def associate(fid: str, body: AssociateIn, request: Request):
+    _require_cases_accessible(request, [body.case_id])
     store.associate(fid, body.case_id, "manual", None)
     return {"associated": body.case_id}
 

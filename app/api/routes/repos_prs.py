@@ -206,6 +206,7 @@ def add_repo(pid: str, body: RepoIn, request: Request):
         path = body.repo_full_name or body.url or ""
         try:
             full = gitlab_mod.parse_repo_url(path) if "://" in path or path.endswith(".git") else path
+            full = gitlab_mod.validate_project_path(full)
         except ValueError as e:
             raise HTTPException(400, str(e))
         if "/" not in full:
