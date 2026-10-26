@@ -39,6 +39,12 @@
 
 ### Fixed
 
+- **Capability probe reports the curated message for MongoDB without mongot.**
+  A stock replica set without mongot rejects search-index creation with error
+  code 31082 ("requires additional configuration"); the probe previously fell
+  through to the generic branch and showed truncated raw driver text. Code
+  31082 (or the message on its own) now classifies as search-unsupported, so
+  the probe returns the "requires a MongoDB with Vector Search" message (#204).
 - Ollama health checks now send the configured bearer token, matching generation requests (#180).
 
 - Fixed the installer script links in `docs/configuration.md` to resolve to the
