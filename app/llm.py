@@ -115,13 +115,14 @@ class LLM:
             try:
                 content = self._raw_chat(system, user, num_ctx, temperature, max_tokens)
                 parsed = json.loads(_extract_json(content))
-                if not isinstance(parsed, dict):
-                    raise ValueError("LLM JSON response must be an object")
-                return parsed
-            except (json.JSONDecodeError, ValueError) as e:
-                last = e  # malformed or wrong top-level shape -> retry once
+            except json.JSONDecodeError as e:
+                last = e  # malformed JSON -> retry once
+                continue
             except Exception as e:  # noqa: BLE001
                 raise RuntimeError(f"LLM request failed ({self.provider}): {e}") from e
+            if not isinstance(parsed, dict):
+                raise RuntimeError("LLM JSON response must be an object")
+            return parsed
         raise RuntimeError(f"LLM returned unparseable JSON ({self.provider}): {last}")
 
     def _raw_chat(self, system, user, num_ctx, temperature, max_tokens,

@@ -17,7 +17,7 @@ _LANG = {
 }
 
 
-def _response_list(data, key: str) -> list:
+def _response_list(data: object, key: str) -> list[object]:
     """Return a JSON array field only when the model supplied the expected shape."""
     if not isinstance(data, dict):
         return []

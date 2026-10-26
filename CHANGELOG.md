@@ -7,7 +7,7 @@
 - **Malformed LLM JSON no longer crashes analysis or leaves orphan feature versions.**
   JSON responses are required to be objects, nullable list fields are normalized at
   the shared generation/coverage boundaries, and version diffs complete before a new
-  feature version is persisted.
+  feature version is persisted (#147).
 
 - Fixed the installer script links in `docs/configuration.md` to resolve to the
   repository root after the documentation move (#61).
