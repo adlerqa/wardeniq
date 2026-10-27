@@ -3,7 +3,7 @@ and the webhook signature/action-filter helpers shared by the GitHub/GitLab
 webhook route handlers.
 
 Moved out of main.py (Phase 4 of REFACTOR_PLAN.md). `poller` is started
-exactly once per process by main.py's `@app.on_event("startup")` handler
+exactly once per process by main.py's lifespan handler
 (`threading.Thread(target=poller, daemon=True).start()`) — this module only
 defines the loop, it does not start any threads itself.
 

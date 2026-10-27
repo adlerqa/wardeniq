@@ -2,7 +2,7 @@
 build retry loop, legacy-feature migration, and admin seeding.
 
 Moved out of main.py (Phase 2 of REFACTOR_PLAN.md). `bootstrap()` itself is
-still invoked from main.py's `_startup()` on-event handler (Phase 4 concern —
+still invoked from main.py's `_startup()` lifespan helper (Phase 4 concern —
 background thread wiring hasn't moved yet), so this module does not change
 when or how often bootstrap runs.
 
