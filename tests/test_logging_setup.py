@@ -113,8 +113,8 @@ class TestNoRemainingDiagnosticPrints:
 
     _EXEMPT = {
         "reset_password.py",
-        "test_password_reset.py",
-        "test_validator_gen.py",
+        "check_password_reset.py",
+        "debug_validator_gen.py",
         # Only mentions print() in its own docstring, explaining what it replaces.
         "logging_setup.py",
     }
