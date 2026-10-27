@@ -2,12 +2,54 @@
 
 ## Unreleased
 
+### Security
+
+- Hardened authorization: the embedding-model switch is admin-only, stored
+  provider credentials are only reused for the endpoint they were saved for,
+  and project scoping is enforced on the remaining by-id, by-body and aggregate
+  routes (documents, PRs, coverage runs, cycle templates, sheet imports,
+  dashboard, tags, case retrieval, usage).
+- Hardened rendering of user/LLM-supplied values in the web UI and validated
+  test-case types server-side.
+- Hardened Git provider requests (repository path, owner/name and branch
+  validation) for Start Developing and repository access.
+- Added brute-force throttling to sign-in, code verification and password-reset
+  routes; OTP and reset-code issuance limits are now atomic. New settings:
+  `AUTH_MAX_FAILURES_PER_ACCOUNT`, `AUTH_MAX_FAILURES_PER_IP`,
+  `AUTH_FAILURE_WINDOW_SECONDS`, `AUTH_LOCKOUT_SECONDS`,
+  `RESET_CODE_MAX_PER_WINDOW`, `TRUSTED_PROXIES` (set it when running behind a
+  reverse proxy, otherwise all users share the proxy's address). The throttle
+  counters are not copied by the database migration.
+- Without SMTP, sign-in codes are no longer returned to the browser; only the
+  bootstrap admin's code is printed to the server log. Demo installs can opt in
+  with `OTP_DEV_CODES=true` (ignored when `APP_ENV=production`).
+- The master-secret password reset is limited to administrator accounts and is
+  audited; sign-in successes/failures are audited; API-token actions record the
+  token as the actor; users with a pending invitation must accept it before
+  using the API; logout revokes the session server-side; viewers can change
+  their own password.
+- Added size limits for uploads (`MAX_UPLOAD_MB`, HTTP 413), unpacked
+  `.docx`/`.xlsx` content (`MAX_ARCHIVE_UNCOMPRESSED_MB`) and repository
+  archives (`MAX_REPO_ARCHIVE_MB`, streamed to a temporary file).
+- Hardened the link follower's address checks, download filenames, storage
+  error messages, defect-link URLs and Ollama model listing.
+- Updated dependencies to patched releases (fastapi/starlette, pypdf 6,
+  cryptography, python-multipart, pymongo, json-repair, pytest, vite,
+  source-map-js).
+
 ### Fixed
 
 - **Malformed LLM JSON no longer crashes analysis or leaves orphan feature versions.**
   JSON responses are required to be objects, nullable list fields are normalized at
   the shared generation/coverage boundaries, and version diffs complete before a new
   feature version is persisted (#147).
+- **Capability probe reports the curated message for MongoDB without mongot.**
+  A stock replica set without mongot rejects search-index creation with error
+  code 31082 ("requires additional configuration"); the probe previously fell
+  through to the generic branch and showed truncated raw driver text. Code
+  31082 (or the message on its own) now classifies as search-unsupported, so
+  the probe returns the "requires a MongoDB with Vector Search" message (#204).
+- Ollama health checks now send the configured bearer token, matching generation requests (#180).
 
 - Fixed the installer script links in `docs/configuration.md` to resolve to the
   repository root after the documentation move (#61).

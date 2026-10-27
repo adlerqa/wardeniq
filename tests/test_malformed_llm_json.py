@@ -77,11 +77,16 @@ class _FakeStore:
 
 def _new_version(monkeypatch, store, llm, diff_result=None):
     monkeypatch.setattr(feature_routes, "store", store)
-    monkeypatch.setattr(feature_routes.state, "embedder", SimpleNamespace(embed=lambda text: [0.0]))
-    monkeypatch.setattr(feature_routes, "_generate_feature_summary", lambda *args: "summary")
+    monkeypatch.setattr(
+        feature_routes.state, "embedder", SimpleNamespace(embed=lambda text: [0.0])
+    )
+    monkeypatch.setattr(
+        feature_routes, "_generate_feature_summary", lambda *args: "summary"
+    )
     monkeypatch.setattr(feature_routes, "current_llm", lambda: llm)
     monkeypatch.setattr(feature_routes, "launch_job", lambda *args, **kwargs: "job-1")
     if diff_result is not None:
+
         def diff_versions(*args, **kwargs):
             store.events.append("diff")
             return diff_result
@@ -130,7 +135,9 @@ def test_chat_json_does_not_retry_value_error_from_provider(monkeypatch):
 
     monkeypatch.setattr(llm, "_raw_chat", raw_chat)
 
-    with pytest.raises(RuntimeError, match="LLM request failed.*invalid provider region"):
+    with pytest.raises(
+        RuntimeError, match="LLM request failed.*invalid provider region"
+    ):
         llm.chat_json("system", "user")
     assert len(calls) == 1
 
@@ -150,12 +157,56 @@ def test_chat_json_retries_malformed_json(monkeypatch):
     assert len(calls) == 2
 
 
-@pytest.mark.parametrize("response", [[], {"keep": None, "retire": None}])
+@pytest.mark.parametrize(
+    "response",
+    [
+        [],
+        {"keep": None, "retire": None},
+        {"keep": "c1", "retire": "c1"},
+        {"keep": [["c1"], {"id": "c1"}], "retire": [{"id": ["c1"]}, {"id": {"x": 1}}]},
+    ],
+)
 def test_diff_versions_normalizes_malformed_shape(response):
     out = cov.diff_versions(_ResponseLLM(response), "old", "new", _case())
 
     assert out["keep"] == ["c1"]
     assert out["retire"] == []
+
+
+def test_diff_versions_preserves_valid_retire_with_invalid_elements():
+    response = {
+        "keep": [["c1"]],
+        "retire": [{"id": []}, {"id": "c1", "reason": "obsolete"}],
+    }
+    out = cov.diff_versions(_ResponseLLM(response), "old", "new", _case())
+    assert out == {"keep": [], "retire": [{"id": "c1", "reason": "obsolete"}]}
+
+
+def test_new_version_keeps_cases_with_invalid_diff_ids(monkeypatch):
+    store = _FakeStore()
+    result = _new_version(
+        monkeypatch, store, _ResponseLLM({"keep": [["c1"]], "retire": [{"id": []}]})
+    )
+    assert result["diff"]["kept"] == 1
+    assert store.associations == [("new-feature", "c1", "carried", None)]
+
+
+@pytest.mark.parametrize("value", [None, "not a list", {"id": "c1"}, 42])
+def test_generation_and_verifier_ignore_non_list_fields(monkeypatch, value):
+    llm = LLM()
+    monkeypatch.setattr(llm, "chat_json", lambda *args, **kwargs: {"test_cases": value})
+    assert llm.generate_testcases("functional", "requirement") == []
+    assert cov.generate_feature_code(
+        _ResponseLLM({"files": value}), "python", "feature", "requirement", []
+    ) == {"error": "model returned no files"}
+    result = cov.verify_pr_implementation(
+        _ResponseLLM({"covered": value}), {"number": 1}, [], _case()
+    )
+    assert result["covered"] == []
+
+
+def test_response_list_rejects_string_field():
+    assert cov._response_list({"items": "abc"}, "items") == []
 
 
 @pytest.mark.parametrize(

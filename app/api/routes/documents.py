@@ -6,12 +6,28 @@ changed from `@app.` to `@router.` only — same paths, same status codes, same
 response shapes. `s3_storage` is imported locally inside each handler, exactly as it
 was in main.py (not hoisted to module level), so this diff is a pure move.
 """
+import re
+from urllib.parse import quote
+
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 
 from core.logging_setup import get_logger
+from size_limits import read_upload
+from core.security import (
+    _allowed_project_ids, _current_user, _project_of_feature,
+    _require_document_project, _require_project,
+)
 from core.state import store
 
 log = get_logger("documents")
+
+
+def _content_disposition(filename: str) -> str:
+    """attachment header with an ASCII-safe fallback name plus the RFC 5987
+    `filename*` form, so a stored filename can't inject header parameters."""
+    name = (filename or "document").replace("\r", "").replace("\n", "")
+    fallback = re.sub(r'[^A-Za-z0-9._ -]', "_", name).strip() or "document"
+    return f'attachment; filename="{fallback}"; filename*=UTF-8\'\'{quote(name, safe="")}'
 
 router = APIRouter()
 
@@ -24,9 +40,13 @@ async def upload_document_endpoint(
     feature_id: str = Form(""),
 ):
     from s3_storage import s3_storage
+    if project_id or _allowed_project_ids(_current_user(request)) is not None:
+        _require_project(request, project_id)
+    if feature_id and _project_of_feature(feature_id) != (project_id or None):
+        raise HTTPException(400, detail="feature does not belong to this project")
     if not file or not file.filename:
         raise HTTPException(400, detail="No file provided")
-    content = await file.read()
+    content = await read_upload(file)
     if not content:
         raise HTTPException(400, detail="File is empty")
     if not s3_storage.is_configured():
@@ -50,13 +70,18 @@ async def upload_document_endpoint(
         return meta
     except Exception as e:
         log.error("[s3-upload-error] %r", e)
-        raise HTTPException(500, detail=f"Failed to upload document to AWS S3: {e}")
+        raise HTTPException(500, detail="Failed to upload document to storage — see server logs")
 
 
 @router.get("/api/documents")
-def list_documents_endpoint(project_id: str = "", feature_id: str = ""):
+def list_documents_endpoint(request: Request, project_id: str = "", feature_id: str = ""):
     from s3_storage import s3_storage
+    if project_id:
+        _require_project(request, project_id)
     docs = store.list_stored_documents(project_id=project_id or None, feature_id=feature_id or None)
+    allowed = _allowed_project_ids(_current_user(request))
+    if allowed is not None:
+        docs = [d for d in docs if d.get("project_id") in allowed]
     is_s3 = s3_storage.is_configured()
     for d in docs:
         if is_s3 and d.get("s3_key"):
@@ -68,11 +93,12 @@ def list_documents_endpoint(project_id: str = "", feature_id: str = ""):
 
 
 @router.get("/api/documents/{doc_id}")
-def get_document_endpoint(doc_id: str):
+def get_document_endpoint(doc_id: str, request: Request):
     from s3_storage import s3_storage
     doc = store.get_stored_document(doc_id)
     if not doc:
         raise HTTPException(404, detail="Document not found")
+    _require_document_project(request, doc)
     if s3_storage.is_configured() and doc.get("s3_key"):
         try:
             doc["presigned_url"] = s3_storage.generate_presigned_url(doc["s3_key"])
@@ -82,11 +108,12 @@ def get_document_endpoint(doc_id: str):
 
 
 @router.get("/api/documents/{doc_id}/download")
-def download_document_endpoint(doc_id: str):
+def download_document_endpoint(doc_id: str, request: Request):
     from s3_storage import s3_storage
     doc = store.get_stored_document(doc_id)
     if not doc or not doc.get("s3_key"):
         raise HTTPException(404, detail="Document file not found")
+    _require_document_project(request, doc)
     try:
         content = s3_storage.download_document(doc["s3_key"], bucket=doc.get("s3_bucket"))
         filename = doc.get("filename", "document")
@@ -94,19 +121,20 @@ def download_document_endpoint(doc_id: str):
         return Response(
             content=content,
             media_type=content_type,
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers={"Content-Disposition": _content_disposition(filename)},
         )
     except Exception as e:
         log.error("[s3-download-error] %r", e)
-        raise HTTPException(500, detail=f"Failed to download document from AWS S3: {e}")
+        raise HTTPException(500, detail="Failed to download document from storage — see server logs")
 
 
 @router.delete("/api/documents/{doc_id}")
-def delete_document_endpoint(doc_id: str):
+def delete_document_endpoint(doc_id: str, request: Request):
     from s3_storage import s3_storage
     doc = store.get_stored_document(doc_id)
     if not doc:
         raise HTTPException(404, detail="Document not found")
+    _require_document_project(request, doc)
     if doc.get("s3_key"):
         s3_storage.delete_document(doc["s3_key"], bucket=doc.get("s3_bucket"))
     deleted = store.delete_stored_document(doc_id)

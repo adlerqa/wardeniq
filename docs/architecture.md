@@ -71,8 +71,9 @@ secrets. With `--json`, stdout is the JSON payload and nothing else; the note th
 wrote a file goes to stderr.
 
 SMTP (for sign-in emails) is set under **Configuration → Email** (stored encrypted, takes
-precedence) or via `SMTP_*` vars in `.env`. Until SMTP exists, the first admin's code is
-printed to the server log (see [Signing in](#signing-in-the-very-first-time)). AWS Bedrock
+precedence) or via `SMTP_*` vars in `.env`. Until SMTP exists, the bootstrap admin's code is
+printed to the server log only (never returned to the browser unless the demo-only
+`OTP_DEV_CODES=true` opt-in is set outside production; see [Signing in](#signing-in-the-very-first-time)). AWS Bedrock
 credentials are **not** `.env` vars — set them under Configuration → LLM/Embeddings.
 
 `MONGO_URI` can also be changed from **Configuration → Database** in the UI, which

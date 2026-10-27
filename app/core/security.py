@@ -54,9 +54,15 @@ PUBLIC_PREFIX = ("/assets/",) if IS_PRODUCTION else ("/assets/", "/docs", "/redo
 # Admin-only areas (config + user management). Matched by exact or "<p>/..." prefix.
 ADMIN_PATHS = ("/api/users", "/api/settings", "/api/llm/test", "/api/jira/test",
                "/api/smtp/test", "/api/settings/s3/test", "/api/audit-logs", "/api/db-status", "/api/db-config",
-               "/api/db-migrate", "/api/api-tokens")
-# Read-style POSTs that viewers are allowed to call.
-VIEWER_POST_OK = ("/api/retrieve",)
+               "/api/db-migrate", "/api/api-tokens",
+               # Switching the embedding provider persists global config (and may
+               # carry a credential), so it is a settings operation.
+               "/api/embedding")
+# Read-style POSTs that viewers are allowed to call, plus self-service account
+# routes every signed-in user (incl. viewers) may use on their OWN account.
+VIEWER_POST_OK = ("/api/retrieve", "/api/auth/change-password")
+# Reads that need at least editor (they reach out to configured services).
+EDITOR_READ_PATHS = ("/api/ollama/models",)
 # Secret-handling routes that live UNDER /api/projects/... (so they escape the
 # ADMIN_PATHS prefixes) but must still require admin. Storing/clearing a Git PAT or
 # creating a repo (which persists an encrypted webhook secret) is a credentials
@@ -146,6 +152,8 @@ def _min_role(method: str, path: str) -> str:
         return "admin"
     if method in ("POST", "PUT", "PATCH", "DELETE"):
         return "viewer" if path in VIEWER_POST_OK else "editor"
+    if path in EDITOR_READ_PATHS:
+        return "editor"
     return "viewer"
 
 
@@ -199,6 +207,11 @@ async def auth_gateway(request: Request, call_next):
     if int(user.get("session_version", 0)) != int(tok_sv):
         return JSONResponse({"detail": "session expired — please sign in again"},
                             status_code=401)
+    # An invited user must accept the invite before using the app. Only the
+    # self-service invite/auth routes (public-listed above) stay reachable.
+    if user.get("invite_status") == "pending":
+        return JSONResponse({"detail": "accept your invitation before using the app"},
+                            status_code=403)
     if not auth.has_role(user.get("role", "viewer"), _min_role(request.method, path)):
         # Local import: core/audit.py imports _current_user from this module for its
         # generic actor-resolution fallback, so a module-level import here (security
@@ -434,3 +447,73 @@ def _project_public(p):
     out["github_pat_set"] = bool(p.get("github_pat_enc"))
     out["gitlab_pat_set"] = bool(p.get("gitlab_pat_enc"))
     return out
+
+
+# ---- further by-id / by-body project guards ----------------------------------
+# Resources addressed by their own id (PRs, stored documents, cycle templates,
+# sheet imports) or referenced from a request body (feature_id, case_ids). Each
+# resolves back to its project and reuses the same access check as above.
+def _require_pr_project(request, pr_id):
+    """Return the PR doc (404 if missing); 403 if its project isn't accessible."""
+    from bson import ObjectId
+    if not ObjectId.is_valid(pr_id):
+        raise HTTPException(404, "PR not found")
+    p = store.prs.find_one({"_id": ObjectId(pr_id)})
+    if not p:
+        raise HTTPException(404, "PR not found")
+    user = _current_user(request)
+    if _user_all_projects(user):
+        return p
+    pid = p.get("project_id")
+    if not pid and p.get("repo_id"):
+        pid = _project_of_repo(p["repo_id"])
+    if pid is None or not _user_can_access_project(user, pid):
+        raise HTTPException(403, "you don't have access to this PR")
+    return p
+
+
+def _require_cycle_template_project(request, tid):
+    t = store.get_cycle_template(tid)
+    if not t:
+        raise HTTPException(404, "template not found")
+    _require_project(request, t.get("project_id"))
+    return t
+
+
+def _require_document_project(request, doc):
+    """Stored documents belong to a project (or none). Scoped users may only see
+    documents of their projects; project-less documents are hidden from them."""
+    user = _current_user(request)
+    if _user_all_projects(user):
+        return doc
+    pid = (doc or {}).get("project_id")
+    if not pid or not _user_can_access_project(user, pid):
+        raise HTTPException(403, "you don't have access to this document")
+    return doc
+
+
+def _require_cases_accessible(request, case_ids):
+    """403 if any referenced (existing) case belongs only to projects the user
+    can't access. Unknown ids are left for the caller/store to ignore or 404."""
+    user = _current_user(request)
+    if _user_all_projects(user):
+        return
+    allowed = set(user.get("project_ids") or [])
+    for cid in case_ids or []:
+        try:
+            pids, _ = _case_project_ids(str(cid))
+        except HTTPException:
+            continue
+        except Exception:  # noqa: BLE001 — malformed id: nothing to read
+            continue
+        if not (pids & allowed):
+            raise HTTPException(403, "you don't have access to one or more test cases")
+
+
+def _require_import_of_feature(fid, import_id):
+    """A sheet import must belong to the feature named in the path (the gateway
+    already enforces access to that feature)."""
+    fi = store.get_feature_import(import_id)
+    if not fi or fi.get("feature_id") != fid:
+        raise HTTPException(404, "import not found")
+    return fi

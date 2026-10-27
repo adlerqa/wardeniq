@@ -4,6 +4,8 @@ import json
 import os
 import re
 
+import github
+
 from core.logging_setup import get_logger
 
 log = get_logger("coverage")
@@ -59,7 +61,9 @@ def generate_feature_code(llm, language: str, feature_name: str,
     files = []
     for f in _response_list(data, "files")[:5]:
         if isinstance(f, dict) and f.get("path") and f.get("content"):
-            files.append({"path": str(f["path"]).lstrip("/")[:200], "content": str(f["content"])})
+            path = github.safe_repo_path(str(f["path"])[:200])
+            if path:   # unsafe/out-of-tree/CI-config paths are dropped, never written
+                files.append({"path": path, "content": str(f["content"])})
     if not files:
         return {"error": "model returned no files"}
     notes = data.get("notes", "") if isinstance(data, dict) else ""
@@ -1401,10 +1405,10 @@ def diff_versions(llm, old_text: str, new_text: str, prev_cases) -> dict:
     except Exception as e:  # noqa: BLE001
         return {"keep": [c["id"] for c in prev_cases], "retire": [], "error": str(e)}
     valid = {c["id"] for c in prev_cases}
-    keep = [i for i in _response_list(data, "keep") if i in valid]
+    keep = [i for i in _response_list(data, "keep") if isinstance(i, str) and i in valid]
     retire = [{"id": x["id"], "reason": str(x.get("reason", ""))[:300]}
               for x in _response_list(data, "retire")
-              if isinstance(x, dict) and x.get("id") in valid]
+              if isinstance(x, dict) and isinstance(x.get("id"), str) and x["id"] in valid]
     retired_ids = {x["id"] for x in retire}
     # any case not explicitly classified -> default keep (safe)
     for cid in valid:

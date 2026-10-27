@@ -680,7 +680,7 @@ function renderCycleDetail(c) {
         <div class="cycle-exec-order">${it.display_order || ""}</div>
         <div>
           <div class="cycle-exec-title">${it.display_id ? `<code style="font-size:10px;background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px;color:#94a3b8;margin-right:6px">${esc(it.display_id)}</code>` : ""}${esc(it.title)}</div>
-          <div class="cycle-exec-sub"><span class="badge ${it.category}">${esc(it.category || "")}</span>${it.priority ? prioBadge(it.priority) : ""}${cycleStatusPill(status)}${it.case_id ? `<button class="ghost" style="padding:1px 9px;font-size:10.5px" onclick="event.stopPropagation();editCase('${it.case_id}')">Edit case</button>` : ""}</div>
+          <div class="cycle-exec-sub"><span class="badge ${esc(it.category)}">${esc(it.category || "")}</span>${it.priority ? prioBadge(it.priority) : ""}${cycleStatusPill(status)}${it.case_id ? `<button class="ghost" style="padding:1px 9px;font-size:10.5px" onclick="event.stopPropagation();editCase('${it.case_id}')">Edit case</button>` : ""}</div>
           ${steps}
         </div>
         <div class="cycle-exec-priority muted">${it.priority ? prioLabel(it.priority) : ""}</div>
@@ -908,7 +908,7 @@ window.openAddCasesToCycle = async (cid) => {
         )
         .map(
           (c) =>
-            `<label style="display:flex;gap:8px;align-items:center;padding:6px 4px;font-size:12.5px;border-bottom:1px solid rgba(255,255,255,.04)"><input type="checkbox" class="addcase-chk" value="${c.id}" style="width:auto"/>${c.display_id ? `<code style="font-size:10px;color:#94a3b8">${esc(c.display_id)}</code>` : ""}<span style="flex:1">${esc(c.title)}</span><span class="badge ${c.type}">${esc(typeLabel(c.type))}</span></label>`,
+            `<label style="display:flex;gap:8px;align-items:center;padding:6px 4px;font-size:12.5px;border-bottom:1px solid rgba(255,255,255,.04)"><input type="checkbox" class="addcase-chk" value="${c.id}" style="width:auto"/>${c.display_id ? `<code style="font-size:10px;color:#94a3b8">${esc(c.display_id)}</code>` : ""}<span style="flex:1">${esc(c.title)}</span><span class="badge ${esc(c.type)}">${esc(typeLabel(c.type))}</span></label>`,
         )
         .join("") ||
       `<div class="muted" style="padding:8px">No matching cases.</div>`;

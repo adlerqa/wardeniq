@@ -13,6 +13,14 @@ import pytest
 from core import logging_setup
 
 
+def _app_handlers():
+    """The wardeniq logger's own handlers, ignoring pytest's log-capture handlers
+    (pytest 9 also attaches those to non-propagating loggers)."""
+    return [h for h in logging.getLogger("wardeniq").handlers
+            if type(h).__name__ not in ("LogCaptureHandler", "_LiveLoggingNullHandler",
+                                        "_FileHandler", "_LiveLoggingStreamHandler")]
+
+
 @pytest.fixture(autouse=True)
 def _reset_logging_state(monkeypatch):
     """Every test gets a clean, unconfigured "wardeniq" logger to configure itself,
@@ -64,7 +72,7 @@ class TestConfigureLogging:
         logging_setup.configure_logging()
         logging_setup.configure_logging()
         logging_setup.configure_logging()
-        assert len(logging.getLogger("wardeniq").handlers) == 1
+        assert len(_app_handlers()) == 1
 
     def test_root_logger_does_not_propagate(self, monkeypatch):
         # Prevents every line from also being handled (and possibly duplicated)
@@ -82,9 +90,9 @@ class TestGetLogger:
 
     def test_get_logger_triggers_configuration(self, monkeypatch):
         monkeypatch.delenv("LOG_LEVEL", raising=False)
-        assert not logging.getLogger("wardeniq").handlers
+        assert not _app_handlers()
         logging_setup.get_logger("testgen")
-        assert len(logging.getLogger("wardeniq").handlers) == 1
+        assert len(_app_handlers()) == 1
 
     def test_repeated_calls_return_the_same_underlying_logger(self, monkeypatch):
         monkeypatch.delenv("LOG_LEVEL", raising=False)

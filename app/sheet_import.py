@@ -30,6 +30,7 @@ import io
 import json
 import re
 
+import size_limits
 import usage
 from dataclasses import dataclass, field
 from typing import Any
@@ -381,6 +382,7 @@ def raw_tables(file_bytes: bytes, filename: str) -> list[tuple[str, list[list[st
             import openpyxl
         except ImportError:
             return []
+        size_limits.check_zip_container(file_bytes)
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True,
                                      read_only=True)
         out = []
@@ -466,7 +468,9 @@ def _parse_xlsx(file_bytes: bytes) -> list[ParsedRow]:
         import openpyxl
     except ImportError:
         raise RuntimeError("openpyxl not installed — add it to requirements.txt")
-    # NB: read_only=False so `merged_cells` is populated.
+    # NB: read_only=False so `merged_cells` is populated -- which loads the whole
+    # workbook, so the declared uncompressed size is checked first.
+    size_limits.check_zip_container(file_bytes)
     try:
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True,
                                      read_only=False)

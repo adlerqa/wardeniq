@@ -251,7 +251,11 @@ class LLM:
     def health(self) -> dict:
         if self.provider == "ollama":
             try:
-                r = httpx.get(f"{self.ollama_url}/api/tags", timeout=10.0)
+                r = httpx.get(
+                    f"{self.ollama_url}/api/tags",
+                    timeout=10.0,
+                    headers=self._ollama_headers(),
+                )
                 r.raise_for_status()
                 models = [m.get("name", "") for m in r.json().get("models", [])]
                 return {"ok": any(self.model.split(":")[0] in m for m in models),
