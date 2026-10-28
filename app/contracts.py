@@ -70,8 +70,12 @@ _WRITE_RX = [
     ("dict", "dict_subscript", re.compile(r"[\w\.]+\[\s*['\"]([A-Za-z_][\w-]*)['\"]\s*\]\s*=(?!=)")),
     ("dict", "dict_literal_key", re.compile(r"^\s*['\"]([A-Za-z_][\w-]*)['\"]\s*:\s*\S")),
     ("attr", "attr_write", re.compile(r"\bself\.([A-Za-z_]\w*)\s*=(?!=)")),
-    ("dict", "kwarg_write", re.compile(r"\bdict\(\s*(?:[^=()]*?,\s*)*([A-Za-z_]\w*)\s*=")),
+    # Captures the argument list of dict(...) (one level of nested parens, or up to end of line
+    # for a call spanning lines); every keyword in it is then pulled out by _KWARG_RX.
+    ("dict", "kwarg_write", re.compile(r"\bdict\(((?:[^()]|\([^()]*\))*)")),
 ]
+_KWARG_RX = re.compile(r"(?:^|,)\s*([A-Za-z_]\w*)\s*=(?!=)")
+_NESTED_PARENS_RX = re.compile(r"\([^()]*\)")
 
 
 def extract_key_writes_from_lines(lines: list[str]) -> dict[str, set[str]]:
@@ -85,11 +89,15 @@ def extract_key_writes_from_lines(lines: list[str]) -> dict[str, set[str]]:
     """
     out: dict[str, set[str]] = {}
     for line in lines:
-        for kind, _label, rx in _WRITE_RX:
+        for kind, label, rx in _WRITE_RX:
             for m in rx.finditer(line):
-                key = m.group(1)
-                if key and key.lower() not in GENERIC_KEYS:
-                    out.setdefault(key, set()).add(kind)
+                if label == "kwarg_write":
+                    keys = _KWARG_RX.findall(_NESTED_PARENS_RX.sub("", m.group(1)))
+                else:
+                    keys = [m.group(1)]
+                for key in keys:
+                    if key and key.lower() not in GENERIC_KEYS:
+                        out.setdefault(key, set()).add(kind)
     return out
 
 
