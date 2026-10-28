@@ -41,6 +41,18 @@ store = Store(MONGO_URI, DB_NAME, EMBED_DIM)
 # fix incidentally as part of this move.
 SYNC = {"running": False, "last": None, "ingested": 0, "mapped": 0, "errors": []}
 
+# Bound on SYNC["errors"]: /api/sync/status returns the whole dict, so an
+# unbounded list grows the status payload forever (issue #178). All writers
+# must go through record_sync_error so the cap holds everywhere.
+SYNC_ERROR_LIMIT = 100
+
+
+def record_sync_error(msg):
+    """Append a poller/sync error, keeping only the most recent entries."""
+    errors = SYNC["errors"]
+    errors.append(msg)
+    del errors[:-SYNC_ERROR_LIMIT]
+
 # Placeholder — see module docstring. Populated by core/deps.py in Phase 2, before
 # any request-handling code runs. Annotated as a concrete Embedder (not Optional)
 # because every consumer (main.py's routes, the workers moving here in Phase 3)

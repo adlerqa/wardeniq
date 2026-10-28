@@ -127,10 +127,10 @@ class GitHub:
         return self._post(f"{self._repo(owner, name)}/pulls",
                           {"title": title, "head": head, "base": base, "body": body})
 
-    def list_pulls(self, owner, name, state="all", per_page=30):
+    def list_pulls(self, owner, name, state="all", per_page=30, page=1):
         return self._get(f"{self._repo(owner, name)}/pulls",
                          {"state": state, "sort": "updated", "direction": "desc",
-                          "per_page": per_page})
+                          "per_page": per_page, "page": page})
 
     def get_pull(self, owner, name, number):
         return self._get(f"{self._repo(owner, name)}/pulls/{_seg(number)}")

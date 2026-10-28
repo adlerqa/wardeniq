@@ -39,6 +39,14 @@
 
 ### Fixed
 
+- **GitHub poller no longer skips failed PRs, drops pages, or grows its error
+  list without bound.** `sync_repo` previously advanced `last_synced` past a
+  PR even when its ingest failed (the failure is swallowed by the tracked-job
+  wrapper), fetched only the first 30 PRs, and appended to `SYNC["errors"]`
+  without limit while `/api/sync/status` returns the whole list. The cursor
+  now advances only past successfully ingested PRs (failed ones are retried
+  next cycle), pull listing paginates until a short page, and sync errors go
+  through a capped (most recent 100) recorder used by all three append sites.
 - **Capability probe reports the curated message for MongoDB without mongot.**
   A stock replica set without mongot rejects search-index creation with error
   code 31082 ("requires additional configuration"); the probe previously fell
