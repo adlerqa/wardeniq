@@ -212,6 +212,10 @@ class ReposPrsMixin(_Base):
         out = []
         for r in self.repos.find(q).sort("_id", 1):
             r["id"] = str(r.pop("_id"))
+            # Same per-repo PR count as list_repos() (issue #177): the filtered
+            # route previously returned repos with no count at all, so the two
+            # list shapes disagreed about what a repo row carries.
+            r["pr_count"] = self.prs.count_documents({"repo_id": r["id"]})
             # Never leak the encrypted webhook secret to callers — surface only a
             # "configured" boolean (matches list_repos()). No internal caller reads
             # the raw blob from here.

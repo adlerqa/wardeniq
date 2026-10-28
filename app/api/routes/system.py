@@ -48,9 +48,16 @@ def status():
 def dashboard(request: Request):
     allowed = _allowed_project_ids(_current_user(request))
     try:
-        return store.dashboard(project_ids=allowed)
+        payload = store.dashboard(project_ids=allowed)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, str(e))
+    # Issue #177: dashboard and repository-list counts are fetched
+    # independently while PRs stream in during a sync, so a mid-sync snapshot
+    # can disagree with the repo list fetched seconds earlier. Surface the
+    # poller's state so the UI can label the counts as in-progress instead
+    # of presenting a mid-flight number as final.
+    payload["sync"] = {"running": SYNC["running"], "ingested": SYNC["ingested"]}
+    return payload
 
 
 @router.get("/api/tags")
