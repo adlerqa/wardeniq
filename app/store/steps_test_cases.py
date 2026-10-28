@@ -12,6 +12,7 @@ from bson import ObjectId
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
+from priority import legacy_priority_values, normalize_priority
 from store.base import VECTOR_INDEX, cosine_atlas
 
 
@@ -451,7 +452,7 @@ class StepsTestCasesMixin(_Base):
         resolved_project_id, _, _ = self._case_display_context(feature_id, project_id)
         display_id = self._next_case_display_id(feature_id, resolved_project_id)
         cid = str(self.cases.insert_one({
-            "title": title, "type": ctype, "priority": priority,
+            "title": title, "type": ctype, "priority": normalize_priority(priority),
             "preconditions": preconditions, "step_ids": step_ids, "tags": tags,
             "embedding": embedding, "source_feature_id": feature_id,
             "project_id": resolved_project_id, "identity_hash": identity_hash,
@@ -807,9 +808,19 @@ class StepsTestCasesMixin(_Base):
 
     def update_case(self, cid, title, ctype, priority, preconditions, tags, step_ids, embedding):
         self.cases.update_one({"_id": ObjectId(cid)}, {"$set": {
-            "title": title, "type": ctype, "priority": priority,
+            "title": title, "type": ctype, "priority": normalize_priority(priority),
             "preconditions": preconditions, "tags": tags, "step_ids": step_ids,
             "embedding": embedding, "updated_at": time.time()}})
+
+    def normalize_case_priorities(self):
+        """One-off backfill for cases stored before priorities were normalized on
+        write (issue #174): rewrite every non-canonical spelling to High/Medium/Low.
+        Safe to run on every boot; a no-op once nothing is left to convert."""
+        changed = 0
+        for spelling, canon in legacy_priority_values().items():
+            changed += self.cases.update_many(
+                {"priority": spelling}, {"$set": {"priority": canon}}).modified_count
+        return changed
 
     def update_case_execution(self, cid, status, note=""):
         result = self.cases.update_one({"_id": ObjectId(cid)}, {"$set": {

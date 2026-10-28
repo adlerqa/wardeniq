@@ -39,6 +39,9 @@
 
 ### Fixed
 
+- Test-case priority is stored in one vocabulary, High/Medium/Low, whichever
+  path wrote it (generation, the editor, sheet import); existing cases are
+  converted on startup, so exports no longer mix P1 and HIGH (#174).
 - **Capability probe reports the curated message for MongoDB without mongot.**
   A stock replica set without mongot rejects search-index creation with error
   code 31082 ("requires additional configuration"); the probe previously fell

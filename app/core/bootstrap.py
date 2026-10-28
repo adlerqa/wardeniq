@@ -298,6 +298,11 @@ def bootstrap():
         store.migrate_legacy_features()
     except Exception as e:  # noqa: BLE001
         BOOT["detail"] = f"migrate: {e}"
+    # Rewrite case priorities stored in older vocabularies (P1, HIGH, Mid, ...).
+    try:
+        store.normalize_case_priorities()
+    except Exception as e:  # noqa: BLE001
+        BOOT["detail"] = f"migrate: {e}"
     # Seed the first admin from ADMIN_EMAIL (if set and not already present).
     # Validate it first: a malformed value (e.g. a leaked .env comment) must NOT be
     # inserted as a user — warn loudly and skip instead.
