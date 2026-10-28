@@ -219,8 +219,70 @@ if [ "${1:-}" = "--reset" ]; then
   "${COMPOSE[@]}" down -v --remove-orphans
 fi
 
+# ── port pre-flight + container-state checks (#190) ───────────────────────
+# A host process already on 8001/11434 makes the matching bundled container
+# fail to bind, but the readiness loop used to hide that for a full 5 minutes
+# behind the app's boot-status text ("Preparing MongoDB search indexes…",
+# "No user accounts exist") — neither of which is the real cause. Fail fast.
+port_in_use() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+# A warden container already publishing the port (re-running run.sh while the
+# stack is up) is ours, not a collision.
+warden_publishes_port() { # $1 = container name, $2 = host port
+  docker ps --format '{{.Names}} {{.Ports}}' 2>/dev/null \
+    | grep -F "$1" | grep -qF ":$2->" || return 1
+}
+OLLAMA_IN_SET=1
+if grep -q '^COMPOSE_FILE=' .env 2>/dev/null; then
+  case "$(grep '^COMPOSE_FILE=' .env | head -1)" in
+    *docker-compose.ollama.yml*) : ;;
+    *) OLLAMA_IN_SET=0 ;;  # app-only mode: a host Ollama on 11434 is expected
+  esac
+fi
+check_port() { # $1 = port, $2 = container name, $3 = hint
+  if port_in_use "$1" && ! warden_publishes_port "$2" "$1"; then
+    echo "==> refusing to start: port $1 is already in use by another process" >&2
+    echo "    ($3)" >&2
+    exit 1
+  fi
+}
+# Long-running warden containers only: warden-setup, warden-ollama-pull and
+# warden-percona-setup are one-shot and exit 0 by design, so they must never
+# count as failures.
+dead_containers() {
+  docker ps -a --filter 'name=warden-' --format '{{.Names}} {{.Status}}' 2>/dev/null \
+    | grep -E '^warden-(app|mongod1|mongod2|mongod3|mongot|mongod-percona|mongot-percona|ollama) ' \
+    | grep -E ' (Exited|Dead)' || true
+}
+ailing_containers() {
+  docker ps -a --filter 'name=warden-' --format '{{.Names}} {{.Status}}' 2>/dev/null \
+    | grep -E '^warden-(app|mongod1|mongod2|mongod3|mongot|mongod-percona|mongot-percona|ollama) ' \
+    | grep -E ' (Exited|Dead|Restarting)|\(unhealthy\)' || true
+}
+report_first_container() { # $1 = list from dead_containers/ailing_containers
+  local line name
+  line="$(printf '%s\n' "$1" | head -1)"
+  [ -n "$line" ] || return 1
+  name="${line%% *}"
+  echo "--- first failing container: $line ---" >&2
+  docker logs --tail 50 "$name" >&2 || true
+  return 0
+}
+
+check_port 8001 warden-app "stop the process on 8001, or stop the existing wardenIQ stack first"
+if [ "$OLLAMA_IN_SET" = "1" ]; then
+  check_port 11434 warden-ollama "a host Ollama is already on 11434 — use it instead of the bundled one: remove docker-compose.ollama.yml from COMPOSE_FILE in .env and set OLLAMA_URL_BUNDLED=http://host.docker.internal:11434, then run again"
+fi
+
 echo "==> building + starting wardenIQ"
-"${COMPOSE[@]}" up -d --build
+"${COMPOSE[@]}" up -d --build || { echo "==> docker compose up failed (see above)" >&2; exit 1; }
+
+# A container that died at startup used to surface only as a 5-minute
+# readiness timeout with misleading boot-status text. Surface it now.
+if DEAD="$(dead_containers)" && [ -n "$DEAD" ]; then
+  report_first_container "$DEAD"
+  echo "==> wardenIQ failed to start: a container exited right after 'docker compose up' (see above)" >&2
+  exit 1
+fi
 
 # Readiness gate: don't report success until the app actually answers, not just
 # "started". Polls the same public boot-status endpoint the sign-in screen
@@ -243,11 +305,18 @@ if [ -z "$READY" ]; then
   echo "==> wardenIQ did not become ready within 5 minutes." >&2
   echo "    Last boot status: ${BOOT_JSON:-no response from http://localhost:8001}" >&2
   echo >&2
-  echo "--- docker logs warden-app (last 50 lines) ---" >&2
-  docker logs --tail 50 warden-app 2>&1 >&2 || true
-  echo >&2
-  echo "--- docker logs warden-mongod1 (last 50 lines) ---" >&2
-  docker logs --tail 50 warden-mongod1 2>&1 >&2 || true
+  # Name the actually-failing container first: the boot-status text above is
+  # the app's view ("Preparing MongoDB search indexes…") and misleads when
+  # the real cause is a dead container (e.g. ollama failing to bind 11434).
+  if AILING="$(ailing_containers)" && [ -n "$AILING" ]; then
+    report_first_container "$AILING"
+  else
+    echo "--- docker logs warden-app (last 50 lines) ---" >&2
+    docker logs --tail 50 warden-app 2>&1 >&2 || true
+    echo >&2
+    echo "--- docker logs warden-mongod1 (last 50 lines) ---" >&2
+    docker logs --tail 50 warden-mongod1 2>&1 >&2 || true
+  fi
   echo >&2
   echo "Full logs also captured in ./logs/" >&2
   exit 1
