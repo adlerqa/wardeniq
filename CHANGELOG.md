@@ -4,6 +4,9 @@
 
 ### Fixed
 
+- The case editor's "shared by N testcases" note counts distinct test cases:
+  a case that uses one step twice no longer counts twice, and the count drops
+  when a case stops using the step (#175).
 - `install.sh` now probes `/dev/tty` by opening it before enabling interactive prompts. Runs without a controlling terminal use the existing non-interactive defaults instead of failing while opening the terminal (#220).
 
 ## v0.3.0 — 2026-11-04

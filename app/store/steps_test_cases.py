@@ -58,18 +58,8 @@ class StepsTestCasesMixin(_Base):
         affected = self.cases.count_documents({"step_ids": sid})
         return {"updated": sid, "affected_cases": affected}
 
-    def list_steps(self, limit=200, skip=0):
-        # Fetch the page first, then compute usage counts in ONE aggregation
-        # against cases.step_ids (indexed). Previously this was N count_documents
-        # calls, one per step, which was the main cause of the step-library
-        # loader appearing to hang on non-trivial datasets.
-        steps = list(
-            self.steps.find({}, {"embedding": 0})
-            .sort("usage_count", -1)
-            .skip(skip)
-            .limit(limit)
-        )
-        ids = [str(s["_id"]) for s in steps]
+    def _distinct_case_counts(self, ids):
+        """{step_id: number of distinct test cases whose step_ids contain it}."""
         counts = {}
         if ids:
             pipeline = [
@@ -91,6 +81,20 @@ class StepsTestCasesMixin(_Base):
             ]
             for row in self.cases.aggregate(pipeline):
                 counts[row["_id"]] = len(row["cases"])
+        return counts
+
+    def list_steps(self, limit=200, skip=0):
+        # Fetch the page first, then compute usage counts in ONE aggregation
+        # against cases.step_ids (indexed). Previously this was N count_documents
+        # calls, one per step, which was the main cause of the step-library
+        # loader appearing to hang on non-trivial datasets.
+        steps = list(
+            self.steps.find({}, {"embedding": 0})
+            .sort("usage_count", -1)
+            .skip(skip)
+            .limit(limit)
+        )
+        counts = self._distinct_case_counts([str(s["_id"]) for s in steps])
         out = []
         for s in steps:
             s["id"] = str(s.pop("_id"))
@@ -98,12 +102,20 @@ class StepsTestCasesMixin(_Base):
             out.append(s)
         return out
 
-    def resolve_steps(self, step_ids):
+    def resolve_steps(self, step_ids, live_usage=False):
+        """`live_usage=True` recounts usage_count as distinct cases (one extra query),
+        for the case editor's "shared by N testcases" note. The stored counter is only
+        ever incremented, once per reuse, so it counts a case that uses a step twice
+        as two and never drops when a case stops using it (issue #175)."""
         by_id = {}
         for s in self.steps.find({"_id": {"$in": [ObjectId(i) for i in step_ids]}}):
             by_id[str(s["_id"])] = {"id": str(s["_id"]), "action": s.get("action"),
                                     "expected": s.get("expected"),
                                     "usage_count": s.get("usage_count", 1)}
+        if live_usage and by_id:
+            counts = self._distinct_case_counts(list(by_id))
+            for sid, step in by_id.items():
+                step["usage_count"] = counts.get(sid, 0)
         return [by_id[i] for i in step_ids if i in by_id]
 
     @staticmethod
@@ -670,7 +682,8 @@ class StepsTestCasesMixin(_Base):
         return {"id": cid, "display_id": c.get("display_id"),
                 "title": c.get("title"), "type": c.get("type"),
                 "priority": c.get("priority"), "preconditions": c.get("preconditions"),
-                "tags": c.get("tags", []), "steps": self.resolve_steps(c.get("step_ids", [])),
+                "tags": c.get("tags", []),
+                "steps": self.resolve_steps(c.get("step_ids", []), live_usage=True),
                 "features": fnames, "shared_with_features": len(feats),
                 "metadata": c.get("metadata", {}),
                 "execution_status": c.get("execution_status", "untested"),
