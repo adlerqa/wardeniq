@@ -24,7 +24,7 @@ import github
 
 from core.config import GITHUB_API
 from core.deps import _oid, current_poll_interval, project_github_token
-from core.state import SYNC, store  # noqa: F401  (bare name-imports are safe:
+from core.state import SYNC, record_sync_error, store  # noqa: F401  (bare name-imports are safe:
                                      # both are mutated in place, never rebound)
 
 from workers.code_coverage_worker import ingest_pr_tracked
@@ -44,10 +44,19 @@ def sync_repo(rid: str):
         # Ingest ALL PRs (including already-merged ones) — a feature may have
         # merged PRs from before it was tracked in wardenIQ. Users can exclude
         # individual PRs from Gap Analysis afterwards (see set_pr_excluded).
-        pulls = github.GitHub(token, GITHUB_API).list_pulls(
-            repo["owner"], repo["name"], state="all", per_page=30)
+        # Paginate: a single per_page=30 page silently drops PRs on busy repos.
+        client = github.GitHub(token, GITHUB_API)
+        pulls = []
+        page = 1
+        while True:
+            batch = client.list_pulls(
+                repo["owner"], repo["name"], state="all", per_page=30, page=page)
+            pulls.extend(batch)
+            if len(batch) < 30:
+                break
+            page += 1
     except Exception as e:  # noqa: BLE001
-        SYNC["errors"].append(f"{repo['full_name']} list: {e}")
+        record_sync_error(f"{repo['full_name']} list: {e}")
         return
     last = repo.get("last_synced", 0)
     newest = last
@@ -55,7 +64,19 @@ def sync_repo(rid: str):
         upd = _ts(pr.get("updated_at"))
         if upd <= last:
             continue
-        ingest_pr_tracked(repo, pr)
+        try:
+            ingested = ingest_pr_tracked(repo, pr)
+        except Exception as e:  # noqa: BLE001
+            record_sync_error(f"{repo['full_name']}#{pr.get('number')} ingest: {e}")
+            continue
+        if ingested is None:
+            # run_tracked swallowed the failure and recorded the failed job;
+            # it returns None exactly in that case (ingest_pr returns a pr_id
+            # on success). Leave the cursor below this PR so the next cycle
+            # retries it instead of skipping it forever.
+            record_sync_error(
+                f"{repo['full_name']}#{pr.get('number')} ingest failed, will retry")
+            continue
         newest = max(newest, upd)
     store.set_repo_synced(repo["id"], newest)
 
@@ -80,7 +101,7 @@ def poller():
                 sync_repo(str(r["_id"]))
             SYNC["last"] = time.time()
         except Exception as e:  # noqa: BLE001
-            SYNC["errors"].append(f"poller: {e}")
+            record_sync_error(f"poller: {e}")
         finally:
             SYNC["running"] = False
 

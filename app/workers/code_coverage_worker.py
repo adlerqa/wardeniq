@@ -33,7 +33,7 @@ from core.deps import (
 )
 from core.logging_setup import get_logger
 from core import state
-from core.state import SYNC, store  # noqa: F401  (bare name-imports are safe:
+from core.state import SYNC, record_sync_error, store  # noqa: F401  (bare name-imports are safe:
                                      # both are mutated in place, never rebound)
 
 from workers.registry import JOB_WORKERS, run_tracked
@@ -252,7 +252,7 @@ def ingest_pr(repo: dict, pr: dict, feature_id_override: str | None = None):
                 files = github.GitHub(token, GITHUB_API).get_pull_files(owner, name, number)
         except Exception as e:  # noqa: BLE001
             files = []
-            SYNC["errors"].append(f"{repo['full_name']}#{number} files: {e}")
+            record_sync_error(f"{repo['full_name']}#{number} files: {e}")
     if files is None:
         files = []
 
