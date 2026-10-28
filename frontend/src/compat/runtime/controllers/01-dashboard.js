@@ -421,6 +421,14 @@ async function loadDashboard() {
           ${metrics}
         </div>
 
+        ${d.sync?.running
+          ? `<p class="muted" style="margin: -8px 0 0;">
+              Sync in progress (${d.sync.ingested ?? 0} PRs ingested so far) — counts
+              below may change until it finishes, and can briefly disagree with the
+              repository list fetched at a different moment.
+            </p>`
+          : ""}
+
 
         <!-- ANALYTICS -->
         <div class="dashboard-analytics-grid">

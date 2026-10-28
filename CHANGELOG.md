@@ -46,6 +46,12 @@
   31082 (or the message on its own) now classifies as search-unsupported, so
   the probe returns the "requires a MongoDB with Vector Search" message (#204).
 - Ollama health checks now send the configured bearer token, matching generation requests (#180).
+- Dashboard now labels its counts as in-progress while a GitHub sync is
+  running: `/api/dashboard` reports the poller's sync state, and the
+  dashboard shows a note while ingesting, so a mid-sync snapshot is no
+  longer mistaken for a final number disagreeing with the repository list
+  (#177). The filtered repository route also now attaches the same
+  per-repo `pr_count` the unfiltered list already returned.
 
 - Fixed the installer script links in `docs/configuration.md` to resolve to the
   repository root after the documentation move (#61).
