@@ -72,7 +72,8 @@ def generate_feature_code(llm, language: str, feature_name: str,
 TEST_FILE_RE = re.compile(
     r"(^|/)([\w.]*[-_])?(tests?|specs?|__tests__|__specs__|e2e|cypress)/|"
     r"(test_|_test|[-_]spec|\.test\.|\.spec\.|\.e2e\.)|"
-    r"(Test|Tests|IT|Spec)\.(java|kt|cs|go|rb)$",
+    # Case-sensitive: a CamelCase suffix, not any name ending in "it"/"test" (audit.go, edit.rb).
+    r"(?-i:(Test|Tests|IT|Spec)\.(java|kt|cs|go|rb)$)",
     re.IGNORECASE,
 )
 
