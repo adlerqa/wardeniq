@@ -39,6 +39,12 @@
 
 ### Fixed
 
+- Password-policy failure messages now read as grammatical sentences (#173).
+  The password-change routes built the message as `"Password must have "`
+  followed by the bare requirement fragments, so a password failing only the
+  default-password rule was told `"Password must have must not be the default
+  password."` The routes now render each unmet rule as a clause
+  (`"Password must not be the default password."`).
 - **Capability probe reports the curated message for MongoDB without mongot.**
   A stock replica set without mongot rejects search-index creation with error
   code 31082 ("requires additional configuration"); the probe previously fell
