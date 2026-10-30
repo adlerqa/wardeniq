@@ -39,6 +39,14 @@
 
 ### Fixed
 
+- **"Analyze" on a repository now navigates to Code Analysis with that repo selected.**
+  The repo list offered Analyze for test-type repos, which Code Analysis
+  can never select (it loads app repos only), so the click landed on "no
+  repos yet" with a false "Repo selected" toast; Analyze is now disabled
+  with an explanatory tooltip for test-type repos. The navigation also
+  bypassed the shared view switch, leaving the breadcrumb on Settings and
+  the URL on #projects; it now records the cycles view, breadcrumb state,
+  URL hash, and saved nav state (#176).
 - **Capability probe reports the curated message for MongoDB without mongot.**
   A stock replica set without mongot rejects search-index creation with error
   code 31082 ("requires additional configuration"); the probe previously fell

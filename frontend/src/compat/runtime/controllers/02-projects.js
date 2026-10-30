@@ -934,7 +934,9 @@ async function loadRepos() {
         </div>
         
         <div style="display: flex; gap: 6px; align-items: center;">
-          <button class="go" style="padding: 6px 12px; font-size: 12px; display: flex; align-items: center; gap: 4px;" onclick="gotoAnalyze('${rp.id}','${currentProject}')">Analyze</button>
+          ${rp.repo_type === "test"
+            ? `<button class="go" style="padding: 6px 12px; font-size: 12px; display: flex; align-items: center; gap: 4px;" disabled title="Code Analysis covers app repos only">Analyze</button>`
+            : `<button class="go" style="padding: 6px 12px; font-size: 12px; display: flex; align-items: center; gap: 4px;" onclick="gotoAnalyze('${rp.id}','${currentProject}')">Analyze</button>`}
           <button class="ghost" style="padding: 5px 10px; font-size: 11.5px;" onclick="syncRepo('${rp.id}')">Sync</button>
           <button class="ghost" style="padding: 5px 10px; font-size: 11.5px;" onclick="toggleWatch('${rp.id}',${!rp.watch})">
             ${rp.watch ? "Pause" : "Resume"}
@@ -957,6 +959,25 @@ window.gotoAnalyze = async (rid, pid) => {
     .querySelectorAll(".view")
     .forEach((s) => (s.hidden = s.id !== "view-cycles"));
   $("#view-title").textContent = TITLES.cycles;
+  // The old code stopped here, so the breadcrumb bar still showed the
+  // previous view (Settings) and the URL stayed on #projects. Mirror the
+  // bookkeeping navigateTo() does for the cycles view: current view name
+  // (drives the breadcrumb bar), URL hash, and saved nav state. This is
+  // done inline instead of calling navigateTo("cycles") because its
+  // initCycles() would run a second loadCycleRepos() concurrently with the
+  // one below and could re-render the repo rows after the checkbox below
+  // is set, silently unchecking the repo.
+  currentViewName = "cycles";
+  renderBreadcrumbs();
+  try {
+    history.replaceState(null, "", "#cycles");
+  } catch (e) {}
+  try {
+    localStorage.setItem(
+      "wq_nav",
+      JSON.stringify({ view: "cycles", project: pid, feature: currentFeature }),
+    );
+  } catch (e) {}
   await loadProjects();
   if ($("#cyc-proj")) $("#cyc-proj").value = pid;
   await loadCycleRepos();
