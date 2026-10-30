@@ -12,7 +12,7 @@ _require_test_plan_run_project were all already centralized in earlier phases).
 import json
 import threading
 
-import test_plan
+import testplan
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -42,7 +42,7 @@ def start_test_plan(fid: str, body: dict = None, request: Request = None):
     def run_gen():
         run_tracked(
             "test_plan",
-            lambda: test_plan.generate_test_plan_job(store, current_llm(), run_id, fid),
+            lambda: testplan.generate_test_plan_job(store, current_llm(), run_id, fid),
             label=f"Test plan · {feature.get('name', '')}",
             project_id=feature.get("project_id"), feature_id=fid)
 
@@ -91,7 +91,7 @@ def export_test_plan_csv(run_id: str, request: Request):
     run = _require_test_plan_run_project(request, run_id)
     if not run or not run.get("content"):
         raise HTTPException(404, "Test plan content not found")
-    csv_str = test_plan.build_test_plan_csv(run["content"])
+    csv_str = testplan.build_test_plan_csv(run["content"])
     from fastapi.responses import Response
     return Response(content=csv_str, media_type="text/csv", headers={
         "Content-Disposition": f"attachment; filename=test_plan_{run_id}.csv"
@@ -103,7 +103,7 @@ def export_test_plan_pdf(run_id: str, request: Request):
     run = _require_test_plan_run_project(request, run_id)
     if not run or not run.get("content"):
         raise HTTPException(404, "Test plan content not found")
-    pdf_bytes = test_plan.build_test_plan_pdf(run["content"])
+    pdf_bytes = testplan.build_test_plan_pdf(run["content"])
     from fastapi.responses import Response
     return Response(content=pdf_bytes, media_type="application/pdf", headers={
         "Content-Disposition": f"attachment; filename=test_plan_{run_id}.pdf"

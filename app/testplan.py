@@ -155,9 +155,7 @@ def compress_context(ctx: dict) -> dict:
 # ─── Fallback & Prompt Builders ──────────────────────────────────────────────
 
 def build_fallback_test_plan(project_id, feature_id, version_number, project_name, feature_name, feature_description, unified_context) -> dict:
-    summaries = unified_context.get('summaries') or {}
     requirements = unified_context.get('requirements') or {}
-    business_context = unified_context.get('business_context') or {}
     flags = unified_context.get('flags') or {}
     
     prd_reqs = requirements.get('prd') or []
