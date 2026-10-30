@@ -311,8 +311,8 @@ Repair this JSON array so it is valid and contains ONLY valid JSON objects. Outp
             raise e
 
 def normalize_question_key(text: str) -> str:
-    cleaned = String_clean = str(text or '').lower()
-    cleaned = re_sub = "".join(c for c in cleaned if c.isalnum() or c.isspace())
+    cleaned = str(text or '').lower()
+    cleaned = "".join(c for c in cleaned if c.isalnum() or c.isspace())
     stopwords = {
         'what', 'which', 'when', 'how', 'should', 'would', 'must', 'is', 'are', 'was', 'were',
         'the', 'a', 'an', 'if', 'for', 'to', 'of', 'in', 'on', 'after', 'before'

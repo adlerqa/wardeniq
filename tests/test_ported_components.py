@@ -5,7 +5,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../app')))
 
 import validator
-import test_plan
+import testplan
 from testgen import lineage, prompt_builder
 
 def test_validator_scoring_and_weak_areas():
@@ -242,7 +242,7 @@ def test_prompt_builder_entity_hallucination_filtering():
 
 def test_test_plan_emoji_stripping():
     text = "Hello ✅ World! ⚠️ Test ❌ Emoji 🔴🟡🟢"
-    cleaned = test_plan.strip_emoji(text)
+    cleaned = testplan.strip_emoji(text)
     assert "✅" not in cleaned
     assert "⚠️" not in cleaned
     assert "❌" not in cleaned
