@@ -50,6 +50,10 @@
   `app/main.py` with a `lifespan` context manager (no more deprecation
   warnings on import/startup; same bootstrap, scheduler, and poller threads
   in the same order) (#198).
+- `run.sh` no longer fails with `/dev/tty: No such device or address` when run
+  without a terminal (CI, cron, new session): it now probes `/dev/tty` by
+  opening it, and otherwise takes the non-interactive default database and says
+  so (#191).
 
 - Fixed the installer script links in `docs/configuration.md` to resolve to the
   repository root after the documentation move (#61).
