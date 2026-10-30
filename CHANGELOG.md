@@ -39,6 +39,10 @@
 
 ### Fixed
 
+- **Malformed LLM JSON no longer crashes analysis or leaves orphan feature versions.**
+  JSON responses are required to be objects, nullable list fields are normalized at
+  the shared generation/coverage boundaries, and version diffs complete before a new
+  feature version is persisted (#147).
 - **Capability probe reports the curated message for MongoDB without mongot.**
   A stock replica set without mongot rejects search-index creation with error
   code 31082 ("requires additional configuration"); the probe previously fell
