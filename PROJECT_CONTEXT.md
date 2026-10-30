@@ -161,7 +161,7 @@ tests/                        pytest suite (RBAC, pipeline, grounding, sheet imp
 
 ## 4. Startup / bootstrap sequence (`core/bootstrap.py`, wired from `main.py`)
 
-`main.py`'s `@app.on_event("startup")` handler starts a background `bootstrap()` thread
+`main.py`'s `lifespan` handler (via `_startup()`, then `_start_poller()`) starts a background `bootstrap()` thread
 (the function itself now lives in `core/bootstrap.py`, not `main.py` — see §3), plus a
 stale-job sweeper and import-reanalysis scheduler (`background/schedulers.py`).
 `BOOT = {stage, ready, detail}` tracks progress for the UI. Order:

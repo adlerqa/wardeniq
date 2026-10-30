@@ -2,7 +2,7 @@
 project-wide re-analysis sweep.
 
 Moved out of main.py (Phase 4 of REFACTOR_PLAN.md). Both are started exactly
-once per process by main.py's `@app.on_event("startup")` handler
+once per process by main.py's lifespan handler
 (`threading.Thread(target=..., daemon=True).start()`) — this module only
 defines the loop bodies, it does not start any threads itself.
 """

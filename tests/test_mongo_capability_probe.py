@@ -613,3 +613,33 @@ def test_real_mongot_rejects_a_zero_vector_but_accepts_the_probe_vector(throwawa
             coll.drop_search_index(i["name"])
         c.drop_database(throwaway_db)
         c.close()
+
+
+def test_probe_unrelated_coded_failure_falls_through_to_generic_message(monkeypatch):
+    # Follow-up to #205 review: a coded OperationFailure unrelated to search must
+    # NOT be classified as unsupported — today a rule treating any coded error as
+    # unsupported would pass no test, so this guards the fall-through explicitly.
+    error = OperationFailure("unrelated server failure while creating the index", code=12345)
+    assert _search_unsupported(error) is False
+    coll = FakeCollection(create_error=error)
+    client, _ = _healthy(coll)
+    _patch_client(monkeypatch, client)
+    r = _probe_mongo("mongodb://x/")
+    assert r["status"] == "no_search"
+    assert r["detail"].startswith("could not create a search index:")
+    assert "unrelated server failure" in r["detail"]
+
+
+def test_broad_requires_additional_configuration_alone_is_not_search_unsupported(monkeypatch):
+    # Follow-up to #205 review: the bare "requires additional configuration" match
+    # is too broad — the startup check stops retrying on a match, so an unrelated
+    # error carrying that phrase must not read as "no search". Only the tighter
+    # Atlas Search Database Commands wording (or code 31082) counts.
+    error = OperationFailure("this stage requires additional configuration for this deployment")
+    assert _search_unsupported(error) is False
+    coll = FakeCollection(create_error=error)
+    client, _ = _healthy(coll)
+    _patch_client(monkeypatch, client)
+    r = _probe_mongo("mongodb://x/")
+    assert r["status"] == "no_search"
+    assert r["detail"].startswith("could not create a search index:")

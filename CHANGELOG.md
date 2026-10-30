@@ -46,6 +46,10 @@
   31082 (or the message on its own) now classifies as search-unsupported, so
   the probe returns the "requires a MongoDB with Vector Search" message (#204).
 - Ollama health checks now send the configured bearer token, matching generation requests (#180).
+- Replaced the deprecated FastAPI `@app.on_event("startup")` handlers in
+  `app/main.py` with a `lifespan` context manager (no more deprecation
+  warnings on import/startup; same bootstrap, scheduler, and poller threads
+  in the same order) (#198).
 
 - Fixed the installer script links in `docs/configuration.md` to resolve to the
   repository root after the documentation move (#61).
