@@ -1,4 +1,5 @@
 import threading
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException  # noqa: F401  (HTTPException: re-exported
                                                             # for tests/test_rbac_project_access.py's
@@ -34,8 +35,23 @@ from core.state import store  # noqa: F401
 # every route shape, parameter and model to anonymous callers. Local/dev keeps them.
 _docs_kwargs = ({"docs_url": None, "redoc_url": None, "openapi_url": None}
                 if IS_PRODUCTION else {})
+
+
+# Startup sequence (issue #198): formerly two `@app.on_event("startup")`
+# handlers, deprecated in FastAPI. `_startup`/`_start_poller` are defined
+# below and are only resolved when the lifespan runs — after this module
+# has fully imported — so the forward references are safe. Same threads,
+# same order as before; there is no shutdown work (the old handlers had
+# none either).
+@asynccontextmanager
+async def lifespan(app):
+    _startup()
+    _start_poller()
+    yield
+
+
 app = FastAPI(title="wardenIQ — Test Intelligence Platform", version=VERSION,
-              **_docs_kwargs)
+              lifespan=lifespan, **_docs_kwargs)
 
 
 # Phase 2 (REFACTOR_PLAN.md): the InvalidId exception + its handler now live in
@@ -162,7 +178,6 @@ from workers.repo_scan_worker import _promote_imported_row_to_feature  # noqa: E
 from background.schedulers import _import_reanalysis_scheduler, _stale_job_sweeper  # noqa: E402
 
 
-@app.on_event("startup")
 def _startup():
     threading.Thread(target=bootstrap, daemon=True).start()
     threading.Thread(target=_stale_job_sweeper, daemon=True).start()
@@ -206,7 +221,6 @@ from workers import generation  # noqa: E402,F401
 from background.poller import poller  # noqa: E402
 
 
-@app.on_event("startup")
 def _start_poller():
     threading.Thread(target=poller, daemon=True).start()
 

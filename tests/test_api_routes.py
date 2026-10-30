@@ -7,7 +7,7 @@ but never touch a real MongoDB or LLM: `tests/conftest.py` patches
 test patches whichever `main.store.*` methods its route needs.
 
 We instantiate `TestClient(main.app)` WITHOUT the `with` context manager on
-purpose: that skips FastAPI's startup lifespan (`@app.on_event("startup")`),
+purpose: that skips FastAPI's startup lifespan,
 which otherwise spawns background threads that retry a real Mongo connection.
 HTTP middleware (auth_gateway, security_headers) still runs on every request
 either way — only the startup/shutdown event handlers are skipped.
