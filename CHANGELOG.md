@@ -39,6 +39,9 @@
 
 ### Fixed
 
+- The case editor's "shared by N testcases" note counts distinct test cases:
+  a case that uses one step twice no longer counts twice, and the count drops
+  when a case stops using the step (#175).
 - **Capability probe reports the curated message for MongoDB without mongot.**
   A stock replica set without mongot rejects search-index creation with error
   code 31082 ("requires additional configuration"); the probe previously fell
