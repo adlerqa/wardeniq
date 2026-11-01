@@ -39,6 +39,13 @@
 
 ### Fixed
 
+- **`run.sh` fails fast on port collisions and dead containers instead of a
+  misleading 5-minute readiness timeout (#190).** A host process already on
+  8001/11434 (e.g. a host Ollama) is now caught before `docker compose up`,
+  with a pointer to app-only mode for 11434; a container that exits right
+  after startup is reported with its log lines immediately; and on a
+  readiness timeout the first failing container is named before the app's
+  boot-status text. Re-running while the stack is up is not a collision.
 - **Capability probe reports the curated message for MongoDB without mongot.**
   A stock replica set without mongot rejects search-index creation with error
   code 31082 ("requires additional configuration"); the probe previously fell
