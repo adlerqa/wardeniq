@@ -13,8 +13,6 @@ import time
 
 from bson import ObjectId
 
-from store.base import VECTOR_INDEX
-
 
 from typing import TYPE_CHECKING
 
@@ -71,48 +69,6 @@ class CodeCoverageMixin(_Base):
             "repo_id": repo_id, "sha": sha, "count": count, "impl_files": impl_files,
             "rules": rules, "updated_at": time.time()}}, upsert=True)
 
-    def search_code_chunks(self, query_embedding, project_id=None, repo_ids=None, limit=16):
-        """Retrieve the most relevant production-code chunks for a query embedding.
-
-        Uses the mongot vectorSearch index when available; falls back to an in-memory numpy
-        cosine scan so retrieval still works without a live search cluster (e.g. tests / dev).
-        """
-        try:
-            stage = {"index": VECTOR_INDEX, "path": "embedding",
-                     "queryVector": query_embedding, "numCandidates": 300, "limit": limit}
-            filt = {}
-            if project_id:
-                filt["project_id"] = {"$eq": project_id}
-            if repo_ids:
-                filt["repo_id"] = {"$in": list(repo_ids)}
-            if filt:
-                stage["filter"] = filt
-            pipeline = [{"$vectorSearch": stage},
-                        {"$addFields": {"score": {"$meta": "vectorSearchScore"}}},
-                        {"$limit": limit}]
-            out = [{"repo": d.get("repo"), "path": d.get("path"), "text": d.get("text"),
-                    "score": round(d.get("score", 0), 4)} for d in self.code_chunks.aggregate(pipeline)]
-            if out:
-                return out
-        except Exception:  # noqa: BLE001  -- no mongot / index -> numpy fallback below
-            pass
-        q = {}
-        if project_id:
-            q["project_id"] = project_id
-        if repo_ids:
-            q["repo_id"] = {"$in": list(repo_ids)}
-        docs = list(self.code_chunks.find(q, {"repo": 1, "path": 1, "text": 1, "embedding": 1, "_id": 0}))
-        if not docs:
-            return []
-        import numpy as np
-        qv = np.asarray(query_embedding, dtype=float)
-        qn = np.linalg.norm(qv) or 1.0
-        M = np.asarray([d["embedding"] for d in docs], dtype=float)
-        norms = np.linalg.norm(M, axis=1); norms[norms == 0] = 1.0
-        scores = (M @ qv) / (norms * qn)
-        order = np.argsort(-scores)[:limit]
-        return [{"repo": docs[i].get("repo"), "path": docs[i].get("path"),
-                 "text": docs[i].get("text"), "score": round(float(scores[i]), 4)} for i in order]
 
     def save_commit_analysis(self, project_id, feature_id, params, commits, results):
         """Persist one grounded commit-analysis run; returns its id."""

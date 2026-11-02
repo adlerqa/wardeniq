@@ -106,7 +106,7 @@ class TestSearchFeatureChunksPipelineShape:
         vector_search_stage = fake.aggregate_calls[0][0]["$vectorSearch"]
         assert vector_search_stage["limit"] == 5
         # numCandidates must be wider than limit so the vector index has a real
-        # candidate pool to rank, matching search_code_chunks()'s established pattern.
+        # candidate pool to rank, matching the established vector-search pattern.
         assert vector_search_stage["numCandidates"] > 5
 
     def test_pipeline_result_propagates_similarity_score(self):

@@ -112,7 +112,7 @@ app/                    FastAPI backend + Dockerfile (also builds UI)
                         the same-named `store/sheet_import.py` mixin; Python's absolute
                         imports make `import sheet_import` vs. relative `from . import
                         sheet_import` unambiguous, see store/__init__.py's docstring)
-  test_plan.py  (915)   test-plan generation
+  testplan.py   (915)   test-plan generation
   validator.py  (732)   validator run (Q&A) logic
   report.py     (702)   report/export (reportlab PDF, docx)
   grounding.py  (625)   evidence-backed code grounding (tree-sitter, BM25)

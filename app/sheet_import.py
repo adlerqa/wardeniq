@@ -255,52 +255,6 @@ def _clean_expected_text(text: str) -> str:
     return cleaned
 
 
-def derive_row_fields(raw_row: list[str], header_map: dict[str, int],
-                       sheet: str, row_number: int) -> ParsedRow | None:
-    """Pluck canonical fields out of a raw cell list. Returns None when the row
-    has nothing usable (no title/description/steps)."""
-    def cell(name: str) -> str:
-        idx = header_map.get(name, -1)
-        if idx < 0 or idx >= len(raw_row):
-            return ""
-        v = raw_row[idx]
-        if v is None:
-            return ""
-        return str(v).strip()
-
-    title = cell("title")
-    description = cell("description")
-    intent = cell("intent")
-    steps_raw = cell("steps")
-    expected = cell("expected_result")
-    if not (title or description or steps_raw):
-        return None
-
-    steps = []
-    if steps_raw:
-        for part in _STEP_SPLIT.split(steps_raw):
-            p = _clean_step_text(part)
-            if p:
-                steps.append(p)
-
-    tags_raw = cell("tags")
-    tags = [t.strip() for t in _TAG_SPLIT.split(tags_raw) if t.strip()]
-
-    return ParsedRow(
-        sheet=sheet, row_number=row_number,
-        title=title, description=description, intent=intent,
-        category=(cell("category") or None),
-        suite=cell("suite"),
-        priority=_norm_priority(cell("priority")),
-        endpoint=cell("endpoint"), method=cell("method").upper(),
-        steps=steps, expected_result=_clean_expected_text(expected),
-        module=cell("module"), tags=tags,
-        preconditions=cell("preconditions"),
-        test_id=cell("test_id"), status=cell("status"),
-        raw={"original": raw_row},
-    )
-
-
 # ---------------------------------------------------------------- file parsing
 def _decode_text(file_bytes: bytes) -> str:
     for enc in ("utf-8-sig", "utf-8", "latin-1"):

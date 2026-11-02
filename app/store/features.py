@@ -269,7 +269,7 @@ class FeaturesMixin(_Base):
         """Retrieve the most relevant chunks of ONE feature's own document(s) for a
         query embedding -- the retrieval half of test-generation RAG (the write side
         is add_feature_chunks()). Modeled directly on
-        store/code_coverage.py's search_code_chunks(): mongot $vectorSearch first
+        the vector-search pattern: mongot $vectorSearch first
         (fast, real similarity ranking), in-memory numpy cosine as a true fallback so
         retrieval still works without a live search cluster (e.g. tests / dev / a
         transient mongot outage).
