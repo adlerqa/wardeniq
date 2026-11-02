@@ -290,7 +290,8 @@ def extract_api_endpoints(raw_text: str) -> str | None:
     yaml_method_regex = re.compile(r'^\s{2,8}(get|post|put|patch|delete):\s*$', re.IGNORECASE)
     
     pending_yaml_path = None
-    
+    pending_yaml_indent = 0
+
     def has_unbalanced_curly_braces(path: str) -> bool:
         has_open = '{' in path
         has_close = '}' in path
@@ -307,6 +308,7 @@ def extract_api_endpoints(raw_text: str) -> str | None:
         yaml_match = yaml_path_regex.match(line)
         if yaml_match:
             pending_yaml_path = yaml_match.group(2)
+            pending_yaml_indent = len(yaml_match.group(1))
             continue
             
         # YAML method match
@@ -317,7 +319,9 @@ def extract_api_endpoints(raw_text: str) -> str | None:
                 if not has_unbalanced_curly_braces(pending_yaml_path):
                     found.add(f"{method} {pending_yaml_path}")
             elif trimmed and not trimmed.startswith('#'):
-                pending_yaml_path = None
+                # nested keys of an operation (summary, responses, ...) keep the path open
+                if len(line) - len(line.lstrip()) <= pending_yaml_indent:
+                    pending_yaml_path = None
                 
         # Regex search for explicit ones
         for match in explicit_regex.finditer(line):
