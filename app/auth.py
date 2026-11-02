@@ -183,6 +183,33 @@ def password_policy_errors(password: str) -> list:
     return errs
 
 
+# Fragments from password_policy_errors() rendered as verb phrases, so a
+# message built from them reads as a sentence instead of a bare list. The
+# mapping covers every fragment that function can produce; anything unknown
+# passes through unchanged rather than being dropped.
+_POLICY_CLAUSES = {
+    "at least 8 characters": "be at least 8 characters",
+    "at least one letter": "contain at least one letter",
+    "at least one number": "contain at least one number",
+    "must not be the default password": "not be the default password",
+}
+
+
+def password_policy_message(errs: list) -> str:
+    """Render unmet password-policy requirements as one grammatical sentence.
+
+    The old call sites built `"Password must have " + ", ".join(errs) + "."`,
+    which reads ungrammatically whenever the default-password rule is among
+    the failures ("Password must have must not be the default password").
+    """
+    clauses = [_POLICY_CLAUSES.get(e, e) for e in errs]
+    if len(clauses) == 1:
+        body = clauses[0]
+    else:
+        body = ", ".join(clauses[:-1]) + ", and " + clauses[-1]
+    return "Password must " + body + "."
+
+
 # ---- role checks ------------------------------------------------------------
 def has_role(user_role: str, minimum: str) -> bool:
     return ROLE_RANK.get(user_role, 0) >= ROLE_RANK.get(minimum, 99)

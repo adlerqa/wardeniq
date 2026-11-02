@@ -358,7 +358,7 @@ def change_password(body: ChangePasswordIn, request: Request, response: Response
 
     errs = auth.password_policy_errors(body.new_password)
     if errs:
-        raise HTTPException(400, "Password must have " + ", ".join(errs) + ".")
+        raise HTTPException(400, auth.password_policy_message(errs))
     if body.new_password == current:
         raise HTTPException(400, "new password must be different from the current one")
 
@@ -463,7 +463,7 @@ def reset_password(body: ResetPasswordIn, request: Request = None):
 
     errs = auth.password_policy_errors(body.new_password)
     if errs:
-        raise HTTPException(400, "Password must have " + ", ".join(errs) + ".")
+        raise HTTPException(400, auth.password_policy_message(errs))
 
     throttle.succeed(store, tkeys)
     store.clear_reset_code(user["id"])
@@ -518,7 +518,7 @@ def reset_password_master(body: ResetPasswordMasterIn, request: Request = None):
 
     errs = auth.password_policy_errors(body.new_password)
     if errs:
-        raise HTTPException(400, "Password must have " + ", ".join(errs) + ".")
+        raise HTTPException(400, auth.password_policy_message(errs))
 
     # set_user_password() bumps session_version, so every existing session of this
     # account is signed out.
