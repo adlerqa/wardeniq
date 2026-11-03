@@ -30,7 +30,8 @@ import automation as auto_cov
 from core.deps import _ext_error, _implementation_repo_docs, _is_app_repo, _oid, gh_client
 from core.logging_setup import get_logger
 from core.security import (
-    _require_code_coverage_run_project, _require_commit_analysis_project, _require_project,
+    _require_code_coverage_run_project, _require_commit_analysis_project, _require_pr_project,
+    _require_project,
 )
 from core.state import store
 from workers.registry import launch_job, run_tracked
@@ -183,20 +184,22 @@ class ReassignIn(BaseModel):
 
 
 @router.post("/api/code-coverage/runs/{rid}/reassign")
-def reassign_code_coverage_run(rid: str, body: ReassignIn):
+def reassign_code_coverage_run(rid: str, body: ReassignIn, request: Request):
     """Manually override the auto-resolved feature for a PR run, and re-run
     coverage against the chosen feature's current version (sticky binding)."""
-    run = store.get_code_coverage_run(rid)
-    if not run:
-        raise HTTPException(404, "run not found")
+    run = _require_code_coverage_run_project(request, rid)
     feature = store.get_feature(body.feature_id)
     if not feature:
         raise HTTPException(404, "feature not found")
+    _require_project(request, feature.get("project_id"))
+    if run.get("project_id") and feature.get("project_id") != run.get("project_id"):
+        raise HTTPException(400, "feature belongs to a different project than this run")
+    # Validate everything before writing anything.
+    if not run.get("repo_id") or not run.get("pr_number"):
+        raise HTTPException(400, "run is missing repo_id / pr_number — cannot re-run")
     store.update_code_coverage_run(rid, feature_id=body.feature_id,
                                    feature_version=feature.get("version", 1),
                                    confidence="manual")
-    if not run.get("repo_id") or not run.get("pr_number"):
-        raise HTTPException(400, "run is missing repo_id / pr_number — cannot re-run")
     jid = launch_job("code_coverage", {
         "repo_id": run["repo_id"], "pr_number": int(run["pr_number"]),
         "feature_id": body.feature_id},
@@ -210,12 +213,13 @@ class ExcludePrIn(BaseModel):
 
 
 @router.post("/api/prs/{pr_id}/exclude")
-def exclude_pr(pr_id: str, body: ExcludePrIn):
+def exclude_pr(pr_id: str, body: ExcludePrIn, request: Request):
     """Exclude (or re-include) a PR from a feature's Gap Analysis coverage.
 
     Excluded PRs stay visible in the Gap Analysis list (flagged) but no longer
     contribute to the feature's aggregate code coverage — lets a QA lead drop
     an outdated/junk PR and have coverage recompute immediately."""
+    _require_pr_project(request, pr_id)
     res = store.set_pr_excluded(pr_id, body.excluded)
     if res is None:
         raise HTTPException(404, "PR not found")
@@ -251,7 +255,7 @@ class ManualCovIn(BaseModel):
 
 
 @router.post("/api/code-coverage/runs/manual")
-def manual_code_coverage(body: ManualCovIn):
+def manual_code_coverage(body: ManualCovIn, request: Request):
     """Manually run PR code coverage. Accepts either:
        - {feature_id, repo_id, pr_number}, OR
        - {feature_id, pr_url}  with a github.com/.../pull/N or
@@ -261,6 +265,7 @@ def manual_code_coverage(body: ManualCovIn):
     if not feature:
         raise HTTPException(404, "feature not found")
     pid = feature.get("project_id")
+    _require_project(request, pid)
 
     repo_id = body.repo_id
     pr_number = body.pr_number
@@ -287,6 +292,8 @@ def manual_code_coverage(body: ManualCovIn):
     repo = store.get_repo(repo_id)
     if not repo:
         raise HTTPException(404, "repo not found")
+    if repo.get("project_id") != pid:
+        raise HTTPException(400, "repository is not connected to this feature's project")
     jid = launch_job("code_coverage", {
         "repo_id": repo_id, "pr_number": pr_number,
         "feature_id": body.feature_id},
@@ -344,6 +351,10 @@ def rescan_test_repo(pid: str, rid: str, feature_id: str | None = None):
         raise HTTPException(404, "repo not found in this project")
     if repo.get("repo_type") != "test":
         raise HTTPException(400, "rescan only applies to test repos")
+    if feature_id:
+        f = store.get_feature(feature_id)
+        if not f or f.get("project_id") != pid:
+            raise HTTPException(404, "feature not found in this project")
     # If a scan is already running we surface that instead of stacking jobs.
     if repo.get("scan_status") == "running":
         return {"already_running": True, "repo_id": rid}
@@ -521,15 +532,19 @@ def unmapped_prs(pid: str):
 
 
 @router.post("/api/prs/{pr_id}/assign")
-def assign_pr(pr_id: str, body: AssignPRIn):
+def assign_pr(pr_id: str, body: AssignPRIn, request: Request):
     """Manually map an unmatched PR to a feature, then compute its coverage in the background.
 
     Mapping is persisted immediately (so the PR leaves the unmapped queue at once); the coverage
     pass — which may call the LLM and take a while — runs in a daemon thread so the UI stays snappy.
     """
-    p = store.prs.find_one({"_id": _oid(pr_id)})
-    if not p:
-        raise HTTPException(404, "PR not found")
+    p = _require_pr_project(request, pr_id)
+    feature = store.get_feature(body.feature_id)
+    if not feature:
+        raise HTTPException(404, "feature not found")
+    _require_project(request, feature.get("project_id"))
+    if p.get("project_id") and feature.get("project_id") != p.get("project_id"):
+        raise HTTPException(400, "feature belongs to a different project than this PR")
     store.set_pr_mapping(pr_id, body.feature_id, 1.0, "manual")
     repo = store.repos.find_one({"_id": _oid(p["repo_id"])}) if p.get("repo_id") else None
     pdoc = {**p, "id": pr_id}

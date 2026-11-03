@@ -278,7 +278,7 @@ class TestSmtpAndPasswordLogin:
                 return u
             def list_users(self):
                 return list(self.users.values())
-            def otp_recent_issue_count(self, uid, w):
+            def otp_recent_issue_count(self, uid, w, max_per_window=None):
                 return 0
             def set_otp(self, uid, h, exp):
                 pass

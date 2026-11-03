@@ -1,13 +1,13 @@
 
 from __future__ import annotations
 
-import io
 import json
 import os
 import re
 import tarfile
 from typing import Iterable
 
+import size_limits
 from core.config import GITLAB_BASE_URL
 
 # ---------------------------------------------------------------- framework detect
@@ -138,7 +138,7 @@ def files_from_tarball(tar_bytes: bytes) -> Iterable[tuple[str, str]]:
     """Yield (relative_path, content_text) for likely test files in a GitHub
     tarball. Skips non-test paths, dotfiles, vendored deps, oversize files."""
     yielded = 0
-    with tarfile.open(fileobj=io.BytesIO(tar_bytes), mode="r:gz") as tar:
+    with tarfile.open(fileobj=size_limits.as_fileobj(tar_bytes), mode="r:gz") as tar:
         for member in tar:
             if not member.isfile():
                 continue

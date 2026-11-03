@@ -95,7 +95,11 @@ def _codeanalysis_worker(jid, params):
                 errors.append(f"{repo['full_name']}@{ref}: {e}")
                 per_repo.append({"repo": repo["full_name"], "branch": ref, "error": str(e)[:200]})
                 continue
-            files, stats = extractmod.source_files_from_tar(data, return_stats=True)
+            try:
+                files, stats = extractmod.source_files_from_tar(data, return_stats=True)
+            finally:
+                if hasattr(data, "close"):
+                    data.close()      # temporary archive file
             # Whole-file text is already in hand from this fetch — reuse it directly for
             # contract-break detection instead of issuing a second archive fetch.
             all_repo_files.extend({"path": p, "text": t} for p, t in files)

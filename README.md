@@ -155,6 +155,13 @@ To sign in the very first time:
 
 Prefer to seed the admin ahead of time? Set `ADMIN_EMAIL=you@company.com` in `.env`.
 
+> **Email sign-in codes before SMTP is set up.** Without SMTP, a one-time code is
+> printed to the server log (`docker logs warden-app`) only for the bootstrap admin
+> (the first account, or the `ADMIN_EMAIL` admin) — it is never shown on the sign-in
+> screen, and other accounts receive no code. For a throwaway demo/evaluation install
+> you can opt in to showing every code on the sign-in screen with `OTP_DEV_CODES=true`;
+> that setting is ignored when `APP_ENV=production`.
+
 > **Changed your mind about your password later?** Use **Change password** in the
 > profile menu (top-right, next to Sign out) — only shown for the local `admin`
 > account; email-based users sign in with a code and have no password to change.

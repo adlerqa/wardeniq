@@ -91,9 +91,25 @@ class DashboardMixin(_Base):
                     dev.add(item["generated_id"])
         return covered, dev
 
-    def dashboard(self):
+    def _active_for_projects(self, project_ids):
+        """active_feature_ids() restricted to a set of projects."""
+        fids, groups = set(), set()
+        for pid in sorted(project_ids):
+            f, g = self.active_feature_ids(pid)
+            fids |= f
+            groups |= g
+        return fids, groups
+
+    def dashboard(self, project_ids=None):
+        """Global rollup; with `project_ids` (a user limited to some projects) every
+        count and the per-project list only reflect those projects."""
+        scoped = project_ids is not None
+        pids = sorted(project_ids or [])
         covered, dev = self._covered_and_dev_sets()
-        active_fids, groups = self.active_feature_ids()
+        if scoped:
+            active_fids, groups = self._active_for_projects(pids)
+        else:
+            active_fids, groups = self.active_feature_ids()
         active = self.active_case_ids(active_fids)
         total_cases = len(active)
         by_type = {t: 0 for t in ["functional", "e2e", "api", "ui", "nfr"]}
@@ -108,7 +124,8 @@ class DashboardMixin(_Base):
             docs += len(f.get("sources") or ([f["source"]] if f.get("source") else []))
         # per-project rollup (active only)
         projects = []
-        for p in self.projects.find({}):
+        pq = {"_id": {"$in": [ObjectId(x) for x in pids if ObjectId.is_valid(x)]}} if scoped else {}
+        for p in self.projects.find(pq):
             pid = str(p["_id"])
             afids, pgroups = self.active_feature_ids(pid)
             pcases = self.active_case_ids(afids)
@@ -119,16 +136,26 @@ class DashboardMixin(_Base):
                 "automation_pct": round(100 * len(pcases & dev) / tc, 1) if tc else 0,
                 "prs": self.prs.count_documents({"project_id": pid}),
                 "repos": self.repos.count_documents({"project_id": pid})})
+        by_pid = {"project_id": {"$in": pids}} if scoped else {}
+        if scoped:
+            step_ids = set()
+            if active:
+                for c in self.cases.find({"_id": {"$in": [ObjectId(i) for i in active]}},
+                                         {"step_ids": 1}):
+                    step_ids.update(c.get("step_ids") or [])
+            n_steps = len(step_ids)
+        else:
+            n_steps = self.steps.count_documents({})
         return {
             "counts": {
-                "projects": self.projects.count_documents({}),
+                "projects": self.projects.count_documents(pq),
                 "features": len(groups),
-                "feature_versions": self.features.count_documents({}),
+                "feature_versions": self.features.count_documents(by_pid),
                 "test_cases": total_cases,
-                "test_steps": self.steps.count_documents({}),
+                "test_steps": n_steps,
                 "documents": docs,
-                "repos": self.repos.count_documents({}),
-                "pull_requests": self.prs.count_documents({}),
+                "repos": self.repos.count_documents(by_pid),
+                "pull_requests": self.prs.count_documents(by_pid),
             },
             "coverage": {
                 "code_pct": round(100 * cov_active / total_cases, 1) if total_cases else 0,

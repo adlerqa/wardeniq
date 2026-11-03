@@ -127,8 +127,21 @@ class ReposPrsMixin(_Base):
         return str(self.prs.find_one(key)["_id"])
 
     def set_pr_mapping(self, pr_id, feature_id, confidence, method):
-        self.prs.update_one({"_id": ObjectId(pr_id)}, {"$set": {
-            "feature_id": feature_id, "mapping_confidence": confidence, "mapping_method": method}})
+        update = {"$set": {"feature_id": feature_id, "mapping_confidence": confidence,
+                           "mapping_method": method}}
+        if feature_id:
+            # A resolved mapping supersedes any semantic suggestion left from an earlier run.
+            update["$unset"] = {"mapping_suggestion": ""}
+        self.prs.update_one({"_id": ObjectId(pr_id)}, update)
+
+    def set_pr_suggestion(self, pr_id, suggestion):
+        """Record (or, with None, clear) a semantic feature SUGGESTION for an unmapped PR
+        (issue #54). Deliberately separate from feature_id / mapping_method / mapping_confidence:
+        those drive coverage accounting, a suggestion must not."""
+        if suggestion:
+            self.prs.update_one({"_id": ObjectId(pr_id)}, {"$set": {"mapping_suggestion": suggestion}})
+        else:
+            self.prs.update_one({"_id": ObjectId(pr_id)}, {"$unset": {"mapping_suggestion": ""}})
 
     def set_pr_excluded(self, pr_id, excluded: bool):
         """Exclude/include a PR from Gap Analysis coverage. Excluded PRs remain
@@ -175,7 +188,10 @@ class ReposPrsMixin(_Base):
             out.append({"id": str(p["_id"]), "number": p.get("number"), "title": p.get("title"),
                         "repo": p.get("repo_full_name"), "url": p.get("url"),
                         "state": p.get("state"), "author": p.get("author"),
-                        "mapping_confidence": p.get("mapping_confidence", 0)})
+                        "mapping_confidence": p.get("mapping_confidence", 0),
+                        # Semantic suggestion (issue #54), or None. Not a mapping: the PR is
+                        # still unmapped for coverage until someone assigns it.
+                        "mapping_suggestion": p.get("mapping_suggestion")})
         return out
 
     def set_repo_scan_status(self, rid, status, **fields):

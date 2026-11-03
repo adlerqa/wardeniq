@@ -35,7 +35,7 @@ class UsageMixin(_Base):
             {"_id": ObjectId(jid)},
             {"$set": {"usage": usage or {}, "updated_at": time.time()}})
 
-    def usage_summary(self, project_id=None, prices=None, recent=40, scan=1000):
+    def usage_summary(self, project_id=None, prices=None, recent=40, scan=1000, project_ids=None):
         """Aggregate token usage + cost across recent jobs: totals, per-model,
         per-project, and a list of recent processes (for the usage dashboard).
 
@@ -53,6 +53,9 @@ class UsageMixin(_Base):
         q = {"usage.total_tokens": {"$gt": 0}}
         if project_id:
             q["project_id"] = project_id
+        elif project_ids is not None:
+            # Restrict to a set of projects (users limited to some projects).
+            q["project_id"] = {"$in": sorted(project_ids)}
         by_model, by_project = {}, {}
         totals = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cost_usd": 0.0}
         any_cost = False

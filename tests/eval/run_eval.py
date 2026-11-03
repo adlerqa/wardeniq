@@ -13,9 +13,11 @@ Exit code is non-zero when a scored section falls below its threshold, so this c
 a prompt or model change in CI rather than being a thing someone remembers to run.
 """
 import argparse
+import hashlib
 import json
 import os
 import sys
+from datetime import datetime, timezone
 
 # Allow `python -m tests.eval.run_eval` from the repo root with app/ on the path.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "app"))
@@ -171,18 +173,80 @@ def run_coverage(llm, samples=1) -> dict:
                                        ex["cases"], ex["excerpts"], samples=samples)
         by_id = {c["test_case_id"]: c for c in res["cases"]}
         for cid, expected in ex["expected"].items():
-            got = by_id.get(cid) or {}
+            got = by_id.get(cid)
+            missing = got is None          # the model returned no verdict for this case
+            got = got or {}
             actual = got.get("status", "uncovered")
             pairs.append((expected, actual))
             rows.append({"example": ex["id"], "case": cid, "expected": expected,
                          "actual": actual, "confidence": got.get("confidence"),
                          "needs_review": got.get("needs_review"),
                          "rejected_citations": got.get("files_rejected") or [],
+                         "missing": missing,
                          "pass": actual == expected})
     conf = _confusion(pairs)
+    # A missing verdict is scored as "uncovered" (it is not a verdict of covered), but it is
+    # counted apart so a model that failed to answer is not read as one that answered badly.
     return {"section": "coverage", "rows": rows, "confusion": conf,
             "score": conf["accuracy"], "overclaim_rate": _overclaim_rate(pairs),
+            "missing_responses": sum(1 for r in rows if r["missing"]),
             "samples": samples}
+
+
+# --------------------------------------------------------------------------- run metadata
+# Free-text audit-trail fields: a wording fix to a `note` explaining a label must not
+# look like a corpus change. Everything else on an item is an input to scoring.
+_NON_SCORING_FIELDS = frozenset({"note"})
+
+
+def _scoring_corpus() -> dict:
+    """The corpus exactly as the scorers consume it: every field of every item, per section,
+    minus the non-scoring audit-trail fields. Items are ordered by id so the result does not
+    depend on how a section happens to be listed in dataset.py."""
+    sections = {
+        "hallucination_probes": dataset.HALLUCINATION_PROBES,
+        "dedup_pairs": dataset.DEDUP_PAIRS,
+        "known_limitation_pairs": dataset.KNOWN_LIMITATION_PAIRS,
+        "coverage_examples": dataset.COVERAGE_EXAMPLES,
+    }
+    return {name: [{k: v for k, v in item.items() if k not in _NON_SCORING_FIELDS}
+                   for item in sorted(items, key=lambda i: str(i.get("id")))]
+            for name, items in sections.items()}
+
+
+def _dataset_fingerprint() -> str:
+    """A short, reproducible identifier for the exact corpus a run was scored against.
+
+    Computed (not hand-maintained) so it can never go stale the way a manually-bumped
+    version constant would: it changes if and only if a scored input changes -- a probe's
+    claim or excerpts, a dedup pair's cases, a coverage example's requirement, excerpts or
+    cases, or any label -- and not when only a free-text `note` is reworded. It hashes a
+    canonical JSON form (sorted keys, items ordered by id), so it is identical for identical
+    content on every run and machine, and contains nothing from the run itself (no
+    timestamp, model, response, URL or key).
+    """
+    canonical = json.dumps(_scoring_corpus(), sort_keys=True, separators=(",", ":"),
+                           ensure_ascii=True, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
+
+
+def _run_metadata(args, reports) -> dict:
+    """Safe-to-publish metadata for reproducing/interpreting a run later (#43's own
+    benchmark needs this to compare runs across models). Deliberately excludes
+    anything that isn't already a public identifier: no API key, no URL that might
+    embed credentials (ollama_url is local-network-only by convention, but is still
+    left out here since it's never needed to interpret a result)."""
+    return {
+        "tool": "tests.eval.run_eval",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "dataset_fingerprint": _dataset_fingerprint(),
+        "sections_run": [r["section"] for r in reports],
+        # Only meaningful (and only ever populated) when --coverage actually ran --
+        # the offline sections don't call a model at all, so labelling them with
+        # whatever --provider/--model happened to be passed would be misleading.
+        "provider": args.provider if getattr(args, "coverage", False) else None,
+        "model": args.model if getattr(args, "coverage", False) else None,
+    }
 
 
 # --------------------------------------------------------------------------- reporting
@@ -193,6 +257,8 @@ def _print(report: dict):
               f"({report.get('passed', '?')}/{report.get('total', '?')})")
     if report.get("overclaim_rate") is not None:
         print(f"overclaim rate (worse than wrong): {report['overclaim_rate']}")
+    if report.get("missing_responses"):
+        print(f"missing model responses (scored as uncovered): {report['missing_responses']}")
     for k in ("false_merge", "missed_merge", "precision", "recall"):
         if report.get(k) is not None:
             print(f"{k}: {report[k]}")
@@ -222,6 +288,19 @@ def _print(report: dict):
                   "dataset.KNOWN_LIMITATION_PAIRS before changing any threshold.")
 
 
+def _gate(failures: list, name: str, report: dict, minimum: float) -> None:
+    """Record a failure when a requested section misses its threshold -- or has nothing to
+    score. A section with no scorable items has `score` None; skipping the comparison would
+    let an emptied or broken corpus pass the gate as if it had scored perfectly, so it fails
+    closed instead."""
+    score = report["score"]
+    if score is None:
+        failures.append(f"{name}: no scorable items (empty corpus) -- refusing to pass an "
+                        "unscored section")
+    elif score < minimum:
+        failures.append(f"{name} {score} < {minimum}")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -240,6 +319,10 @@ def main(argv=None):
     ap.add_argument("--min-coverage", type=float, default=0.0,
                     help="set a floor once you have a baseline from your own data")
     ap.add_argument("--json", action="store_true", help="emit machine-readable output")
+    ap.add_argument("--out", default="", help="also write the full JSON result "
+                    "(same payload as --json) to this file path, regardless of "
+                    "--json — so a normal human-readable run can still archive a "
+                    "machine-readable record")
     args = ap.parse_args(argv)
 
     if not (args.probes or args.dedup or args.coverage):
@@ -249,25 +332,26 @@ def main(argv=None):
     if args.probes:
         r = run_probes()
         reports.append(r)
-        if r["score"] is not None and r["score"] < args.min_probes:
-            failures.append(f"probes {r['score']} < {args.min_probes}")
+        _gate(failures, "probes", r, args.min_probes)
     if args.dedup:
         r = run_dedup()
         reports.append(r)
-        if r["score"] is not None and r["score"] < args.min_dedup:
-            failures.append(f"dedup {r['score']} < {args.min_dedup}")
+        _gate(failures, "dedup", r, args.min_dedup)
     if args.coverage:
         from llm import LLM
         llm = LLM(provider=args.provider, model=args.model, api_key=args.api_key,
                   ollama_url=args.ollama_url)
         r = run_coverage(llm, samples=args.samples)
         reports.append(r)
-        if r["score"] is not None and r["score"] < args.min_coverage:
-            failures.append(f"coverage {r['score']} < {args.min_coverage}")
+        _gate(failures, "coverage", r, args.min_coverage)
+
+    meta = _run_metadata(args, reports)
+    payload = {"meta": meta, "reports": reports, "failures": failures}
 
     if args.json:
-        print(json.dumps({"reports": reports, "failures": failures}, indent=2))
+        print(json.dumps(payload, indent=2))
     else:
+        print(f"dataset fingerprint: {meta['dataset_fingerprint']}  |  {meta['timestamp']}")
         for r in reports:
             _print(r)
         if failures:
@@ -276,6 +360,14 @@ def main(argv=None):
                 print(f"  - {f}")
         else:
             print("\nall scored sections met their thresholds")
+
+    if args.out:
+        with open(args.out, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+        # With --json, stdout is the payload and must stay parseable: the note goes to stderr.
+        print(f"\nresults written to {args.out}",
+              file=sys.stderr if args.json else sys.stdout)
+
     return 1 if failures else 0
 
 

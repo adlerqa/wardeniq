@@ -57,7 +57,10 @@ class _FakeCollection:
 def _store():
     s = Store.__new__(Store)
     s.api_tokens = _FakeCollection()
-    s.api_token_failures = _FakeCollection()
+    # The failure counter uses atomic $pull/$push updates, so it runs against a
+    # real in-memory MongoDB implementation rather than the minimal fake above.
+    import mongomock
+    s.api_token_failures = mongomock.MongoClient().db.api_token_failures
     return s
 
 
@@ -148,7 +151,7 @@ class TestFailureRateLimit:
 
     def test_old_failures_outside_window_are_not_counted(self):
         s = _store()
-        s.api_token_failures.docs.append(
+        s.api_token_failures.insert_one(
             {"_id": "1.2.3.4", "attempts": [time.time() - 9999]})
         assert s.api_token_failure_count("1.2.3.4", 300) == 0
 

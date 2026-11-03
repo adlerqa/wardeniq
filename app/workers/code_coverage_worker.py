@@ -32,6 +32,7 @@ from core.deps import (
     project_github_token, project_gitlab_token,
 )
 from core.logging_setup import get_logger
+from core import state
 from core.state import SYNC, store  # noqa: F401  (bare name-imports are safe:
                                      # both are mutated in place, never rebound)
 
@@ -211,6 +212,10 @@ def ingest_pr(repo: dict, pr: dict, feature_id_override: str | None = None):
             fid, score, method = cov.map_pr_to_feature(
                 store, jira_client(), base_doc, repo["project_id"])
     store.set_pr_mapping(pr_id, fid, score, method)
+    if fid:
+        # Unmapped PRs are logged by resolve_pr_mapping() below, with their semantic result.
+        log.info("[pr-map] %s#%s method=%s confidence=%.2f feature=%s",
+                 repo["full_name"], number, method, score, fid)
 
     feature = store.get_feature(fid) if fid else None
     version = (feature or {}).get("version", 1) if feature else None
@@ -267,9 +272,15 @@ def ingest_pr(repo: dict, pr: dict, feature_id_override: str | None = None):
 
     # Providers whose webhook payload lacked title/body (e.g. GitLab) may have
     # missed the provisional mapping; re-map now that the PR is enriched and move
-    # the (already-visible) running row onto the resolved feature.
+    # the (already-visible) running row onto the resolved feature. The keyword tiers
+    # run first; only when they find nothing is a semantic suggestion computed (issue
+    # #54). It is recorded on the PR but, unless explicitly opted in, does not map the
+    # PR, so coverage accounting is unchanged.
     if not feature_id_override and method != "manual" and not fid:
-        fid, score, method = cov.map_pr_to_feature(store, jira_client(), doc, repo["project_id"])
+        resolved = cov.resolve_pr_mapping(store, jira_client(), doc, repo["project_id"],
+                                          embedder=state.embedder)
+        fid, score, method = resolved["feature_id"], resolved["confidence"], resolved["method"]
+        store.set_pr_suggestion(pr_id, resolved["suggestion"])
         if fid:
             store.set_pr_mapping(pr_id, fid, score, method)
             feature = store.get_feature(fid)

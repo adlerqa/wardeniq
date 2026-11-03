@@ -28,7 +28,7 @@ COMPOSE_FILE_VALUE="docker-compose.app.yml:docker-compose.mongodb.yml:docker-com
 
 rand() {
   if command -v openssl >/dev/null 2>&1; then openssl rand -base64 $(( ${1:-32} * 2 )) | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c "${1:-32}"
-  else LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "${1:-32}"; fi
+  else { LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom || true; } | head -c "${1:-32}"; fi  # tr dies of SIGPIPE once head is done
 }
 get_env() { grep "^$1=" .env 2>/dev/null | head -1 | cut -d= -f2- || true; }
 set_env() {  # replace-or-append literally

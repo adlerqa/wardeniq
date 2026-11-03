@@ -477,6 +477,14 @@ startup and secrets.
 | `ADMIN_PASSWORD` | _(empty)_ | Bootstrap password for the local `admin` login (the installer prompts for it). Set ⇒ replaces the `admin123` default. Blank ⇒ `admin123` with forced change on first login |
 | `COOKIE_SECURE` | `false` | Set `true` when serving over HTTPS |
 | `SESSION_TTL_SECONDS` / `OTP_TTL_SECONDS` | `604800` / `600` | Session lifetime (7 d) / code lifetime (10 min) |
+| `OTP_DEV_CODES` | `false` | Demo/evaluation only: without SMTP, log **and** show every sign-in code on the sign-in screen. Ignored when `APP_ENV=production`. Off ⇒ only the bootstrap admin's code is printed to the server log |
+| `AUTH_MAX_FAILURES_PER_ACCOUNT` / `AUTH_MAX_FAILURES_PER_IP` | `10` / `50` | Failed sign-in / code / reset attempts allowed per account and per client IP within `AUTH_FAILURE_WINDOW_SECONDS` before a lockout |
+| `AUTH_FAILURE_WINDOW_SECONDS` / `AUTH_LOCKOUT_SECONDS` | `900` / `900` | Failure-counting window and lockout duration (seconds) |
+| `RESET_CODE_MAX_PER_WINDOW` | `3` | Password-reset codes emailed to one account per `OTP_WINDOW_SECONDS` |
+| `MAX_UPLOAD_MB` | `25` | Largest accepted upload per file (HTTP 413 beyond); all files in one request together may total 4x this |
+| `MAX_ARCHIVE_UNCOMPRESSED_MB` | `200` | `.docx`/`.xlsx` uploads whose unpacked size (or compression ratio) exceeds this are rejected before parsing |
+| `MAX_REPO_ARCHIVE_MB` | `500` | Largest repository archive downloaded for scans/analysis (streamed to a temporary file) |
+| `TRUSTED_PROXIES` | _(empty)_ | Comma-separated reverse-proxy IPs/CIDRs whose `X-Forwarded-For` is trusted for client-IP rate limiting. Blank ⇒ the header is ignored, so behind a reverse proxy every user shares the proxy's address and one client's 50 failed attempts can lock sign-in for everyone: set this to the proxy's address when you run one |
 | `MONGO_URI` | _(empty = bundled DB)_ | Bring your own MongoDB; also settable in-app |
 | `MONGO_IMAGE` / `MONGOT_IMAGE` | pinned | Override the bundled MongoDB / mongot images. Bundled MongoDB must be **8.1+** because `config/mongod.conf` enables `useGrpcForSearch` for mongot's gRPC transport |
 | `APP_IMAGE` | `adlerqa/wardeniq:latest` _(set by the installer; empty = build from source)_ | Which published image tag to run. `latest` tracks every release; pin e.g. `adlerqa/wardeniq:0.2.0` to freeze a version |
@@ -489,6 +497,10 @@ strictness when a verdict is going in front of someone who will act on it.
 | Var | Default | Purpose |
 |---|---|---|
 | `COVERAGE_REVIEW_THRESHOLD` | `0.7` | Coverage verdicts at or below this confidence are flagged **needs review** in the result instead of being trusted outright. Raise it to send more borderline verdicts to a human |
+| `PR_SEMANTIC_MAPPING` | `on` | A PR with no epic key and no match tag is matched to a feature by embedding similarity (title, body and changed file paths against the project's feature documents). The result is stored on the PR as a **suggestion** with its method, score and margin over the runner-up; the PR stays unmapped for coverage. `off` skips it (and its one embedding call per unmapped PR) |
+| `PR_SEMANTIC_FLOOR` | `0.85` | Minimum similarity (mongot's `(1 + cosine) / 2` scale) for a semantic suggestion. Calibrated on a small synthetic set with `nomic-embed-text` (clear PRs scored 0.86-0.94, vague or off-topic ones at most 0.83); **other embedding models score on different ranges, so retune it if you change the embedding model** |
+| `PR_SEMANTIC_MARGIN` | `0.05` | The best feature must lead the runner-up by at least this much, otherwise the PR is ambiguous and gets no suggestion |
+| `PR_SEMANTIC_COUNTS_TOWARD_COVERAGE` | `false` | Keep it `false` unless you want fuzzy matches in your numbers: with the default, an epic key, ticket or match tag are the only things that map a PR for coverage, so existing figures do not change. `true` lets a semantic match map the PR with method `semantic` and the similarity as its confidence |
 | `MINDMAP_SAMPLES` | `1` | How many independent passes the Mind Map reviewer makes per batch. `2`+ keeps a `covered` verdict **only when every pass agrees**, cutting hallucination variance - at N x the tokens |
 | `WARDENIQ_REUSE_SIM_API` | `0.35` | Token-similarity floor for reusing an existing **API** test case (applied after method/endpoint/scenario must already match exactly) |
 | `WARDENIQ_REUSE_SIM_GENERAL` | `0.65` | Same floor for non-API cases. **Not empirically calibrated** - see the measured trade-off in `tests/eval/dataset.py` (`KNOWN_LIMITATION_PAIRS`) before changing it |

@@ -35,7 +35,13 @@ grep -q '^COMPOSE_FILE=' .env 2>/dev/null && FRESH_DB_INSTALL=0
 if [ "$FRESH_DB_INSTALL" = "1" ]; then
   # Same interactive/non-interactive pattern install.sh already established —
   # reused verbatim rather than reinvented, per the issue's own instruction.
-  TTY=""; [ -r /dev/tty ] && TTY="/dev/tty"
+  # Probe by actually opening /dev/tty, not by permission bits: /dev/tty is
+  # world-readable, so `[ -r /dev/tty ]` is true even with no controlling
+  # terminal, and the prompt/read below then fail with "No such device or
+  # address" (#191). Both directions must open: ask() writes the prompt and
+  # reads the answer on this device. The 2>/dev/null comes first so a failed
+  # open reports to /dev/null instead of the user's stderr.
+  TTY=""; if : 2>/dev/null > /dev/tty && : 2>/dev/null < /dev/tty; then TTY="/dev/tty"; fi
   ASSUME_YES="${WARDENIQ_ASSUME_YES:-0}"
   interactive() { [ -n "$TTY" ] && [ "$ASSUME_YES" != "1" ]; }
   ask() {
@@ -111,6 +117,7 @@ if [ "$FRESH_DB_INSTALL" = "1" ]; then
       done
     else
       DB_CHOICE="community"   # non-interactive, no WARDENIQ_DB: friendliest zero-config default
+      echo "==> no terminal input available: using default database MongoDB Community Server (bundled; set WARDENIQ_DB to choose another)"
     fi
   fi
 

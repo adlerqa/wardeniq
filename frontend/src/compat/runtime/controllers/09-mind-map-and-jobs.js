@@ -344,8 +344,8 @@ async function loadMindmap() {
           .map(
             (cs) =>
               `<div class="mindmap-case-item"><div class="mindmap-case-title">
-          <span class="mm-case-left"><span class="mm-dot ${cs.status}"></span>${cs.display_id ? `<code style="font-size:10px;background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px;color:#94a3b8">${esc(cs.display_id)}</code>` : ""}<b>${esc(cs.title)}</b></span>
-          <span class="mm-case-right"><span class="badge ${cs.type}">${esc(typeLabel(cs.type))}</span><span class="badge mm-${cs.status}">${cs.status}</span></span>
+          <span class="mm-case-left"><span class="mm-dot ${esc(cs.status)}"></span>${cs.display_id ? `<code style="font-size:10px;background:rgba(255,255,255,.06);padding:1px 6px;border-radius:4px;color:#94a3b8">${esc(cs.display_id)}</code>` : ""}<b>${esc(cs.title)}</b></span>
+          <span class="mm-case-right"><span class="badge ${esc(cs.type)}">${esc(typeLabel(cs.type))}</span><span class="badge mm-${esc(cs.status)}">${esc(cs.status)}</span></span>
           </div><div class="mindmap-case-body">${esc(cs.rationale || "")}${(cs.files || []).length ? `<br><span style="color:var(--accent2)">Files reviewed:</span> ${cs.files.map((ff) => `<code>${esc(ff)}</code>`).join(" ")}` : ""}</div></div>`,
           )
           .join("");
@@ -412,7 +412,32 @@ const mmTrunc = (s, n) => {
   s = String(s || "");
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 };
-const mmTip = (h) => `data-tip="${String(h).replace(/"/g, "&quot;")}"`;
+// The tooltip markup is built from already-escaped values; escape it AGAIN for the
+// attribute so getAttribute() returns exactly that markup (entities intact), and
+// render it through mmSafeTipHtml(), which only keeps a few formatting tags.
+const mmTip = (h) => `data-tip="${esc(String(h))}"`;
+const MM_TIP_TAGS = new Set(["B", "I", "BR", "CODE", "SPAN"]);
+function mmSafeTipNodes(html) {
+  const doc = new DOMParser().parseFromString(String(html || ""), "text/html");
+  const out = document.createDocumentFragment();
+  const copy = (src, dst) => {
+    for (const n of Array.from(src.childNodes)) {
+      if (n.nodeType === 3) dst.appendChild(document.createTextNode(n.nodeValue));
+      else if (n.nodeType === 1) {
+        if (MM_TIP_TAGS.has(n.tagName)) {
+          const el = document.createElement(n.tagName.toLowerCase());
+          const cls = n.getAttribute("class");
+          if (n.tagName === "SPAN" && cls && /^[\w -]+$/.test(cls))
+            el.className = cls;
+          copy(n, el);
+          dst.appendChild(el);
+        } else copy(n, dst); // drop the element, keep its text
+      }
+    }
+  };
+  copy(doc.body, out);
+  return out;
+}
 const mmPct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const mmPolar = (cx, cy, r, d) => [
   cx + r * Math.cos((d * Math.PI) / 180),
@@ -530,7 +555,7 @@ const mmFeatTip = (f) =>
   );
 const mmCaseTip = (c) =>
   mmTip(
-    `<b>${esc(mmTrunc(c.title, 80))}</b><br><span class="mm-t-${c.status}">${c.status}</span> · ${esc(typeLabel(c.type || ""))}` +
+    `<b>${esc(mmTrunc(c.title, 80))}</b><br><span class="mm-t-${esc(c.status)}">${esc(c.status)}</span> · ${esc(typeLabel(c.type || ""))}` +
       (c.rationale ? `<br>${esc(mmTrunc(c.rationale, 170))}` : "") +
       ((c.files || []).length
         ? `<br>evidence: ${c.files
@@ -646,7 +671,7 @@ function mmRadialFocus(m) {
     const a = -90 + (360 * (j % per)) / inRing + (ring % 2 ? 180 / inRing : 0);
     const R = R0 + ring * RS,
       [dx, dy] = mmPolar(cx, cy, R, a);
-    links += `<path class="mm-edge ${c.status}" style="stroke-width:2;opacity:.45"
+    links += `<path class="mm-edge ${esc(c.status)}" style="stroke-width:2;opacity:.45"
       d="M${cx},${cy} C${cx + (dx - cx) * 0.5},${cy + (dy - cy) * 0.5} ${cx + (dx - cx) * 0.72},${cy + (dy - cy) * 0.72} ${dx},${dy}"/>`;
     dots += `<g class="mm-node" ${mmCaseTip(c)}><circle cx="${dx}" cy="${dy}" r="9" fill="${MM_C[c.status]}" class="mm-leaf"/></g>`;
     const right = dx >= cx;
@@ -846,8 +871,8 @@ function mmDetail(m) {
         .slice(0, 60)
         .map(
           (c) => `<div class="mm-case">
-      <div class="mm-case-h"><span class="mm-sdot ${c.status}"></span><b>${esc(c.title)}</b>
-        <span class="mm-case-tags">${c.display_id ? `<code>${esc(c.display_id)}</code>` : ""}<span class="badge ${c.type}">${esc(typeLabel(c.type || ""))}</span><span class="badge mm-${c.status}">${c.status}</span></span></div>
+      <div class="mm-case-h"><span class="mm-sdot ${esc(c.status)}"></span><b>${esc(c.title)}</b>
+        <span class="mm-case-tags">${c.display_id ? `<code>${esc(c.display_id)}</code>` : ""}<span class="badge ${esc(c.type)}">${esc(typeLabel(c.type || ""))}</span><span class="badge mm-${esc(c.status)}">${esc(c.status)}</span></span></div>
       ${c.rationale ? `<div class="mm-case-why">${esc(c.rationale)}</div>` : ""}
       ${
         (c.files || []).length
@@ -961,7 +986,7 @@ document.addEventListener("mouseover", (e) => {
     tip.hidden = true;
     return;
   }
-  tip.innerHTML = t.getAttribute("data-tip");
+  tip.replaceChildren(mmSafeTipNodes(t.getAttribute("data-tip")));
   tip.hidden = false;
   const b = host.getBoundingClientRect();
   tip.style.left =

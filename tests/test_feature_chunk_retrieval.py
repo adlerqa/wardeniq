@@ -18,6 +18,7 @@ implementation plan:
    outage would in production.
 """
 from pathlib import Path
+import logging
 import sys
 
 import pytest
@@ -298,7 +299,7 @@ class TestSearchFeatureChunksDimensionMismatchDegradesGracefully:
         out = mongo_store.search_feature_chunks(_unit_vector(0, dims=3), "feature-1", limit=5)
         assert out == []  # degraded -- NOT feature-2's chunk leaking in
 
-    def test_degraded_retrieval_is_observable_in_logs(self, mongo_store, capsys):
+    def test_degraded_retrieval_is_observable_in_logs(self, mongo_store, caplog):
         # A silent empty-list return is indistinguishable from "this feature genuinely
         # has no chunks" -- degrade-gracefully must still be diagnosable after the fact
         # (e.g. by grepping worker logs), not just non-crashing. search_feature_chunks()
@@ -309,14 +310,22 @@ class TestSearchFeatureChunksDimensionMismatchDegradesGracefully:
         # every path -- both must be present, and the source must read "numpy_failed"
         # rather than the healthy "numpy"/"atlas" values, so a log reader (or this
         # test) can tell a degraded call apart from "zero real results, cleanly".
+        # These lines go through the app's "wardeniq" logger (core/logging_setup.py),
+        # which doesn't propagate to the root logger, so attach caplog's handler to it.
         self._seed_chunks(mongo_store, "feature-1", [("mismatched", _unit_vector(0, dims=5))])
-        out = mongo_store.search_feature_chunks(
-            _unit_vector(0, dims=3), "feature-1", limit=5, category="business",
-        )
+        wq = logging.getLogger("wardeniq")
+        wq.addHandler(caplog.handler)
+        try:
+            with caplog.at_level(logging.DEBUG, logger="wardeniq"):
+                out = mongo_store.search_feature_chunks(
+                    _unit_vector(0, dims=3), "feature-1", limit=5, category="business",
+                )
+        finally:
+            wq.removeHandler(caplog.handler)
         assert out == []
-        captured = capsys.readouterr()
-        assert "numpy fallback failed for feature_id=feature-1" in captured.out
-        assert "dimension mismatch" in captured.out
-        assert "source=numpy_failed" in captured.out
-        assert "category=business" in captured.out
-        assert "results=0" in captured.out
+        logged = caplog.text
+        assert "numpy fallback failed for feature_id=feature-1" in logged
+        assert "dimension mismatch" in logged
+        assert "source=numpy_failed" in logged
+        assert "category=business" in logged
+        assert "results=0" in logged

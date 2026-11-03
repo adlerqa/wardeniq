@@ -7,7 +7,7 @@ but never touch a real MongoDB or LLM: `tests/conftest.py` patches
 test patches whichever `main.store.*` methods its route needs.
 
 We instantiate `TestClient(main.app)` WITHOUT the `with` context manager on
-purpose: that skips FastAPI's startup lifespan (`@app.on_event("startup")`),
+purpose: that skips FastAPI's startup lifespan,
 which otherwise spawns background threads that retry a real Mongo connection.
 HTTP middleware (auth_gateway, security_headers) still runs on every request
 either way — only the startup/shutdown event handlers are skipped.
@@ -96,7 +96,7 @@ def test_request_otp_bootstraps_first_admin(monkeypatch):
     monkeypatch.setattr(main.store, "get_user_by_email", lambda email: None)
     monkeypatch.setattr(main.store, "list_users", lambda: [])
     monkeypatch.setattr(main.store, "create_user", fake_create_user)
-    monkeypatch.setattr(main.store, "otp_recent_issue_count", lambda uid, window: 0)
+    monkeypatch.setattr(main.store, "otp_recent_issue_count", lambda uid, window, max_per_window=None: 0)
     monkeypatch.setattr(main.store, "set_otp", lambda uid, h, exp: None)
     # No SMTP configured -> "logged" delivery path, code returned in dev_code.
     # request_otp itself now lives in api/routes/auth.py (Phase 6 extraction),

@@ -4,6 +4,12 @@ import json
 import os
 import re
 
+import github
+
+from core.logging_setup import get_logger
+
+log = get_logger("coverage")
+
 _LANG = {
     "python":     "Python",
     "javascript": "JavaScript (Node)",
@@ -11,6 +17,14 @@ _LANG = {
     "java":       "Java",
     "go":         "Go",
 }
+
+
+def _response_list(data: object, key: str) -> list[object]:
+    """Return a JSON array field only when the model supplied the expected shape."""
+    if not isinstance(data, dict):
+        return []
+    value = data.get(key)
+    return value if isinstance(value, list) else []
 
 _CODE_SYS = (
     "You are a senior software engineer. You write production-quality IMPLEMENTATION code that "
@@ -45,12 +59,15 @@ def generate_feature_code(llm, language: str, feature_name: str,
     except Exception as e:  # noqa: BLE001
         return {"error": str(e)}
     files = []
-    for f in (data.get("files") or [])[:5]:
+    for f in _response_list(data, "files")[:5]:
         if isinstance(f, dict) and f.get("path") and f.get("content"):
-            files.append({"path": str(f["path"]).lstrip("/")[:200], "content": str(f["content"])})
+            path = github.safe_repo_path(str(f["path"])[:200])
+            if path:   # unsafe/out-of-tree/CI-config paths are dropped, never written
+                files.append({"path": path, "content": str(f["content"])})
     if not files:
         return {"error": "model returned no files"}
-    return {"files": files, "notes": str(data.get("notes", ""))[:300]}
+    notes = data.get("notes", "") if isinstance(data, dict) else ""
+    return {"files": files, "notes": str(notes)[:300]}
 
 # Heuristic: which files look like developer-authored tests/specs rather than the
 # production code that actually implements a requirement. This gates BOTH what gets
@@ -64,7 +81,8 @@ def generate_feature_code(llm, language: str, feature_name: str,
 TEST_FILE_RE = re.compile(
     r"(^|/)([\w.]*[-_])?(tests?|specs?|__tests__|__specs__|e2e|cypress)/|"
     r"(test_|_test|[-_]spec|\.test\.|\.spec\.|\.e2e\.)|"
-    r"(Test|Tests|IT|Spec)\.(java|kt|cs|go|rb)$",
+    # Case-sensitive: a CamelCase suffix, not any name ending in "it"/"test" (audit.go, edit.rb).
+    r"(?-i:(Test|Tests|IT|Spec)\.(java|kt|cs|go|rb)$)",
     re.IGNORECASE,
 )
 
@@ -213,8 +231,10 @@ def map_pr_to_feature(store, jira, pr, project_id):
          a whole word (case-insensitive) in the PR title/body -> map ('tag').
          e.g. match_key "FINES" matches "FINES", "[FINES]" or "FINES:" but NOT
          "REFINES"/"FINESSE" (guards against accidental substring matches).
-    No semantic/embedding fallback: if nothing resolves, the PR is left unmapped
-    (a miss is preferred over a wrong guess)."""
+    Keyword tiers ONLY: if nothing resolves, the PR is left unmapped (a miss is preferred
+    over a wrong guess). This is the coverage-grade mapping and it deliberately never
+    consults embeddings; the semantic fallback lives in resolve_pr_mapping() below, which
+    calls this first and only goes further when it finds nothing."""
     keys = extract_keys(pr.get("title", ""), pr.get("body", ""))
     for key in keys:
         fid = store.feature_by_epic(project_id, key)
@@ -245,6 +265,123 @@ def map_pr_to_feature(store, jira, pr, project_id):
     except Exception:  # noqa: BLE001 -- mapping must never crash PR ingest
         pass
     return None, 0.0, "unmapped"
+
+
+# --------------------------------------------------------------------------- semantic PR mapping
+#
+# Issue #54: most PRs carry neither an epic key nor a match tag, so the keyword tiers above
+# leave them unmapped and nothing downstream (coverage, and later PR review) can use a
+# requirement for them. The fallback below ranks the project's features by embedding
+# similarity to the PR and reports the best one WITH its score and margin.
+#
+# It is a SUGGESTION, never a fact, and it never moves coverage numbers on its own: unless
+# PR_SEMANTIC_COUNTS_TOWARD_COVERAGE is switched on, the PR stays unmapped for coverage
+# accounting and the suggestion is stored beside it. Keyword tiers always win.
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, "") or default)
+    except ValueError:
+        return default
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    raw = (os.getenv(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw in ("1", "true", "yes", "on")
+
+
+# Master switch for computing a semantic suggestion at all (default on).
+PR_SEMANTIC_MAPPING = _env_flag("PR_SEMANTIC_MAPPING", True)
+# Minimum similarity for the best feature, on mongot's (1 + cosine) / 2 scale. The default was
+# chosen from a small calibration with nomic-embed-text (clear PRs scored 0.86-0.94, vague or
+# off-topic ones at most 0.83); other embedding models score on different ranges, so retune it
+# if the embedding model changes.
+PR_SEMANTIC_FLOOR = _env_float("PR_SEMANTIC_FLOOR", 0.85)
+# Minimum lead of the best feature over the runner-up. A PR that fits two features about
+# equally well is ambiguous and stays unmapped.
+PR_SEMANTIC_MARGIN = _env_float("PR_SEMANTIC_MARGIN", 0.05)
+# Off by default: a semantic match is shown as a suggestion but does NOT feed coverage.
+PR_SEMANTIC_COUNTS_TOWARD_COVERAGE = _env_flag("PR_SEMANTIC_COUNTS_TOWARD_COVERAGE", False)
+
+
+def pr_mapping_text(pr: dict) -> str:
+    """The text a PR is embedded as for mapping: title, body and the changed file paths."""
+    paths = [str(p) for p in (pr.get("changed_files") or [])][:40]
+    parts = [str(pr.get("title") or "").strip(), str(pr.get("body") or "").strip()[:1500]]
+    if paths:
+        parts.append("Changed files:\n" + "\n".join(f"- {p}" for p in paths))
+    return "\n\n".join(p for p in parts if p)
+
+
+def semantic_pr_match(store, embedder, pr: dict, project_id, floor=None, margin=None):
+    """Best feature for a PR by embedding similarity, or None.
+
+    Returns {"method": "semantic", "feature_id", "confidence", "margin", "runner_up"}.
+    `confidence` is the retrieval similarity of the best feature, an honest relevance score
+    and not a calibrated probability. None when there is no PR text, no features, the best
+    score is under the floor, or the lead over the runner-up is under the margin. Never
+    raises: a broken embedder or index must not break PR ingest.
+    """
+    floor = PR_SEMANTIC_FLOOR if floor is None else floor
+    margin = PR_SEMANTIC_MARGIN if margin is None else margin
+    text = pr_mapping_text(pr)
+    if embedder is None or not project_id or not text:
+        return None
+    try:
+        ranked = store.semantic_feature_scores(
+            embedder.embed(text[:3000], task="query"), project_id, limit=5) or []
+    except Exception as exc:  # noqa: BLE001 -- mapping must never crash PR ingest
+        log.warning("[pr-map] semantic lookup failed for %s#%s: %s",
+                    pr.get("repo_full_name"), pr.get("number"), exc)
+        return None
+    if not ranked:
+        return None
+    best = ranked[0]
+    runner = ranked[1] if len(ranked) > 1 else None
+    lead = round(best["score"] - runner["score"], 4) if runner else None
+    log.info("[pr-map] %s#%s semantic best=%s score=%.3f runner_up=%s margin=%s (floor=%.2f, min_margin=%.2f)",
+             pr.get("repo_full_name"), pr.get("number"), best.get("feature_id"), best["score"],
+             runner.get("feature_id") if runner else None, lead, floor, margin)
+    if best["score"] < floor or (lead is not None and lead < margin):
+        return None
+    return {"method": "semantic", "feature_id": best["feature_id"],
+            "confidence": round(best["score"], 4), "margin": lead,
+            "runner_up": ({"feature_id": runner["feature_id"], "confidence": round(runner["score"], 4)}
+                          if runner else None)}
+
+
+def resolve_pr_mapping(store, jira, pr: dict, project_id, embedder=None,
+                       counts_toward_coverage=None, floor=None, margin=None) -> dict:
+    """Map a PR to a feature: keyword tiers first, then a semantic suggestion.
+
+    Returns {"feature_id", "confidence", "method", "suggestion"}.
+      * A keyword tier (epic / ticket->epic / tag) that resolves wins outright and is exactly
+        what map_pr_to_feature() returns; the embedder is not touched.
+      * Otherwise a semantic match is returned as `suggestion`. By default the PR stays
+        unmapped for coverage (feature_id None, method "unmapped"); only with
+        counts_toward_coverage (PR_SEMANTIC_COUNTS_TOWARD_COVERAGE) does it become the
+        mapping, with method "semantic" and the similarity as its confidence.
+    """
+    fid, confidence, method = map_pr_to_feature(store, jira, pr, project_id)
+    where = f"{pr.get('repo_full_name')}#{pr.get('number')}"
+    if fid:
+        log.info("[pr-map] %s method=%s confidence=%.2f feature=%s", where, method, confidence, fid)
+        return {"feature_id": fid, "confidence": confidence, "method": method, "suggestion": None}
+    suggestion = semantic_pr_match(store, embedder, pr, project_id, floor, margin) \
+        if PR_SEMANTIC_MAPPING else None
+    counts = PR_SEMANTIC_COUNTS_TOWARD_COVERAGE if counts_toward_coverage is None else counts_toward_coverage
+    if suggestion and counts:
+        log.info("[pr-map] %s method=semantic confidence=%.3f feature=%s (counts toward coverage)",
+                 where, suggestion["confidence"], suggestion["feature_id"])
+        return {"feature_id": suggestion["feature_id"], "confidence": suggestion["confidence"],
+                "method": "semantic", "suggestion": suggestion}
+    log.info("[pr-map] %s method=unmapped%s", where,
+             f" (semantic suggestion {suggestion['feature_id']} at {suggestion['confidence']:.3f}, "
+             "not counted toward coverage)" if suggestion else "")
+    return {"feature_id": None, "confidence": 0.0, "method": "unmapped", "suggestion": suggestion}
 
 
 # --------------------------------------------------------------------------- citation grounding
@@ -974,7 +1111,7 @@ def review_code_coverage(llm, feature_name, requirement, cases, code_excerpts, b
                     errored = True
                     continue
                 seen_in_pass = set()
-                for x in (data or {}).get("cases", []):
+                for x in _response_list(data, "cases"):
                     if not (isinstance(x, dict) and x.get("test_case_id") in valid):
                         continue
                     cid = x["test_case_id"]
@@ -1161,7 +1298,7 @@ def verify_pr_implementation(llm, pr, prod_files, cases, batch_size=10, repo_fil
         except Exception:  # noqa: BLE001
             errored = True
             continue
-        for x in data.get("covered", []):
+        for x in _response_list(data, "covered"):
             if isinstance(x, dict) and x.get("test_case_id") in valid and x["test_case_id"] not in seen:
                 cid = x["test_case_id"]
                 seen.add(cid)
@@ -1234,7 +1371,7 @@ def analyze_impact(llm, change_summary: str, cases) -> dict:
         return {"impacted": [], "error": str(e)}
     valid = {c["id"] for c in cases}
     out, seen = [], set()
-    for x in data.get("impacted", []):
+    for x in _response_list(data, "impacted"):
         if isinstance(x, dict) and x.get("test_case_id") in valid and x["test_case_id"] not in seen:
             seen.add(x["test_case_id"])
             # Clamp to the documented enum — an unrecognised value would otherwise reach
@@ -1269,9 +1406,10 @@ def diff_versions(llm, old_text: str, new_text: str, prev_cases) -> dict:
     except Exception as e:  # noqa: BLE001
         return {"keep": [c["id"] for c in prev_cases], "retire": [], "error": str(e)}
     valid = {c["id"] for c in prev_cases}
-    keep = [i for i in data.get("keep", []) if i in valid]
+    keep = [i for i in _response_list(data, "keep") if isinstance(i, str) and i in valid]
     retire = [{"id": x["id"], "reason": str(x.get("reason", ""))[:300]}
-              for x in data.get("retire", []) if isinstance(x, dict) and x.get("id") in valid]
+              for x in _response_list(data, "retire")
+              if isinstance(x, dict) and isinstance(x.get("id"), str) and x["id"] in valid]
     retired_ids = {x["id"] for x in retire}
     # any case not explicitly classified -> default keep (safe)
     for cid in valid:
@@ -1311,11 +1449,12 @@ def review_coverage(llm, pr, files, feature_cases) -> dict:
                 "error": str(e)}
     valid_ids = {c["id"] for c in feature_cases}
     try:
-        top_conf = float(data.get("confidence", 0.0) or 0.0)
+        raw_confidence = data.get("confidence", 0.0) if isinstance(data, dict) else 0.0
+        top_conf = float(raw_confidence or 0.0)
     except (TypeError, ValueError):
         top_conf = 0.0
     covered, corrections = [], []
-    for c in data.get("covered", []):
+    for c in _response_list(data, "covered"):
         if isinstance(c, dict) and c.get("test_case_id") in valid_ids:
             status = c.get("status") if c.get("status") in ("covered", "partial") else "covered"
             by_dev = bool(c.get("by_dev_test"))

@@ -8,6 +8,7 @@ Single route + its one Pydantic model; no shared-helper deviation was needed —
 ``current_token``/``_is_app_repo``/``_oid`` (core/deps.py) and ``launch_job``
 (workers/registry.py) were already centralized in earlier phases.
 """
+import github
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -34,6 +35,11 @@ def develop(body: DevIn):
         raise HTTPException(404, "repo not found")
     if not _is_app_repo(repo):
         raise HTTPException(400, "Start Developing targets implementation repos only; test repos are reserved for automation coverage")
+    try:
+        github.validate_ref(body.base_branch)
+        github.validate_owner_name(repo.get("owner"), repo.get("name"))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     feature = store.get_feature(body.feature_id)
     jid = launch_job("develop", {"feature_id": body.feature_id, "repo_id": body.repo_id,
                                  "base_branch": body.base_branch, "language": body.language},

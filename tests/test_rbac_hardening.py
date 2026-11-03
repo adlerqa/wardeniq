@@ -68,7 +68,7 @@ class TestOtpThrottle:
                 return {"id": "u1", "email": e, "active": True, "name": "U"}
             def count_users(self):
                 return 1
-            def otp_recent_issue_count(self, uid, w):
+            def otp_recent_issue_count(self, uid, w, max_per_window=None):
                 state["count"] += 1
                 return state["count"]
             def set_otp(self, *a):
