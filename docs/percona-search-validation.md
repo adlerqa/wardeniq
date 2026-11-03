@@ -1,9 +1,9 @@
 # Percona Search for MongoDB — validation results (issue #41)
 
-Validation-phase results for [#41](https://github.com/adlerqa/wardeniq/issues/41). This
-document is evidence for a later maintainer decision — **it does not make Percona the
-bundled default, and does not declare it officially supported.** The bundled default
-remains MongoDB Community + mongot (`docker-compose.mongodb.yml`).
+Validation-phase results for [#41](https://github.com/adlerqa/wardeniq/issues/41).
+**Percona is an opt-in technical preview: it is not the bundled default and is not
+recommended for production** (see [Decision for v0.3.0](#decision-for-v030)). The bundled
+default remains MongoDB Community + mongot (`docker-compose.mongodb.yml`).
 
 An alternative compose configuration, `docker-compose.mongodb-percona.yml`, lets an
 operator run wardenIQ against Percona Server for MongoDB + Percona Search instead, for
@@ -200,11 +200,20 @@ be worth doing to convert "very likely" into "confirmed."
   Percona-specific, matching what #29 already documented); mongot config schema differs
   (`scramAuth` nesting); mongot image name differs from Percona's own published docs.
 
-## Follow-up decision
+## Decision for v0.3.0
 
-Whether Percona should become the recommended or bundled default remains **a maintainer
-decision**, to be made after reviewing these results — not decided by this validation
-work. Given the kernel-guard finding above, the strongest #41-listed rationale for
-adopting Percona (avoiding #27) does not currently hold up; the other two rationales
-(Atlas index-tier cost, embedding-model vendor coupling) are unaffected by this finding
-and remain intact.
+Percona Server for MongoDB + Percona Search ships as an **opt-in technical preview**:
+documented, available through `docker-compose.mongodb-percona.yml`, not the default and
+not recommended for production. Reasons: Percona Search is itself a technical preview;
+the 3-node HA topology, auth-enabled mode, concurrent-load behaviour, long-running
+stability and the migration path are untested; and the kernel-guard finding above means
+the strongest rationale listed in #41 for adopting it (avoiding #27) does not hold up.
+The other two rationales (the Atlas index-tier cost and embedding-model vendor coupling)
+are unaffected by that finding and remain intact.
+
+Remaining work is tracked outside the v0.3.0 milestone:
+
+- [#222](https://github.com/adlerqa/wardeniq/issues/222): validate the HA topology,
+  auth-enabled mode, load behaviour, long-running stability and the migration path.
+- [#223](https://github.com/adlerqa/wardeniq/issues/223): decide whether it becomes a
+  supported or default datastore, once Percona Search is GA and #222 has results.

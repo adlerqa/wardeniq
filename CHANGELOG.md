@@ -68,6 +68,10 @@
     says; a configured SMTP user with no password is now treated as unusable, so the
     bootstrap admin's sign-in code is still printed to the server log afterwards.
   - `install.ps1` no longer aborts when an existing `.env` has no `APP_SECRET`.
+- Percona Server for MongoDB + Percona Search is documented as an opt-in technical preview
+  (not the default, not recommended for production), with its known limitations; the
+  ROADMAP no longer claims it sidesteps the kernel ≥ 6.19 guard. HA/load validation and
+  the supported-or-default decision are tracked in #222 and #223 (#41).
 
 - Fixed the installer script links in `docs/configuration.md` to resolve to the
   repository root after the documentation move (#61).
