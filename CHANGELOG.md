@@ -58,6 +58,16 @@
   without a terminal (CI, cron, new session): it now probes `/dev/tty` by
   opening it, and otherwise takes the non-interactive default database and says
   so (#191).
+- Five small fixes found by a QA run:
+  - `is_test_file` no longer flags production files that merely end in `it`/`test`/`spec`
+    (`audit.go`, `limit.go`, `edit.rb`, `Commit.cs`); the CamelCase suffix rule
+    (`FooTest.go`, `BarIT.java`) is now case-sensitive.
+  - Key-write extraction records every keyword of `dict(...)`, not just the first.
+  - `scripts/enable-mongo-auth.sh` no longer exits 141 when `openssl` is missing.
+  - `scripts/reset-smtp-secret.sh` clears only the stored SMTP password, as its header
+    says; a configured SMTP user with no password is now treated as unusable, so the
+    bootstrap admin's sign-in code is still printed to the server log afterwards.
+  - `install.ps1` no longer aborts when an existing `.env` has no `APP_SECRET`.
 
 - Fixed the installer script links in `docs/configuration.md` to resolve to the
   repository root after the documentation move (#61).

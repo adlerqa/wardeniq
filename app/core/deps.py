@@ -552,6 +552,14 @@ def _smtp_cfg():
             # decrypt() had raised.
             if not pw:
                 pw = None
+        elif s.get("smtp_user"):
+            # A username with no stored password can never send: send_otp() always
+            # calls login(user, password) when a user is set. This is the state
+            # scripts/reset-smtp-secret.sh leaves (it clears only smtp_pass_enc), so
+            # treat it as unusable too -- fall back to .env, else the bootstrap
+            # admin's sign-in code is printed to the server log, instead of every
+            # send failing with an auth error.
+            pw = None
         if pw is not None:
             return {"host": s.get("smtp_host"), "port": s.get("smtp_port"),
                     "user": s.get("smtp_user"), "password": pw,
