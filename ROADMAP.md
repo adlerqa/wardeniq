@@ -41,10 +41,13 @@ gets a success-looking run and a dead `localhost:8001`.
 **Datastore.** [#41](https://github.com/adlerqa/wardeniq/issues/41) — validate the stack on
 **Percona Server for MongoDB + Percona Search** (Percona's mongot fork). Today wardenIQ needs 6
 search indexes; Atlas free M0 allows 3, so evaluating us effectively requires a paid M10+ tier.
-Percona should remove that cap, likely sidesteps the kernel guard in #27, and avoids tying
-embedding choice to a single vendor — which matters because bring-your-own-model is a stated
-principle. `config/mongod.conf` notes the project migrated *from* Percona, so this is a return
-with known ground, not a new bet. It's in technical preview, so the work is validation first.
+Percona should remove that cap and avoid tying embedding choice to a single vendor — which
+matters because bring-your-own-model is a stated principle. Validation found it does *not*
+reliably sidestep the kernel guard in #27, and it is itself in technical preview, so for
+v0.3.0 it ships as an **opt-in technical preview**, not the default (see
+[docs/percona-search-validation.md](docs/percona-search-validation.md)). HA, load and the
+supported-or-default decision are tracked in #222 and #223. `config/mongod.conf` notes the
+project migrated *from* Percona, so this is a return with known ground, not a new bet.
 
 **Measurement.** [#42](https://github.com/adlerqa/wardeniq/issues/42) — publish a generation
 quality benchmark (groundedness, exemplar leakage, coverage recall). We assert grounded output;
