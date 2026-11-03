@@ -2,7 +2,7 @@
 build retry loop, legacy-feature migration, and admin seeding.
 
 Moved out of main.py (Phase 2 of REFACTOR_PLAN.md). `bootstrap()` itself is
-still invoked from main.py's `_startup()` on-event handler (Phase 4 concern —
+still invoked from main.py's `_startup()` lifespan helper (Phase 4 concern —
 background thread wiring hasn't moved yet), so this module does not change
 when or how often bootstrap runs.
 
@@ -218,15 +218,18 @@ def _search_unsupported(e) -> bool:
     which is worth failing fast on — unlike 'connecting to Search Index Management
     service', which is transient while a bundled mongot boots. A stock replica set
     without mongot is the same class of failure: it rejects Atlas Search commands
-    with code 31082 ('requires additional configuration'), so that code — or the
-    message on its own, when no code is attached — counts as unsupported too."""
+    with code 31082, so that code — or the Atlas Search Database Commands
+    message on its own, when no code is attached — counts as unsupported too.
+    The bare 'requires additional configuration' phrase is deliberately NOT
+    matched: it is too broad (an unrelated error carrying it would stop the
+    startup retry loop), and code 31082 already covers the real case."""
     if getattr(e, "code", None) == 31082:
         return True
     m = str(e).lower()
     return any(s in m for s in (
         "no such command", "unrecognized", "command not found",
         "notimplemented", "atlas search is not", "search is not supported",
-        "requires additional configuration",
+        "atlas search database commands",
     ))
 
 

@@ -39,6 +39,10 @@
 
 ### Fixed
 
+- **Malformed LLM JSON no longer crashes analysis or leaves orphan feature versions.**
+  JSON responses are required to be objects, nullable list fields are normalized at
+  the shared generation/coverage boundaries, and version diffs complete before a new
+  feature version is persisted (#147).
 - **Capability probe reports the curated message for MongoDB without mongot.**
   A stock replica set without mongot rejects search-index creation with error
   code 31082 ("requires additional configuration"); the probe previously fell
@@ -46,6 +50,14 @@
   31082 (or the message on its own) now classifies as search-unsupported, so
   the probe returns the "requires a MongoDB with Vector Search" message (#204).
 - Ollama health checks now send the configured bearer token, matching generation requests (#180).
+- Replaced the deprecated FastAPI `@app.on_event("startup")` handlers in
+  `app/main.py` with a `lifespan` context manager (no more deprecation
+  warnings on import/startup; same bootstrap, scheduler, and poller threads
+  in the same order) (#198).
+- `run.sh` no longer fails with `/dev/tty: No such device or address` when run
+  without a terminal (CI, cron, new session): it now probes `/dev/tty` by
+  opening it, and otherwise takes the non-interactive default database and says
+  so (#191).
 
 - Fixed the installer script links in `docs/configuration.md` to resolve to the
   repository root after the documentation move (#61).
