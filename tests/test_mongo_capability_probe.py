@@ -19,6 +19,8 @@ Both dbintegration tests use a throwaway database name and drop it afterwards.
 """
 import math
 import os
+import time
+import types
 import uuid
 
 import pytest
@@ -192,10 +194,25 @@ class FakeMongoClient:
         self.closed = True
 
 
+_REAL_SLEEP = time.sleep
+
+
 @pytest.fixture(autouse=True)
 def _fast_probe(monkeypatch):
     # No real waiting: the poll loops sleep 1s between attempts.
-    monkeypatch.setattr(settings_mod.time, "sleep", lambda s: None)
+    #
+    # Replace `time` ONLY inside the settings module. Patching `settings_mod.time.sleep` would
+    # patch the shared `time` module for the whole process, and pymongo's background monitor
+    # threads sleep through it: every MongoClient still alive (the dbintegration job leaves
+    # several) would turn into a busy loop, starving the GIL and the real-server tests below
+    # (their 1.5s server selection then times out and the failure report takes minutes).
+    monkeypatch.setattr(settings_mod, "time",
+                        types.SimpleNamespace(time=time.time, sleep=lambda s: None))
+
+
+def test_fast_probe_does_not_patch_the_global_time_module():
+    assert time.sleep is _REAL_SLEEP, "time.sleep must stay real for pymongo's monitor threads"
+    assert settings_mod.time.sleep is not _REAL_SLEEP
 
 
 def _patch_client(monkeypatch, client):
@@ -525,11 +542,17 @@ MONGO_SEARCH_TEST_URI = os.getenv("MONGO_SEARCH_TEST_URI", "")
 
 
 def _reachable(uri):
+    client = None
     try:
-        MongoClient(uri, serverSelectionTimeoutMS=1500).admin.command("ping")
+        client = MongoClient(uri, serverSelectionTimeoutMS=1500)
+        client.admin.command("ping")
         return True
     except Exception:  # noqa: BLE001
         return False
+    finally:
+        # An unclosed client keeps its background monitor threads alive for the whole session.
+        if client is not None:
+            client.close()
 
 
 def _is_replica_set(uri):
