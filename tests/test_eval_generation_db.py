@@ -86,6 +86,13 @@ def test_the_real_pipeline_output_becomes_a_result_and_the_database_is_dropped(s
     assert run["complete"] is True, run["completeness"]
     assert run["calls"] and {c["outcome"] for c in run["calls"]} == {"ok"}
     assert run["runtime"]["call_timeout_mode"] == "pipeline-defaults"
+    # The real pipeline passes its own max_tokens to the client on every call, and the default
+    # "pipeline" mode turns exactly that into the output cap (3,000 to 10,000 tokens today).
+    assert run["runtime"]["output_cap_mode"] == "pipeline"
+    for call in run["calls"]:
+        assert isinstance(call["max_tokens_requested"], int) and call["max_tokens_requested"] > 0
+        assert call["output_cap_tokens"] == call["max_tokens_requested"]
+    assert run["runtime"]["length_limited_calls"] == 0
     assert run["ingest"]["chunks"] >= 1
     assert run["requirement_coverage"]["total"] == 11
     # The gap-check wrapper was removed again, and the throwaway database is gone.

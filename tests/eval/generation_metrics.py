@@ -145,12 +145,15 @@ def parse_grounding_survivors(stages):
     return None
 
 
-OUTCOMES = ("ok", "timeout", "http_error", "parse_error", "other")
+OUTCOMES = ("ok", "length_limited", "timeout", "http_error", "parse_error", "other")
 # Failures that come from the environment (a slow or restarted model server), not from what
-# the model said. A repeat with any of these is INCOMPLETE. A parse_error is the model's own
-# unusable output and is deliberately not disqualifying: dropping repeats because the model
-# produced malformed JSON would flatter the model.
+# the model said. A repeat with any of these is INCOMPLETE.
 INFRASTRUCTURE_FAILURES = ("timeout", "http_error", "other")
+# The model answered, but not cleanly. These are the model's own behaviour: a parse_error is
+# unusable output, a length_limited reply was cut off at the output token cap. Neither makes a
+# repeat incomplete (dropping repeats because the model misbehaved would flatter it), but both
+# are always counted and reported, never folded into "ok".
+MODEL_OUTPUT_ISSUES = ("length_limited", "parse_error")
 
 
 def call_outcome(call) -> str:
@@ -170,6 +173,8 @@ def llm_call_summary(calls) -> dict:
     """Roll up recorded LLM calls (one entry per call actually sent to the model server).
 
     `attempted` counts every call, including the pipeline's own retries and JSON-repair calls.
+    `successful` means a clean reply (outcome ok). `answered` also counts replies the model
+    gave but that were cut off at the output cap (`length_limited`) or unparseable.
     `total_seconds` is the SUM of call durations; the pipeline runs some calls in parallel and
     a single-slot server queues them, so it can exceed the wall-clock time of the run.
     `tokens_per_second` is decode speed, taken only from calls that reported both a token count
@@ -189,7 +194,9 @@ def llm_call_summary(calls) -> dict:
         "count": len(calls),
         "attempted": len(calls),
         "successful": by_outcome["ok"],
+        "answered": sum(by_outcome[o] for o in ("ok", "length_limited", "parse_error")),
         "failed": len(calls) - by_outcome["ok"],
+        "length_limited": by_outcome["length_limited"],
         "timeouts": by_outcome["timeout"],
         "http_errors": by_outcome["http_error"],
         "parse_errors": by_outcome["parse_error"],
@@ -209,21 +216,35 @@ def llm_call_summary(calls) -> dict:
 
 def assess_completeness(calls) -> dict:
     """Did every model call reach an answer? Only infrastructure failures make a repeat
-    incomplete (see INFRASTRUCTURE_FAILURES); `reasons` says why, in plain words."""
+    incomplete (see INFRASTRUCTURE_FAILURES); `reasons` says why, in plain words.
+
+    A reply cut off at the output cap (length_limited) or unparseable (parse_error) is still
+    the model's answer, so it does not make a repeat incomplete. It is always reported: in
+    the counts and in `notes`.
+    """
     s = llm_call_summary(calls)
-    reasons = []
+    reasons, notes = [], []
     if s["attempted"] == 0:
         reasons.append("no model calls were recorded")
     for key, label in (("timeouts", "timed out"), ("http_errors", "failed with an HTTP error"),
                        ("other_errors", "failed for another reason")):
         if s[key]:
             reasons.append(f"{s[key]} model call(s) {label}")
+    if s["length_limited"]:
+        notes.append(f"{s['length_limited']} model call(s) stopped at the output token cap "
+                     "(the model's response; reported, not disqualifying)")
+    if s["parse_errors"]:
+        notes.append(f"{s['parse_errors']} model reply(ies) could not be parsed "
+                     "(the model's output; reported, not disqualifying)")
     return {
         "complete": not reasons,
         "reasons": reasons,
+        "notes": notes,
         "attempted_calls": s["attempted"],
+        "answered_calls": s["answered"],
         "successful_calls": s["successful"],
         "failed_calls": s["failed"],
+        "length_limited_count": s["length_limited"],
         "timeout_count": s["timeouts"],
         "http_error_count": s["http_errors"],
         "parse_error_count": s["parse_errors"],
@@ -317,6 +338,7 @@ def flatten_run(run) -> dict:
     calls = (run or {}).get("llm_calls") or {}
     flat["model_calls_attempted"] = calls.get("attempted")
     flat["model_call_parse_errors"] = calls.get("parse_errors")
+    flat["model_call_length_limited"] = calls.get("length_limited")
     flat["decode_tokens_per_second"] = calls.get("tokens_per_second")
     flat["queue_wait_seconds_estimate"] = calls.get("queue_wait_seconds_estimate")
     errors = ((run or {}).get("pipeline") or {}).get("errors")
@@ -333,45 +355,64 @@ def _describe(values) -> dict:
     }
 
 
-def aggregate_repeats(runs) -> dict:
-    """The OFFICIAL aggregate: mean / min / max of each metric over COMPLETE repeats only.
+def aggregate_repeats(runs, planned=None) -> dict:
+    """Mean / min / max of each metric over COMPLETE repeats, and the verdict on the baseline.
 
-    A repeat is complete when it ran and none of its model calls hit an infrastructure
-    failure (timeout, HTTP error, other). Incomplete repeats stay visible under
-    `incomplete_diagnostics` but never enter `metrics`, so a timeout cannot be mistaken for a
-    model-quality result. With no complete repeat there is no valid baseline, and
-    `statement` says so. n is how many complete repeats contributed a number for a metric;
-    with few repeats these are descriptive only, not confidence intervals.
+    `valid_baseline` is true only when ALL requested repeats ran and ALL are complete (no
+    timeout, HTTP error or other infrastructure failure). `planned` is how many repeats were
+    requested; it defaults to the number of runs given, but a run that stopped early must pass
+    it so missing repeats count against the baseline.
+
+    When the baseline is valid, `metrics` holds the official statistics. Otherwise `metrics`
+    is empty and the statistics of whichever repeats did complete are under
+    `provisional_metrics`, for reference only. Incomplete repeats stay visible under
+    `incomplete_diagnostics`; they never enter either set of statistics. n is how many
+    complete repeats contributed a number for a metric; with few repeats these are
+    descriptive only, not confidence intervals.
     """
     runs = [r for r in (runs or []) if isinstance(r, dict)]
+    total = len(runs)
+    planned = planned if isinstance(planned, int) and planned > 0 else total
     ran = [r for r in runs if r.get("ok")]
     complete = [r for r in ran if r.get("complete") is True]
     incomplete = [r for r in runs if r not in complete]
+    missing = max(0, planned - total)
+    all_complete = bool(planned) and total == planned and len(complete) == planned
     flats = [flatten_run(r) for r in complete]
-    metrics = {name: _describe([f[name] for f in flats if _is_number(f.get(name))])
-               for name in sorted({k for f in flats for k in f})}
-    total = len(runs)
+    stats = {name: _describe([f[name] for f in flats if _is_number(f.get(name))])
+             for name in sorted({k for f in flats for k in f})}
     if not total:
         statement = "No repeats were run."
+    elif all_complete:
+        statement = (f"VALID BASELINE: all {planned} repeats completed without timeouts, HTTP "
+                     "errors or other infrastructure failures.")
     elif not complete:
-        statement = (f"NO VALID BASELINE: none of the {total} repeat(s) completed without "
+        statement = (f"NO VALID BASELINE: none of the {total} repeat(s) run completed without "
                      "timeouts or server errors. The results are diagnostic only and say "
                      "nothing about model quality.")
-    elif len(complete) < total:
-        statement = (f"The official aggregate uses {len(complete)} of {total} repeats. The "
-                     f"other {total - len(complete)} were incomplete and are diagnostic only "
-                     "(see incomplete_diagnostics).")
     else:
-        statement = f"All {total} repeats completed without timeouts or server errors."
+        parts = [f"{len(complete)} of {planned} requested repeats completed"]
+        if incomplete:
+            parts.append(f"{len(incomplete)} incomplete or failed")
+        if missing:
+            parts.append(f"{missing} not run")
+        statement = ("NOT A VALID BASELINE: " + ", ".join(parts) + ". A baseline needs every "
+                     "requested repeat to complete. The statistics of the complete repeats are "
+                     "under provisional_metrics for reference only.")
     return {
+        "repeats_planned": planned,
         "repeats_total": total,
         "repeats_ok": len(ran),
         "repeats_complete": len(complete),
         "repeats_incomplete": len(incomplete),
-        "valid_baseline": bool(complete),
-        "all_repeats_complete": bool(total) and len(complete) == total,
+        "repeats_missing": missing,
+        "valid_baseline": all_complete,
+        "all_repeats_complete": all_complete,
         "statement": statement,
-        "metrics": metrics,
+        "metrics": stats if all_complete else {},
+        "provisional_metrics": {} if all_complete else stats,
+        "notes": [f"repeat {r.get('repeat')}: {note}" for r in runs
+                  for note in ((r.get("completeness") or {}).get("notes") or [])],
         "incomplete_diagnostics": [
             {"repeat": r.get("repeat"), "ran": bool(r.get("ok")),
              "reasons": (r.get("completeness") or {}).get("reasons") or

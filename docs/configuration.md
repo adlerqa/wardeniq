@@ -355,8 +355,9 @@ records what the pipeline itself reports:
   coverage against hand-labelled requirements in `tests/eval/generation_fixture.py`. The
   heuristic only shows that some case mentions a requirement's key terms; it does not judge
   whether the case is correct;
-- every model call, classified as `ok`, `timeout`, `http_error`, `parse_error` or `other`,
-  with its duration and, where the server reports them, token counts and decode speed.
+- every model call, classified as `ok`, `length_limited` (the reply was cut off at the output
+  cap), `timeout`, `http_error`, `parse_error` or `other`, with its duration and, where the
+  server reports them, token counts and decode speed.
 
 Each run records the model and its digest, the git commit, a hash of the corpus and of the
 labels, the seed, the call timeout and the hardware, so a result can be reproduced and
@@ -376,13 +377,33 @@ then describe the timeout, not the model.
   first run on that hardware looks like, but is not a model comparison. On CPU-only hardware
   start with something like `--call-timeout 1800`. The application's own timeouts are not
   changed by this.
+- **Runaway generations and the output cap.** The app's Ollama client never sends an output
+  limit, so a model that falls into a repetition loop can keep generating until the client
+  times out: in one observed run a 3B call generated roughly 20,000 tokens in 30 minutes,
+  where every other call stopped at about 5,400 tokens or fewer. A longer timeout cannot fix that. The pipeline already asks for a limit
+  on every call (3,000 to 10,000 tokens, and the Anthropic and Bedrock paths enforce it), so
+  the runner's own client sends that limit to Ollama as `num_predict`.
+  `--max-output-tokens pipeline` (the default) sends each call's own limit, `N` sends one
+  fixed cap on every call, and `none` sends no cap, as the app behaves. The mode and the
+  tokens are recorded in the result; the application's own client is not changed.
+- **A reply cut off at the cap is reported, never `ok`.** Ollama says so with
+  `done_reason: length`, and the call is recorded as `length_limited`. Truncated JSON can
+  still parse, so it is classified by how it ended, not by whether it parses. It is the
+  model's own output: it does not make a repeat incomplete, but it is counted and listed in
+  the repeat's notes.
 - **A repeat is complete only if no call hit an infrastructure failure** (a timeout, an HTTP
   error such as the model server being killed, or another error). A reply the pipeline
-  cannot parse (`parse_error`) is the model's own output and does not make a repeat
-  incomplete; leaving such repeats out would flatter the model.
-- **Incomplete repeats are excluded from the official aggregate.** They stay in the result
-  file as diagnostics. If no repeat is complete, the result states that there is no valid
-  baseline, and the runner exits with status 1.
+  cannot parse (`parse_error`) or that was cut off at the cap (`length_limited`) is the
+  model's own output and does not make a repeat incomplete; leaving such repeats out would
+  flatter the model.
+- **A baseline needs every requested repeat to complete.** `aggregate.valid_baseline` is
+  true only when all requested repeats ran and all are complete, and the runner exits with
+  status 0 only then. If any repeat is incomplete, failed or never ran, there is no valid
+  baseline: `metrics` is empty, and the statistics of the repeats that did complete appear
+  only under `provisional_metrics`, for reference.
+- **Incomplete repeats stay in the result file as diagnostics** (`incomplete_diagnostics`)
+  and never enter any statistics. If none is complete, the result says there is no valid
+  baseline.
 - **Results affected by timeouts or resource exhaustion are diagnostic, not model-quality
   evidence.** Do not compare models using them.
 - **Runtime is hardware-specific.** Wall-clock time includes queueing and any timeout waits,
@@ -432,10 +453,11 @@ python scripts/eval_generation.py --model <model> --repeats 3 --call-timeout 180
   --out docs/eval-results/generation-<model>.json
 ```
 
-Exit status 0 means every repeat finished and was complete; 1 means at least one repeat
-failed or was incomplete (the file is still written); 2 means bad options or a failed
-pre-flight check, and nothing was run. Check `aggregate.valid_baseline` and
-`aggregate.statement` in the result before using it.
+Exit status 0 means a valid baseline (every requested repeat finished and was complete); 1
+means at least one repeat failed, was incomplete or did not run (the file is still written);
+2 means bad options or a failed pre-flight check, and nothing was run. Check
+`aggregate.valid_baseline` and `aggregate.statement` in the result before using it, and read
+`aggregate.notes` for any replies that stopped at the output cap.
 
 ---
 

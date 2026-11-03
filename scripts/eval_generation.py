@@ -36,19 +36,31 @@ TIMEOUTS, COMPLETENESS AND EVIDENCE
   model. --call-timeout SECONDS replaces the timeout of every model call, in this runner's
   client only (the app is untouched); without it the pipeline's own timeouts apply. It is
   recorded in the result.
-  Every model call is classified: ok, timeout, http_error, parse_error or other. A repeat is
-  COMPLETE only if no call hit an infrastructure failure (timeout, http_error, other); a
-  parse_error is the model's own unusable output and does not make a repeat incomplete.
-  The official aggregate uses complete repeats only. Incomplete repeats stay in the file as
-  diagnostics. With none complete, the result says there is no valid baseline.
+  OUTPUT CAP. The app's Ollama client never sends an output limit, so a model that falls into
+  a repetition loop can generate until the client times out (one 3B call produced 19,902
+  tokens in 30 minutes, against at most ~5,400 for normal calls). The pipeline already asks
+  for a limit on every call (3,000-10,000 tokens, and Anthropic and Bedrock enforce it).
+  --max-output-tokens controls what THIS runner's client sends to Ollama as num_predict:
+    pipeline  (default) each call's own max_tokens, i.e. the limit the pipeline asked for
+    <N>       one fixed cap of N tokens on every call
+    none      no cap, exactly as the app behaves
+  The app itself is untouched. The mode and the tokens are recorded in the result.
+  Every model call is classified: ok, length_limited, timeout, http_error, parse_error or
+  other. length_limited means the reply was cut off at the cap; it is never reported as ok.
+  A repeat is COMPLETE only if no call hit an infrastructure failure (timeout, http_error,
+  other). A length_limited or parse_error reply is the model's own output: it does not make a
+  repeat incomplete, but it is always counted and listed in the repeat's notes.
+  A baseline is VALID only if ALL requested repeats ran and ALL are complete
+  (aggregate.valid_baseline). Otherwise the statistics of the complete repeats are given only
+  as aggregate.provisional_metrics, and incomplete repeats stay in the file as diagnostics.
   The result file is rewritten atomically after EVERY repeat, so a crash or Ctrl-C keeps the
   repeats already finished (status "in_progress" / "aborted" / "finished").
   Wall-clock time includes queueing and any timeout waits; use tokens_per_second for speed.
 
 Only local Ollama is supported in this first slice. No API keys are read or written.
-Exit status: 0 every repeat ran and was complete, 1 at least one repeat failed or was
-incomplete (output is still written), 2 bad options or a failed pre-flight check (nothing
-was run).
+Exit status: 0 valid baseline (every requested repeat ran and was complete), 1 at least one
+repeat failed or was incomplete (output is still written), 2 bad options or a failed
+pre-flight check (nothing was run).
 """
 import argparse
 import contextlib
@@ -96,7 +108,7 @@ class EvalError(Exception):
 class EvalConfig:
     def __init__(self, *, model, mongo_uri, provider="ollama", ollama_url="http://localhost:11434",
                  embed_model="nomic-embed-text", embed_dim=768, repeats=1, seed=42, total=16,
-                 note="", call_timeout=None):
+                 note="", call_timeout=None, output_cap="pipeline"):
         self.provider = provider
         self.model = model
         self.mongo_uri = mongo_uri
@@ -110,6 +122,9 @@ class EvalConfig:
         # None = leave each call on the pipeline's own timeout (180-300 s). A number replaces
         # the timeout of every model call, in this runner's client only.
         self.call_timeout = call_timeout
+        # "pipeline" = send each call's own max_tokens to Ollama as num_predict; an int = one
+        # fixed cap for every call; "none" = send no cap (the app's own behaviour).
+        self.output_cap = output_cap
 
     def seed_for(self, repeat: int) -> int:
         return self.seed + (repeat - 1)
@@ -174,6 +189,52 @@ def drop_database(store, name: str):
 
 # --------------------------------------------------------------------------- model client
 _RESPONSE_META = threading.local()
+_REQUEST_OPTIONS = threading.local()
+
+
+def parse_output_cap(text):
+    """CLI value -> "pipeline", "none" or a positive int."""
+    value = str(text).strip().lower()
+    if value in ("pipeline", "none"):
+        return value
+    try:
+        tokens = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "expected 'pipeline', 'none' or a positive number of tokens") from None
+    if tokens < 1:
+        raise argparse.ArgumentTypeError("the output cap must be at least 1 token")
+    return tokens
+
+
+def output_cap_mode(cfg) -> str:
+    cap = cfg.output_cap
+    return "none" if cap == "none" else "pipeline" if cap == "pipeline" else "fixed"
+
+
+def output_cap_tokens(cfg):
+    """The fixed cap in tokens, or None when the cap is per call ("pipeline") or absent."""
+    return cfg.output_cap if isinstance(cfg.output_cap, int) else None
+
+
+def effective_output_cap(output_cap, max_tokens):
+    """The num_predict to send for one call, or None for no cap."""
+    if isinstance(output_cap, int):
+        return output_cap
+    if output_cap == "pipeline" and isinstance(max_tokens, int) and max_tokens > 0:
+        return max_tokens
+    return None
+
+
+def is_length_limited(stats, cap) -> bool:
+    """Was the reply cut off at the output cap? Ollama's own `done_reason` decides when it is
+    given ("length" yes, "stop" no, even if the token count equals the cap). Only without a
+    `done_reason` is it inferred from the token count reaching the cap."""
+    reason = stats.get("done_reason")
+    if reason is not None:
+        return reason == "length"
+    tokens = stats.get("completion_tokens")
+    return bool(cap and tokens is not None and tokens >= cap)
 
 
 def classify_response(text) -> str:
@@ -209,25 +270,33 @@ def response_stats(meta, wall_seconds):
 
 
 class RecordingLLM(llm_module.LLM):
-    """The real LLM client, with every call timed and classified. The only behavioural change
-    is the optional `call_timeout`, which replaces each call's timeout in THIS client only."""
+    """The real LLM client, with every call timed and classified. It differs from the app's
+    client only in two optional, benchmark-side ways: `call_timeout` replaces each call's
+    timeout, and `output_cap` sends an output limit (num_predict) to Ollama."""
 
-    def __init__(self, *args, call_timeout=None, **kwargs):
+    def __init__(self, *args, call_timeout=None, output_cap="pipeline", **kwargs):
         super().__init__(*args, **kwargs)
         self.call_timeout = call_timeout
+        self.output_cap = output_cap
         self.calls = []
         self._calls_lock = threading.Lock()
 
     def _raw_chat(self, system, user, num_ctx=8192, temperature=0.2, max_tokens=4000,
                   timeout_seconds=None):
         effective = self.call_timeout if self.call_timeout else timeout_seconds
+        cap = effective_output_cap(self.output_cap, max_tokens)
         _RESPONSE_META.value = None
+        _REQUEST_OPTIONS.value = {"num_predict": cap} if cap else None
         started = time.perf_counter()
-        outcome, text, status, error_type = "ok", "", None, None
+        outcome, text, status, error_type, parse_ok = "ok", "", None, None, None
         try:
             text = super()._raw_chat(system, user, num_ctx, temperature, max_tokens,
                                      timeout_seconds=effective)
-            outcome = classify_response(text)
+            parsed = classify_response(text)
+            if is_length_limited(response_stats(getattr(_RESPONSE_META, "value", None), 0.0), cap):
+                outcome, parse_ok = "length_limited", parsed == "ok"
+            else:
+                outcome = parsed
             return text
         except httpx.TimeoutException:
             outcome, error_type = "timeout", "TimeoutException"
@@ -240,9 +309,12 @@ class RecordingLLM(llm_module.LLM):
             outcome, error_type = "other", type(exc).__name__
             raise
         finally:
+            _REQUEST_OPTIONS.value = None
             wall = time.perf_counter() - started
             record = {"label": task_label(user), "outcome": outcome,
                       "seconds": round(wall, 3), "timeout_seconds": effective,
+                      "max_tokens_requested": max_tokens if isinstance(max_tokens, int) else None,
+                      "output_cap_tokens": cap, "parse_ok": parse_ok,
                       "prompt_chars": len(system or "") + len(user or ""),
                       "response_chars": len(text or ""),
                       "http_status": status, "error_type": error_type,
@@ -261,13 +333,21 @@ def task_label(prompt: str) -> str:
     return "other"
 
 
+OUTPUT_CAP_RULES = {
+    "pipeline": "each call's own max_tokens is sent to Ollama as num_predict",
+    "fixed": "one fixed cap is sent to Ollama as num_predict on every call",
+    "none": "no output cap is sent to Ollama (as the app behaves)",
+}
+
+
 def call_timeout_mode(cfg) -> str:
     return "override" if cfg.call_timeout else "pipeline-defaults"
 
 
 class _HttpxWithSeed:
-    """Stands in for the `httpx` name inside llm.py only: adds a fixed `seed` to Ollama chat
-    requests so a run is repeatable where Ollama allows it. Everything else passes through."""
+    """Stands in for the `httpx` name inside llm.py only: adds a fixed `seed` and any per-call
+    options (the output cap) to Ollama chat requests, and keeps Ollama's reply metadata.
+    Everything else passes through, and only this runner ever installs it."""
 
     def __init__(self, real, seed):
         self._real = real
@@ -279,6 +359,9 @@ class _HttpxWithSeed:
         if is_chat:
             options = dict(body.get("options") or {})
             options.setdefault("seed", self._seed)
+            # Per-call options set by RecordingLLM on this thread (the output cap).
+            for key, value in (getattr(_REQUEST_OPTIONS, "value", None) or {}).items():
+                options.setdefault(key, value)
             kwargs = {**kwargs, "json": {**body, "options": options}}
         response = self._real.post(url, *args, **kwargs)
         if is_chat:
@@ -435,6 +518,9 @@ def run_repeat(cfg, repeat, corpus_text, *, store_factory, llm_factory, embedder
                 "queue_wait_seconds_estimate": llm_summary["queue_wait_seconds_estimate"],
                 "call_timeout_seconds": cfg.call_timeout,
                 "call_timeout_mode": call_timeout_mode(cfg),
+                "output_cap_mode": output_cap_mode(cfg),
+                "output_cap_tokens": output_cap_tokens(cfg),
+                "length_limited_calls": llm_summary["length_limited"],
                 "wall_clock_includes_timeout_waits": llm_summary["timeouts"] > 0,
                 "complete": completeness["complete"],
             },
@@ -570,7 +656,10 @@ def build_meta(cfg, *, argv, corpus_bytes, digests, ollama_version, mongo_versio
                            "seed_rule": "seed_base + repeat - 1", "total": cfg.total,
                            "num_ctx_cap": llm_module.OLLAMA_MAX_NUM_CTX,
                            "call_timeout_seconds": cfg.call_timeout,
-                           "call_timeout_mode": call_timeout_mode(cfg)},
+                           "call_timeout_mode": call_timeout_mode(cfg),
+                           "output_cap_mode": output_cap_mode(cfg),
+                           "output_cap_tokens": output_cap_tokens(cfg),
+                           "output_cap_rule": OUTPUT_CAP_RULES[output_cap_mode(cfg)]},
         "hardware": hardware_info(),
         "runtime": {"ollama_version": ollama_version, "ollama_host": ollama_host,
                     "mongo_version": mongo_version, "note": note or cfg.note or None},
@@ -585,7 +674,7 @@ def build_payload(cfg, runs, *, status="finished", abort_reason=None, meta=None,
     if status != "in_progress":
         meta["finished_utc"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     payload = {"status": status, "repeats_planned": cfg.repeats, "meta": meta,
-               "runs": runs, "aggregate": metrics.aggregate_repeats(runs)}
+               "runs": runs, "aggregate": metrics.aggregate_repeats(runs, planned=cfg.repeats)}
     if abort_reason:
         payload["abort_reason"] = abort_reason
     return payload
@@ -626,6 +715,13 @@ def parse_args(argv):
                     help="replace the timeout of EVERY model call (this runner's client only). "
                          "Default: the pipeline's own 180-300 s timeouts. CPU-only inference "
                          "usually needs far more, for example 1800. Recorded in the result.")
+    ap.add_argument("--max-output-tokens", type=parse_output_cap, default="pipeline",
+                    metavar="pipeline|none|N",
+                    help="the output cap THIS runner sends to Ollama (num_predict). "
+                         "'pipeline' (default): each call's own max_tokens, the limit the "
+                         "pipeline already asks for. N: one fixed cap on every call. 'none': "
+                         "no cap, as the app behaves. The app itself is unchanged. Recorded in "
+                         "the result.")
     ap.add_argument("--mongo-uri", default=os.getenv("EVAL_MONGO_URI", ""),
                     help="a MongoDB it may create throwaway wardeniq_eval_* databases on "
                          "(or set EVAL_MONGO_URI); never printed or written to results")
@@ -648,7 +744,8 @@ def main(argv=None):
     cfg = EvalConfig(model=args.model, mongo_uri=args.mongo_uri, provider=args.provider,
                      ollama_url=args.ollama_url, embed_model=args.embed_model,
                      embed_dim=args.embed_dim, repeats=args.repeats, seed=args.seed,
-                     total=args.total, note=args.note, call_timeout=args.call_timeout)
+                     total=args.total, note=args.note, call_timeout=args.call_timeout,
+                     output_cap=args.max_output_tokens)
     try:
         assert_isolated()
         digests, ollama_version = preflight_ollama(cfg)
@@ -669,7 +766,7 @@ def main(argv=None):
 
     def llm_factory():
         return RecordingLLM(provider=cfg.provider, model=cfg.model, ollama_url=cfg.ollama_url,
-                            call_timeout=cfg.call_timeout)
+                            call_timeout=cfg.call_timeout, output_cap=cfg.output_cap)
 
     meta = build_meta(cfg, argv=argv, corpus_bytes=corpus_bytes, digests=digests,
                       ollama_version=ollama_version, mongo_version=mongo_version)
@@ -705,7 +802,7 @@ def main(argv=None):
     print("[eval] " + payload["aggregate"]["statement"], flush=True)
     if not out_path:
         print(json.dumps(payload, indent=2, default=str))
-    return 0 if all(r.get("ok") and r.get("complete") for r in runs) else 1
+    return 0 if payload["aggregate"]["valid_baseline"] else 1
 
 
 def summarize_run_line(run):
@@ -716,6 +813,9 @@ def summarize_run_line(run):
     completeness = run.get("completeness") or {}
     state = ("complete" if run.get("complete") else
              "INCOMPLETE (" + "; ".join(completeness.get("reasons") or ["unknown"]) + ")")
+    limited = (run.get("llm_calls") or {}).get("length_limited") or 0
+    if limited:
+        state += f", {limited} call(s) stopped at the output cap"
     if not flt.get("available"):
         return f"{state}, filter stats unavailable, {timings.get('total_seconds')}s"
     ex = flt["reasons"]["exemplar-copy"]
