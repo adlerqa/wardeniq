@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+_Nothing yet._
+
+## v0.3.0 — 2026-11-04
+
 ### Security
 
 - Hardened authorization: the embedding-model switch is admin-only, stored
