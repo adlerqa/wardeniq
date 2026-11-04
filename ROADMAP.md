@@ -21,9 +21,9 @@ the issues are the work.
 
 ## Now — [v0.3.0: First run & trust](https://github.com/adlerqa/wardeniq/milestone/1)
 
-**This milestone is the next release.** `v0.2.3` is the current published tag; `main` is well
-ahead of it. Nothing ships until this closes, so everything here is release-blocking by
-definition.
+**This milestone shipped as `v0.3.0`.** The text below is the plan as it was written for the
+milestone and has not been revised since; see the [CHANGELOG](CHANGELOG.md) for what shipped
+and the release notes for known limitations.
 
 The two things that decide whether wardenIQ gets adopted: **does it work in the first five
 minutes**, and **can you trust what it generates**. Everything here beats every feature below.
