@@ -40,6 +40,10 @@ export default function LlmSettingsCard() {
         </label>
         <select id="cfg-llm-model-select"></select>
         <input id="cfg-llm-model" placeholder="Enter model name / Bedrock model ID..." style={{ display: "none", marginTop: "6px" }} />
+        <div className="muted" id="cfg-model-guidance" style={{ fontSize: "11px", marginTop: "6px" }}>
+          Not sure which model? On local Ollama, qwen2.5:3b is the fast default and qwen2.5:7b gave the best
+          results in our tests (about twice as slow, needs ~16 GB RAM). See &ldquo;Choosing a model&rdquo; in docs/configuration.md.
+        </div>
       </div>
       <div className="cfg-field" id="cfg-llm-endpoint-field">
         <label>

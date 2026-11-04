@@ -335,10 +335,44 @@ The model you pick changes three things, and they pull against each other.
 - **Speed.** A local model runs on your hardware, and on a CPU a single generation run can
   take many minutes. A hosted model is usually faster but depends on the network.
 
-> **Status: no recommendation, and no published results yet.** This section is the scaffold
-> for model guidance. It does not say which model to use, what the minimum viable model is,
-> or whether the bundled default (`qwen2.5:3b`) should change. No valid baseline has been
-> collected yet. Results will be added here once they have been measured without timeouts.
+### Which model should I use?
+
+Measured on one machine with one document (see [Limits of the current evidence](#limits-of-the-current-evidence)).
+These are guidance, not guarantees.
+
+| If you want... | Use | Why |
+|---|---|---|
+| To try wardenIQ, or the fastest local run | `qwen2.5:3b` (the bundled default) | Keeps about 27 test cases per run in about 6 minutes. About a quarter of what it writes is duplicates, and it covers fewer requirements than the 7B. |
+| The best quality from a local model | `qwen2.5:7b` | Highest requirement coverage, few duplicates, no unparseable replies. Needs about 16 GB of RAM and takes about twice as long. |
+| To avoid | `llama3.2:3b`, `gemma3:4b` | `llama3.2:3b` copies the prompt's own examples and lost more than half of what it wrote. `gemma3:4b` wrote few cases and sometimes returned replies the pipeline could not parse. |
+
+The smallest model that gave usable output in this evaluation is `qwen2.5:3b`. Hosted
+providers (OpenAI, Anthropic, Bedrock) were **not** benchmarked, so this page makes no
+claim about them. The bundled default is unchanged: the numbers show a trade-off
+between speed and quality, not a clear reason to ship a larger download to everyone.
+
+#### Results
+
+Apple M4, 16 GB RAM, native Ollama 0.31.1 (Metal), seed 42, 3 repeats per model, run on
+2026-11-04 from commit `c2fe90e`. Every repeat completed (no timeouts or HTTP errors), so each
+row is a valid baseline. Values are the mean over the 3 repeats. The result files are in
+[`docs/eval-results/`](eval-results/).
+
+| | `qwen2.5:3b` | `llama3.2:3b` | `gemma3:4b` | `qwen2.5:7b` |
+|---|---|---|---|---|
+| Cases written by the model | 38 | 30 | 15 | 32 |
+| Cases kept after filtering | 27 | 11 | 15 | 27 |
+| Rejected by the filters | 27% | 62% | 0% | 15% |
+| Copied the prompt's examples | 0% | 16% | 0% | 0% |
+| Requirement coverage (keyword heuristic) | 55% | 48% | 67% | 85% |
+| Replies the pipeline could not parse, per run | 0 | 0 | 1.7 | 0 |
+| Pipeline time per run | 5.9 min | 6.7 min | 5.2 min | 11.5 min |
+| Decode speed | 37 tok/s | 35 tok/s | 32 tok/s | 19 tok/s |
+
+How to read it: "kept" is what ended up in the database after the duplicate, copied-example and
+no-source filters. `gemma3:4b` shows 0% rejected because it wrote very little, not because it
+wrote well. Coverage is a keyword match against hand-labelled requirements; it shows that some
+case mentions a requirement's key terms, not that the case is correct.
 
 ### What the evaluation measures
 
@@ -417,6 +451,9 @@ then describe the timeout, not the model.
 - **One document.** The corpus is `examples/sample-prd.md`, a simple password-reset PRD. It
   is an initial fixed corpus, not a representative benchmark, and says nothing about other
   kinds of documents.
+- **One machine, three repeats.** All four models ran on the same Apple M4 with 16 GB RAM, three
+  repeats each. The spread between repeats is in the result files; some differences between
+  models (for example the two 3B-class models on coverage) are within that spread.
 - **Non-determinism.** Runs send a seed to Ollama and are repeated, but model output still
   varies. Treat the numbers as descriptions of those repeats on that machine.
 - **Hardware.** Speed depends heavily on the machine and on how Ollama runs (for example in
