@@ -37,6 +37,16 @@
   cryptography, python-multipart, pymongo, json-repair, pytest, vite,
   source-map-js).
 
+### Added
+
+- **Model selection guidance.** New "Choosing a model" section in `docs/configuration.md`
+  with measured results for `qwen2.5:3b`, `llama3.2:3b`, `gemma3:4b` and `qwen2.5:7b`
+  on one document and one machine (3 repeats each, all complete), a recommendation, and
+  the limits of the evidence. The bundled default is unchanged and hosted models were not
+  benchmarked. The Configuration screen now points to it. Adds `scripts/eval_generation.py`
+  to reproduce the measurements locally and the result files under `docs/eval-results/`
+  (Part of #43).
+
 ### Fixed
 
 - **Malformed LLM JSON no longer crashes analysis or leaves orphan feature versions.**
