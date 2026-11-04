@@ -109,7 +109,39 @@ def _has_env_key(env_text: str, key: str) -> bool:
     return any(ln.startswith(f"{key}=") for ln in env_text.splitlines())
 
 
+def _run_no_ctty(sandbox, env=None):
+    """Run run.sh in a new session, which has no controlling terminal -- the
+    CI / non-interactive-shell shape from issue #191. Unlike _run, no
+    WARDENIQ_ASSUME_YES is set: whether the script prompts must be decided by
+    the /dev/tty probe alone."""
+    tmp_path, bin_dir = sandbox
+    full_env = {k: v for k, v in os.environ.items()
+               if not k.startswith("WARDENIQ_") and k != "FAKE_KERNEL_VERSION"}
+    full_env["PATH"] = f"{bin_dir}:{os.environ['PATH']}"
+    full_env.update(env or {})
+    return subprocess.run(
+        ["./run.sh"], cwd=tmp_path, env=full_env,
+        stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30,
+        start_new_session=True,
+    )
+
+
 # ------------------------------------------------------------------ defaults
+def test_no_controlling_terminal_uses_default_without_tty_errors(sandbox):
+    # Issue #191: `[ -r /dev/tty ]` is true even with no controlling terminal
+    # (/dev/tty is world-readable), so the menu printed and the prompt/read
+    # failed with "No such device or address". A new session has no ctty, so
+    # the fixed probe must take the non-interactive default silently.
+    r = _run_no_ctty(sandbox)
+    assert r.returncode == 0, r.stderr
+    assert "No such device" not in r.stderr
+    assert "Choose your database" not in r.stdout
+    assert "using default database" in r.stdout
+    env_text = _env_file(sandbox)
+    assert not _has_env_key(env_text, "MONGO_URI")
+    assert not _has_env_key(env_text, "COMPOSE_FILE")
+
+
 def test_noninteractive_default_is_community_with_no_db_changes(sandbox):
     r = _run(sandbox, env={"WARDENIQ_ASSUME_YES": "1"})
     assert r.returncode == 0, r.stderr

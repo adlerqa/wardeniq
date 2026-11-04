@@ -19,6 +19,8 @@ Both dbintegration tests use a throwaway database name and drop it afterwards.
 """
 import math
 import os
+import time
+import types
 import uuid
 
 import pytest
@@ -30,7 +32,12 @@ from api.routes import settings as settings_mod
 from api.routes.settings import (
     MIN_MONGO_VERSION, _probe_mongo, _probe_vector, _version_below,
 )
-from core.bootstrap import _SEARCH_INDEX_LIMIT_MSG, _SEARCH_REQUIRED_MSG, _search_index_limit
+from core.bootstrap import (
+    _SEARCH_INDEX_LIMIT_MSG,
+    _SEARCH_REQUIRED_MSG,
+    _search_index_limit,
+    _search_unsupported,
+)
 from store.base import TEXT_INDEX, VECTOR_INDEX
 
 
@@ -187,10 +194,25 @@ class FakeMongoClient:
         self.closed = True
 
 
+_REAL_SLEEP = time.sleep
+
+
 @pytest.fixture(autouse=True)
 def _fast_probe(monkeypatch):
     # No real waiting: the poll loops sleep 1s between attempts.
-    monkeypatch.setattr(settings_mod.time, "sleep", lambda s: None)
+    #
+    # Replace `time` ONLY inside the settings module. Patching `settings_mod.time.sleep` would
+    # patch the shared `time` module for the whole process, and pymongo's background monitor
+    # threads sleep through it: every MongoClient still alive (the dbintegration job leaves
+    # several) would turn into a busy loop, starving the GIL and the real-server tests below
+    # (their 1.5s server selection then times out and the failure report takes minutes).
+    monkeypatch.setattr(settings_mod, "time",
+                        types.SimpleNamespace(time=time.time, sleep=lambda s: None))
+
+
+def test_fast_probe_does_not_patch_the_global_time_module():
+    assert time.sleep is _REAL_SLEEP, "time.sleep must stay real for pymongo's monitor threads"
+    assert settings_mod.time.sleep is not _REAL_SLEEP
 
 
 def _patch_client(monkeypatch, client):
@@ -398,6 +420,38 @@ def test_probe_search_unsupported_still_uses_the_requires_search_message(monkeyp
     assert r["detail"] != _SEARCH_INDEX_LIMIT_MSG
 
 
+# Raw text a stock MongoDB 8.x replica set without mongot produces for
+# createSearchIndexes (issue #204): code 31082, "requires additional
+# configuration". The marker lets tests prove the raw driver text is not
+# what the caller is shown.
+RAW_31082_MARKER = "raw-31082-marker-9c41"
+MONGOT_MISSING_ERROR = (
+    "Using Atlas Search Database Commands and the $listSearchIndexes aggregation "
+    f"stage requires additional configuration. {RAW_31082_MARKER}"
+)
+
+
+@pytest.mark.parametrize("error", [
+    OperationFailure(MONGOT_MISSING_ERROR, code=31082),
+    OperationFailure("unrelated driver wording", code=31082),
+    OperationFailure(MONGOT_MISSING_ERROR),
+], ids=["code_and_message", "code_only", "message_only"])
+def test_probe_mongot_missing_31082_returns_curated_message(monkeypatch, error):
+    # Guards the helper itself: the probe must be reusing core.bootstrap's
+    # helper, not matching its own strings.
+    assert _search_unsupported(error) is True
+    coll = FakeCollection(create_error=error)
+    client, _ = _healthy(coll)
+    _patch_client(monkeypatch, client)
+    r = _probe_mongo("mongodb://x/")
+    assert r["status"] == "no_search" and r["search_ok"] is False
+    # The existing, curated, actionable message -- exactly, not a copy of it.
+    assert r["detail"] == _SEARCH_REQUIRED_MSG
+    # ...and not the raw (previously truncated) driver text.
+    assert RAW_31082_MARKER not in r["detail"]
+    assert "could not create a search index" not in r["detail"]
+
+
 def test_probe_unauthorized_is_still_insufficient_privileges_not_index_limit(monkeypatch):
     coll = FakeCollection(create_error=OperationFailure("not authorized on x to execute command", code=13))
     client, _ = _healthy(coll)
@@ -488,11 +542,17 @@ MONGO_SEARCH_TEST_URI = os.getenv("MONGO_SEARCH_TEST_URI", "")
 
 
 def _reachable(uri):
+    client = None
     try:
-        MongoClient(uri, serverSelectionTimeoutMS=1500).admin.command("ping")
+        client = MongoClient(uri, serverSelectionTimeoutMS=1500)
+        client.admin.command("ping")
         return True
     except Exception:  # noqa: BLE001
         return False
+    finally:
+        # An unclosed client keeps its background monitor threads alive for the whole session.
+        if client is not None:
+            client.close()
 
 
 def _is_replica_set(uri):
@@ -576,3 +636,33 @@ def test_real_mongot_rejects_a_zero_vector_but_accepts_the_probe_vector(throwawa
             coll.drop_search_index(i["name"])
         c.drop_database(throwaway_db)
         c.close()
+
+
+def test_probe_unrelated_coded_failure_falls_through_to_generic_message(monkeypatch):
+    # Follow-up to #205 review: a coded OperationFailure unrelated to search must
+    # NOT be classified as unsupported — today a rule treating any coded error as
+    # unsupported would pass no test, so this guards the fall-through explicitly.
+    error = OperationFailure("unrelated server failure while creating the index", code=12345)
+    assert _search_unsupported(error) is False
+    coll = FakeCollection(create_error=error)
+    client, _ = _healthy(coll)
+    _patch_client(monkeypatch, client)
+    r = _probe_mongo("mongodb://x/")
+    assert r["status"] == "no_search"
+    assert r["detail"].startswith("could not create a search index:")
+    assert "unrelated server failure" in r["detail"]
+
+
+def test_broad_requires_additional_configuration_alone_is_not_search_unsupported(monkeypatch):
+    # Follow-up to #205 review: the bare "requires additional configuration" match
+    # is too broad — the startup check stops retrying on a match, so an unrelated
+    # error carrying that phrase must not read as "no search". Only the tighter
+    # Atlas Search Database Commands wording (or code 31082) counts.
+    error = OperationFailure("this stage requires additional configuration for this deployment")
+    assert _search_unsupported(error) is False
+    coll = FakeCollection(create_error=error)
+    client, _ = _healthy(coll)
+    _patch_client(monkeypatch, client)
+    r = _probe_mongo("mongodb://x/")
+    assert r["status"] == "no_search"
+    assert r["detail"].startswith("could not create a search index:")

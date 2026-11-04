@@ -601,12 +601,18 @@ MONGO_TEST_URI_2 = os.getenv("MONGO_TEST_URI_2", "")
 def _reachable(uri):
     if not uri:
         return False
+    client = None
     try:
         from pymongo import MongoClient
-        MongoClient(uri, serverSelectionTimeoutMS=1500).admin.command("ping")
+        client = MongoClient(uri, serverSelectionTimeoutMS=1500)
+        client.admin.command("ping")
         return True
     except Exception:  # noqa: BLE001
         return False
+    finally:
+        # An unclosed client keeps its background monitor threads alive for the whole session.
+        if client is not None:
+            client.close()
 
 
 @pytest.fixture()

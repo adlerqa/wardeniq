@@ -384,6 +384,14 @@ class TestCyclesMixin(_Base):
                         "description": t.get("description", ""), "created_at": t.get("created_at")})
         return out
 
+    def get_cycle_template(self, template_id):
+        if not ObjectId.is_valid(str(template_id)):
+            return None
+        t = self.db["cycle_templates"].find_one({"_id": ObjectId(template_id)})
+        if t:
+            t["id"] = str(t.pop("_id"))
+        return t
+
     def create_cycle_from_template(self, template_id, name, created_by=None):
         t = self.db["cycle_templates"].find_one({"_id": ObjectId(template_id)})
         if not t:

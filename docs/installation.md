@@ -64,17 +64,35 @@ compose files entirely.
 
 ---
 
-### Alternative datastore: Percona Server for MongoDB + Percona Search (validation only)
+### Alternative datastore: Percona Server for MongoDB + Percona Search (opt-in technical preview)
 
-`docker-compose.mongodb-percona.yml` lets an operator run the bundled database against
-**Percona Server for MongoDB + Percona Search** (Percona's mongot fork, technical
-preview) instead of the default MongoDB Community + mongot, for evaluation. **This is
-not the default and is not officially supported or recommended** — it exists to gather
-evidence for [#41](https://github.com/adlerqa/wardeniq/issues/41), a still-open
-maintainer decision. See
-[docs/percona-search-validation.md](percona-search-validation.md) for exactly what was
-tested and what wasn't, including a finding that Percona likely does **not** avoid the
-kernel ≥ 6.19 limitation described in [#27](https://github.com/adlerqa/wardeniq/issues/27).
+`docker-compose.mongodb-percona.yml` lets you run the bundled database against
+**Percona Server for MongoDB + Percona Search** (Percona's mongot fork, itself a
+technical preview) instead of the default MongoDB Community + mongot. **It is an opt-in
+technical preview: it is not the default, and we do not recommend it for production**
+until Percona Search is generally available and the gaps below are closed. The default
+stays MongoDB Community + mongot.
+
+What was validated, on a single node: all six search indexes build, `$search` and
+`$vectorSearch` return correct results, 768- and 1536-dimension vectors work, and the
+non-integration test suite is unaffected.
+
+Known limitations:
+
+- **Not a workaround for the kernel ≥ 6.19 limitation** described in
+  [#27](https://github.com/adlerqa/wardeniq/issues/27): Percona's `mongod` very likely
+  carries the same tcmalloc guard (static evidence; it was not live-triggered on an
+  affected host).
+- **Untested:** the 3-node HA topology, auth-enabled mode, concurrent-load performance,
+  long-running stability, and migrating from an existing Community deployment. Tracked in
+  [#222](https://github.com/adlerqa/wardeniq/issues/222).
+- **Differs from the official mongot:** the `setParameter` set, the mongot config schema
+  and the image name. See
+  [docs/percona-search-validation.md](percona-search-validation.md) for the details and
+  exactly what was tested.
+
+Whether it ever becomes a supported or default datastore is tracked in
+[#223](https://github.com/adlerqa/wardeniq/issues/223).
 
 ---
 

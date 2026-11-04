@@ -209,7 +209,11 @@ def _fetch_repo_snapshot_files(repo: dict, ref: str = "") -> list:
     """
     try:
         data = _repo_get_archive(repo, ref or repo.get("default_branch", ""))
-        files, _stats = extractmod.source_files_from_tar(data, return_stats=True)
+        try:
+            files, _stats = extractmod.source_files_from_tar(data, return_stats=True)
+        finally:
+            if hasattr(data, "close"):
+                data.close()      # temporary archive file
         return [{"path": p, "text": t} for p, t in files]
     except Exception as e:  # noqa: BLE001
         log.warning("[contracts] repo snapshot fetch failed for %s: %s",
@@ -548,6 +552,14 @@ def _smtp_cfg():
             # decrypt() had raised.
             if not pw:
                 pw = None
+        elif s.get("smtp_user"):
+            # A username with no stored password can never send: send_otp() always
+            # calls login(user, password) when a user is set. This is the state
+            # scripts/reset-smtp-secret.sh leaves (it clears only smtp_pass_enc), so
+            # treat it as unusable too -- fall back to .env, else the bootstrap
+            # admin's sign-in code is printed to the server log, instead of every
+            # send failing with an auth error.
+            pw = None
         if pw is not None:
             return {"host": s.get("smtp_host"), "port": s.get("smtp_port"),
                     "user": s.get("smtp_user"), "password": pw,
