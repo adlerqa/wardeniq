@@ -11,6 +11,10 @@ functional regression** — every route, background job, poller, and RBAC rule b
 identically before and after — **across a public upstream repo and a private downstream
 fork.**
 
+The `refactor-baseline/` artifacts were removed in this PR and remain available in Git
+history. To inspect one, use `git show 67c41f8:refactor-baseline/<file>`; the baseline
+was last modified in commit `85574e6`.
+
 **Read order.** Sections 0–2 are findings and blockers. **Section 3 (two-repo topology)
 happens before Phase 0** — the fork strategy has to be settled first, because it
 determines whether the nine refactor phases are cheap or catastrophic downstream.
