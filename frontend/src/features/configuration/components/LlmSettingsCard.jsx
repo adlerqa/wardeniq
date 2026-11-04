@@ -36,7 +36,7 @@ export default function LlmSettingsCard() {
       <div className="cfg-field">
         <label>
           Model
-          <span className="fi" tabIndex="0" data-tip="The model identifier. Ollama: qwen2.5:7b. OpenAI: gpt-4o. Anthropic: claude-sonnet-4-6. AWS Bedrock: the full model ID or inference-profile ARN, e.g. anthropic.claude-3-5-sonnet-20241022-v2:0.">i</span>
+          <span className="fi" tabIndex="0" data-tip="The model identifier. Ollama: qwen2.5:7b. OpenAI: gpt-4o. Anthropic: claude-sonnet-4-6. AWS Bedrock: the full model ID or inference-profile ARN, e.g. anthropic.claude-3-5-sonnet-20241022-v2:0. Model choice affects quality, cost and speed; see Choosing a model in docs/configuration.md.">i</span>
         </label>
         <select id="cfg-llm-model-select"></select>
         <input id="cfg-llm-model" placeholder="Enter model name / Bedrock model ID..." style={{ display: "none", marginTop: "6px" }} />
