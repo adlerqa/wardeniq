@@ -51,7 +51,7 @@ export default function LlmSettingsCard() {
           <span className="muted" style={{ fontWeight: "400" }}>(optional)</span>
           <span className="fi" tabIndex="0" data-tip="Leave blank for the provider default. Ollama: where Ollama runs (bundled Docker, your computer, or a remote host). OpenAI-compatible: your custom base URL. AWS Bedrock: an optional private VPC / PrivateLink endpoint for air-gapped networks.">i</span>
         </label>
-        <input id="cfg-llm-endpoint" placeholder="Endpoint URL is required" />
+        <input id="cfg-llm-endpoint" placeholder="Optional — blank uses bundled Ollama" />
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "6px" }} id="cfg-ollama-presets">
           <button type="button" className="ghost" id="cfg-ollama-native" style={{ fontSize: "11.5px", padding: "5px 10px" }}>Use Ollama on my computer</button>
           <button type="button" className="ghost" id="cfg-ollama-bundled" style={{ fontSize: "11.5px", padding: "5px 10px" }}>Use bundled (Docker) Ollama</button>
@@ -71,7 +71,7 @@ export default function LlmSettingsCard() {
           API key / secret
           <span className="fi" tabIndex="0" data-tip="Ollama: usually blank (only for a secured/remote Ollama behind a token). Hosted providers: your API key. AWS Bedrock: leave blank to use the machine's IAM role (recommended for air-gapped), or enter accessKeyId:secretAccessKey.">i</span>
         </label>
-        <input type="password" id="cfg-llm-key" placeholder="API token is required" />
+        <input type="password" id="cfg-llm-key" placeholder="Optional — only for secured Ollama endpoints" />
       </div>
       <div className="cfg-status muted" id="cfg-llm-status"></div>
       <div className="cfg-actions">

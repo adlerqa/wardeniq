@@ -1,8 +1,44 @@
 // ---- configuration ----
+let LLM_SETTINGS = {};
+
+function updateLlmFieldPlaceholders(provider, settings = LLM_SETTINGS) {
+  const key = $("#cfg-llm-key");
+  const endpoint = $("#cfg-llm-endpoint");
+  const keyIsRequired = !["ollama", "bedrock"].includes(provider);
+  const endpointIsRequired = provider === "openai-compatible";
+
+  if (key) {
+    key.placeholder = settings.llm_api_key_set && (settings.llm_provider || "ollama") === provider
+      ? "Leave blank to keep current"
+      : keyIsRequired
+        ? "API key is required"
+        : provider === "ollama"
+          ? "Optional — only for secured Ollama endpoints"
+          : "Optional — use an AWS IAM role or access keys";
+  }
+
+  if (endpoint) {
+    const sameProvider = (settings.llm_provider || "ollama") === provider;
+    const hasEndpoint = sameProvider && (provider === "ollama"
+      ? settings.ollama_url_env_locked || settings.ollama_url
+      : settings.llm_base_url);
+    endpoint.placeholder = hasEndpoint
+      ? provider === "ollama"
+        ? "Blank resets to bundled Ollama"
+        : "Leave blank to keep current"
+      : endpointIsRequired
+        ? "Custom endpoint URL is required"
+        : provider === "ollama"
+          ? "Optional — blank uses bundled Ollama"
+          : "Optional — uses the provider default";
+  }
+}
+
 async function loadConfig() {
   try {
     const s = await api("/api/settings");
     const llmProv = s.llm_provider || "ollama";
+    LLM_SETTINGS = s;
     $("#cfg-llm-provider").value = llmProv;
     if ($("#cfg-llm-region")) $("#cfg-llm-region").value = s.llm_region || "";
     updateModelOptions(llmProv, s.llm_model || "");
@@ -112,22 +148,8 @@ async function loadConfig() {
         `<span class="muted">Active: ${esc(embProv)} / ${esc(s.embed_model || "nomic-embed-text")} · ${s.embed_dim || 768}-d${s.embed_api_key_set ? " · key set" : ""}</span>`;
     }
 
-    // Update placeholders based on configuration status
-    if ($("#cfg-llm-key")) {
-      $("#cfg-llm-key").placeholder = s.llm_api_key_set
-        ? "Leave blank to keep current"
-        : "API token is required";
-    }
-    if ($("#cfg-llm-endpoint")) {
-      const hasLlmEndpointConfig =
-        s.ollama_url_env_locked ||
-        s.llm_base_url ||
-        s.ollama_url ||
-        s.configured;
-      $("#cfg-llm-endpoint").placeholder = hasLlmEndpointConfig
-        ? "Leave blank to keep current"
-        : "Endpoint URL is required";
-    }
+    // Requirements and placeholders depend on the selected provider.
+    updateLlmFieldPlaceholders(llmProv, s);
     if ($("#cfg-embed-key")) {
       $("#cfg-embed-key").placeholder = s.embed_api_key_set
         ? "Leave blank to keep current"
@@ -567,6 +589,7 @@ if ($("#cfg-llm-provider")) {
     const prov = e.target.value;
     updateModelOptions(prov, "");
     applyLlmProviderUI(prov);
+    updateLlmFieldPlaceholders(prov);
     // Reset the unified endpoint + its hint when switching provider families.
     const ep = $("#cfg-llm-endpoint");
     if (ep) {
