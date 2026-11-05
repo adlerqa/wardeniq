@@ -399,18 +399,25 @@ interpreted later.
 
 ### Timeouts and incomplete runs
 
-The pipeline gives each model call 180 to 300 seconds. A CPU-only model decodes at roughly
-10 to 15 tokens per second, and a single-slot Ollama queues the pipeline's parallel
-workers behind each other, so on CPU a call can be cut off before the model finishes. When
-that happens a whole category of tests is silently not generated, and the counts and rates
-then describe the timeout, not the model.
+By default the pipeline gives each model call 180 to 300 seconds. A CPU-only model decodes
+at roughly 10 to 15 tokens per second, and a single-slot Ollama queues the pipeline's
+parallel workers behind each other, so on CPU a call can be cut off before the model
+finishes. When that happens a whole category of tests is silently not generated, and the
+counts and rates then describe the timeout, not the model.
 
-- **A longer timeout is a benchmark setting, not an app change.** `--call-timeout SECONDS`
-  replaces the timeout of every model call in the runner's own client only. It is recorded in
-  the result. Without it the pipeline's own timeouts apply, which is useful for seeing what a
-  first run on that hardware looks like, but is not a model comparison. On CPU-only hardware
-  start with something like `--call-timeout 1800`. The application's own timeouts are not
-  changed by this.
+> **CPU-only machines.** Set `LLM_TIMEOUT_SECONDS` in `.env` (for example
+> `LLM_TIMEOUT_SECONDS=1800`) and restart. It replaces the timeout of every LLM call the
+> app makes, so a slow but working local model is no longer cut off. Unset, the built-in
+> defaults above apply. A smaller or faster model also helps; see
+> [Which model should I use?](#which-model-should-i-use).
+
+- **In the benchmark, `--call-timeout` is the setting to use.** `--call-timeout SECONDS`
+  replaces the timeout of every model call in the runner's own client only, and takes
+  precedence over `LLM_TIMEOUT_SECONDS`. It is recorded in the result. Without it the
+  pipeline's own timeouts apply (`LLM_TIMEOUT_SECONDS` if set, otherwise the built-in
+  defaults), which is useful for seeing what a first run on that hardware looks like, but is
+  not a model comparison. On CPU-only hardware start with something like
+  `--call-timeout 1800`.
 - **Runaway generations and the output cap.** The app's Ollama client never sends an output
   limit, so a model that falls into a repetition loop can keep generating until the client
   times out: in one observed run a 3B call generated roughly 20,000 tokens in 30 minutes,
@@ -526,6 +533,7 @@ startup and secrets.
 | `SESSION_SECRET` / `ENCRYPTION_KEY` | _(empty)_ | Optional: split `APP_SECRET`'s two roles. Blank = both fall back to `APP_SECRET` |
 | `GEN_MODEL` | `qwen2.5:3b` | Ollama generation model (swap in a bigger/hosted model for quality) |
 | `EMBED_MODEL` / `EMBED_DIM` | `nomic-embed-text` / `768` | Embedding model + dimensions |
+| `LLM_TIMEOUT_SECONDS` | _(unset = built-in per-call defaults)_ | Timeout in seconds for every LLM call, on every provider. Unset, each call keeps its built-in default: 180 to 300 s for test generation, 300 s for Ollama and 120 s for hosted providers elsewhere. AWS Bedrock is the exception: unset, it keeps the AWS SDK's own 60 s connect/read timeout, and the SDK retries a timed-out call (up to 5 attempts in total), so a Bedrock call can wait several times the timeout. Set one value to replace all of them. On CPU-only machines raise it (for example `1800`); see [Timeouts and incomplete runs](#timeouts-and-incomplete-runs) |
 | `GITHUB_TOKEN` | _(empty)_ | Fine-grained PAT (PR + contents read); also settable in-app |
 | `GITLAB_BASE_URL` | `https://gitlab.com` | Point at a self-hosted GitLab instance (e.g. `https://gitlab.example.com`). Repo URLs, the API, and generated blob/commit links all follow this |
 | `POLL_INTERVAL_SECONDS` | `1800` | How often watched repos are polled for new PRs/commits (30 min). Seed default only — also settable live in **Configuration → Sync & polling**, which overrides this |

@@ -2,7 +2,16 @@
 
 ## Unreleased
 
-_Nothing yet._
+### Added
+
+- **Configurable LLM timeout.** New `LLM_TIMEOUT_SECONDS` setting replaces the timeout of
+  every LLM call (test generation and every other model call) on every provider,
+  including AWS Bedrock. Unset, the previous built-in values still apply (180 to 300 s
+  for generation, 300 s for Ollama and 120 s for hosted providers elsewhere; Bedrock
+  keeps the AWS SDK's 60 s), so existing installs are unchanged. Raise it on
+  CPU-only machines, where the bundled model can take several minutes per call and
+  passes used to fail on working installs. Documented in `.env.example` and
+  `docs/configuration.md` (Part of #130, #138).
 
 ## v0.3.0 — 2026-11-04
 

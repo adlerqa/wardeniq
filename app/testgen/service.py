@@ -6,6 +6,7 @@ import time
 
 import usage
 from core.logging_setup import get_logger
+from llm import resolve_timeout
 
 from testgen.prompt_builder import (
     build_api_agent_prompt,
@@ -173,8 +174,10 @@ def _raw_llm_call(llm, system_prompt, user_prompt, num_ctx, temperature,
 
 
 def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=4000,
-                              attempts=2, timeout_seconds=300) -> dict:
+                              attempts=2, timeout_seconds=None) -> dict:
     """Retry transport/parse failures and use the model itself to repair malformed JSON."""
+    if timeout_seconds is None:
+        timeout_seconds = resolve_timeout(300)
     last_error = None
     for attempt in range(1, attempts + 1):
         raw_text = ""
@@ -1665,7 +1668,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
             prompt["messages"][0]["content"],
             prompt["messages"][1]["content"],
             max_tokens=max_tokens,
-            timeout_seconds=180,
+            timeout_seconds=resolve_timeout(180),
         )
 
     def run_ui_worker(chunk):
@@ -1679,7 +1682,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
             prompt["messages"][1]["content"],
             6500,
             2,
-            180,
+            resolve_timeout(180),
         )
 
     concurrency = max(1, min(6, int(os.getenv("TESTGEN_WORKER_CONCURRENCY", "3"))))
@@ -1759,7 +1762,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                 business_top_k=_category_top_k("business", is_ollama),
             ),
             max_tokens=10000,
-            timeout_seconds=300,
+            timeout_seconds=resolve_timeout(300),
         )
     except Exception as exc:  # noqa: BLE001
         errors.append(f"E2E worker failed: {exc}")
@@ -1775,7 +1778,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                     top_k=_category_top_k("e2e", is_ollama),
                 ),
                 max_tokens=8000,
-                timeout_seconds=240,
+                timeout_seconds=resolve_timeout(240),
             )
             e2e_tests.extend(_as_list(fallback.get("e2e_tests")))
         except Exception as exc:  # noqa: BLE001
@@ -1809,7 +1812,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                     context, business_rag_context, top_k=_category_top_k("business", is_ollama)
                 ),
                 max_tokens=6000,
-                timeout_seconds=240,
+                timeout_seconds=resolve_timeout(240),
             )
             business_tests.extend(_as_list(fallback.get("business_tests")))
         except Exception as exc:  # noqa: BLE001

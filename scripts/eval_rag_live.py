@@ -113,7 +113,6 @@ import json
 import re
 import sys
 import time
-from collections import defaultdict
 from pathlib import Path
 
 # --- make the app package importable regardless of cwd ------------------------------
@@ -454,7 +453,7 @@ def instrumented(rec: Recorder):
     # LLM call latency + size, labelled by the prompt's own "TASK: ..." header.
     original_llm_call = svc.call_llm_json_with_repair
 
-    def wrapped_llm_call(llm, system_prompt, user_prompt, max_tokens=4000, attempts=2, timeout_seconds=300):
+    def wrapped_llm_call(llm, system_prompt, user_prompt, max_tokens=4000, attempts=2, timeout_seconds=None):
         t0 = time.time()
         try:
             result = original_llm_call(llm, system_prompt, user_prompt, max_tokens, attempts, timeout_seconds)
