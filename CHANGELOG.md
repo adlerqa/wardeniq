@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-_Nothing yet._
+### Fixed
+
+- `install.sh` now probes `/dev/tty` by opening it before enabling interactive prompts. Runs without a controlling terminal use the existing non-interactive defaults instead of failing while opening the terminal (#220).
 
 ## v0.3.0 — 2026-11-04
 
