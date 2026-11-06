@@ -15,11 +15,20 @@
 
 ### Fixed
 
-- Ollama's saved endpoint placeholder now explains that leaving it blank resets to the bundled Ollama instance.
+- The LLM settings card no longer marks the API key and endpoint as required for
+  Ollama. Placeholders are now provider-specific and update when you change the
+  provider; for Ollama with a saved URL, the endpoint placeholder explains that
+  leaving it blank resets to the bundled Ollama instance (#188).
 - `install.sh` now probes `/dev/tty` by opening it before enabling interactive prompts. Runs without a controlling terminal use the existing non-interactive defaults instead of failing while opening the terminal (#220).
 - Test-case priority is stored in one vocabulary, High/Medium/Low, whichever
   path wrote it (generation, the editor, sheet import); existing cases are
-  converted on startup, so exports no longer mix P1 and HIGH (#174).
+  converted on startup, so exports no longer mix P1 and HIGH (#174). Upgrading
+  rewrites stored priorities once, on first start, and this can't be undone: P0
+  and P1 both become High, and P3 and P4 both become Low.
+- Users limited to specific projects now see those projects' features in the
+  Features list. It used to come back empty for them (#221).
+- OpenAPI YAML extraction now reports every method of a path, not just the first
+  one, when an operation has nested keys such as `summary:` or `responses:` (#221).
 
 ## v0.3.0 — 2026-11-04
 
