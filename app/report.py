@@ -11,6 +11,8 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from priority import normalize_priority
+
 BRAND = colors.HexColor("#2347bf")
 BRAND_DARK = colors.HexColor("#0c1b49")
 BRAND_SOFT = colors.HexColor("#e8efff")
@@ -87,8 +89,7 @@ def _status_label(value: str) -> str:
 
 
 def _priority_label(value: str) -> str:
-    raw = _safe(value, "P2").upper()
-    return raw
+    return normalize_priority(value)
 
 
 _PRIO_CANON = {"P1": "High", "P2": "Medium", "P3": "Low", "1": "High", "2": "Medium",
@@ -429,9 +430,9 @@ def _status_badge(status: str):
 def _priority_badge(priority: str):
     raw = _priority_label(priority)
     mapping = {
-        "P1": (FAIL_BG, FAIL_TEXT),
-        "P2": (colors.HexColor("#ffedd5"), BLOCK_TEXT),
-        "P3": (SUCCESS_BG, SUCCESS_TEXT),
+        "High": (FAIL_BG, FAIL_TEXT),
+        "Medium": (colors.HexColor("#ffedd5"), BLOCK_TEXT),
+        "Low": (SUCCESS_BG, SUCCESS_TEXT),
     }
     bg, fg = mapping.get(raw, (DEFAULT_BADGE_BG, DEFAULT_BADGE_TEXT))
     return _badge(raw, bg, fg)

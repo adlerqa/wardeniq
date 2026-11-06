@@ -17,6 +17,9 @@
 
 - Ollama's saved endpoint placeholder now explains that leaving it blank resets to the bundled Ollama instance.
 - `install.sh` now probes `/dev/tty` by opening it before enabling interactive prompts. Runs without a controlling terminal use the existing non-interactive defaults instead of failing while opening the terminal (#220).
+- Test-case priority is stored in one vocabulary, High/Medium/Low, whichever
+  path wrote it (generation, the editor, sheet import); existing cases are
+  converted on startup, so exports no longer mix P1 and HIGH (#174).
 
 ## v0.3.0 — 2026-11-04
 
