@@ -125,6 +125,31 @@ runtime ([#55](https://github.com/adlerqa/wardeniq/issues/55)) and PR write-back
 One dependency that isn't technical: **#36 has to be fixed and holding first.** We can't sell
 trustworthy review while generation can still emit its own prompt examples as real output.
 
+## Exploring — [Multi-agent](https://github.com/adlerqa/wardeniq/milestones)
+
+An open, measured experiment, **not a commitment to ship**: would splitting parts of the
+lifecycle across cooperating agents make output more trustworthy, and is the cost worth it?
+It also asks whether wardenIQ should ever speak the open [A2A](https://a2a-protocol.org)
+protocol so other tools can delegate to it. Start at the RFC,
+**[#231](https://github.com/adlerqa/wardeniq/issues/231)**, and tell us what you think, including
+"don't build this". The poll in [#239](https://github.com/adlerqa/wardeniq/discussions/239) is the
+quickest way to weigh in.
+
+The evidence is mixed. Multi-agent setups can use many times the tokens of a single model and
+often gain little, so measurement comes first:
+[#232](https://github.com/adlerqa/wardeniq/issues/232) adds token, latency, cost and overclaim
+metrics to the eval harness and needs no agent experience. Two in-process spikes follow, an
+independent verifier ([#233](https://github.com/adlerqa/wardeniq/issues/233)) and parallel workers
+for the Mind Map sweep ([#234](https://github.com/adlerqa/wardeniq/issues/234)), plus a hand-off
+schema design ([#235](https://github.com/adlerqa/wardeniq/issues/235)). The milestone ends in a
+published decision, **adopt, adopt in part, or shelve**
+([#236](https://github.com/adlerqa/wardeniq/issues/236)), and only an "adopt" unlocks an optional A2A
+adapter ([#237](https://github.com/adlerqa/wardeniq/issues/237)).
+
+It has to respect the principles below: bring-your-own-model, self-hosted first, and every new
+agent ships with its check. It also shares groundwork with the agentic PR review runtime
+([#55](https://github.com/adlerqa/wardeniq/issues/55)), so coordinate with that before starting a spike.
+
 ## Later — [Platform](https://github.com/adlerqa/wardeniq/milestone/4)
 
 Cross-cutting work that makes the rest sustainable: structured logging
