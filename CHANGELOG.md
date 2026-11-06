@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+
+- `install.sh` now probes `/dev/tty` by opening it before enabling interactive prompts. Runs without a controlling terminal use the existing non-interactive defaults instead of failing while opening the terminal (#220).
+
+## v0.3.0 — 2026-11-04
+
 ### Security
 
 - Hardened authorization: the embedding-model switch is admin-only, stored
@@ -37,8 +43,22 @@
   cryptography, python-multipart, pymongo, json-repair, pytest, vite,
   source-map-js).
 
+### Added
+
+- **Model selection guidance.** New "Choosing a model" section in `docs/configuration.md`
+  with measured results for `qwen2.5:3b`, `llama3.2:3b`, `gemma3:4b` and `qwen2.5:7b`
+  on one document and one machine (3 repeats each, all complete), a recommendation, and
+  the limits of the evidence. The bundled default is unchanged and hosted models were not
+  benchmarked. The Configuration screen now points to it. Adds `scripts/eval_generation.py`
+  to reproduce the measurements locally and the result files under `docs/eval-results/`
+  (Part of #43).
+
 ### Fixed
 
+- **Malformed LLM JSON no longer crashes analysis or leaves orphan feature versions.**
+  JSON responses are required to be objects, nullable list fields are normalized at
+  the shared generation/coverage boundaries, and version diffs complete before a new
+  feature version is persisted (#147).
 - **Capability probe reports the curated message for MongoDB without mongot.**
   A stock replica set without mongot rejects search-index creation with error
   code 31082 ("requires additional configuration"); the probe previously fell
@@ -54,6 +74,20 @@
   without a terminal (CI, cron, new session): it now probes `/dev/tty` by
   opening it, and otherwise takes the non-interactive default database and says
   so (#191).
+- Five small fixes found by a QA run:
+  - `is_test_file` no longer flags production files that merely end in `it`/`test`/`spec`
+    (`audit.go`, `limit.go`, `edit.rb`, `Commit.cs`); the CamelCase suffix rule
+    (`FooTest.go`, `BarIT.java`) is now case-sensitive.
+  - Key-write extraction records every keyword of `dict(...)`, not just the first.
+  - `scripts/enable-mongo-auth.sh` no longer exits 141 when `openssl` is missing.
+  - `scripts/reset-smtp-secret.sh` clears only the stored SMTP password, as its header
+    says; a configured SMTP user with no password is now treated as unusable, so the
+    bootstrap admin's sign-in code is still printed to the server log afterwards.
+  - `install.ps1` no longer aborts when an existing `.env` has no `APP_SECRET`.
+- Percona Server for MongoDB + Percona Search is documented as an opt-in technical preview
+  (not the default, not recommended for production), with its known limitations; the
+  ROADMAP no longer claims it sidesteps the kernel ≥ 6.19 guard. HA/load validation and
+  the supported-or-default decision are tracked in #222 and #223 (#41).
 
 - Fixed the installer script links in `docs/configuration.md` to resolve to the
   repository root after the documentation move (#61).

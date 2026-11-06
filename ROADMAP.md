@@ -21,9 +21,9 @@ the issues are the work.
 
 ## Now — [v0.3.0: First run & trust](https://github.com/adlerqa/wardeniq/milestone/1)
 
-**This milestone is the next release.** `v0.2.3` is the current published tag; `main` is well
-ahead of it. Nothing ships until this closes, so everything here is release-blocking by
-definition.
+**This milestone shipped as `v0.3.0`.** The text below is the plan as it was written for the
+milestone and has not been revised since; see the [CHANGELOG](CHANGELOG.md) for what shipped
+and the release notes for known limitations.
 
 The two things that decide whether wardenIQ gets adopted: **does it work in the first five
 minutes**, and **can you trust what it generates**. Everything here beats every feature below.
@@ -41,10 +41,13 @@ gets a success-looking run and a dead `localhost:8001`.
 **Datastore.** [#41](https://github.com/adlerqa/wardeniq/issues/41) — validate the stack on
 **Percona Server for MongoDB + Percona Search** (Percona's mongot fork). Today wardenIQ needs 6
 search indexes; Atlas free M0 allows 3, so evaluating us effectively requires a paid M10+ tier.
-Percona should remove that cap, likely sidesteps the kernel guard in #27, and avoids tying
-embedding choice to a single vendor — which matters because bring-your-own-model is a stated
-principle. `config/mongod.conf` notes the project migrated *from* Percona, so this is a return
-with known ground, not a new bet. It's in technical preview, so the work is validation first.
+Percona should remove that cap and avoid tying embedding choice to a single vendor — which
+matters because bring-your-own-model is a stated principle. Validation found it does *not*
+reliably sidestep the kernel guard in #27, and it is itself in technical preview, so for
+v0.3.0 it ships as an **opt-in technical preview**, not the default (see
+[docs/percona-search-validation.md](docs/percona-search-validation.md)). HA, load and the
+supported-or-default decision are tracked in #222 and #223. `config/mongod.conf` notes the
+project migrated *from* Percona, so this is a return with known ground, not a new bet.
 
 **Measurement.** [#42](https://github.com/adlerqa/wardeniq/issues/42) — publish a generation
 quality benchmark (groundedness, exemplar leakage, coverage recall). We assert grounded output;
@@ -121,6 +124,31 @@ runtime ([#55](https://github.com/adlerqa/wardeniq/issues/55)) and PR write-back
 
 One dependency that isn't technical: **#36 has to be fixed and holding first.** We can't sell
 trustworthy review while generation can still emit its own prompt examples as real output.
+
+## Exploring — [Multi-agent](https://github.com/adlerqa/wardeniq/milestones)
+
+An open, measured experiment, **not a commitment to ship**: would splitting parts of the
+lifecycle across cooperating agents make output more trustworthy, and is the cost worth it?
+It also asks whether wardenIQ should ever speak the open [A2A](https://a2a-protocol.org)
+protocol so other tools can delegate to it. Start at the RFC,
+**[#231](https://github.com/adlerqa/wardeniq/issues/231)**, and tell us what you think, including
+"don't build this". The poll in [#239](https://github.com/adlerqa/wardeniq/discussions/239) is the
+quickest way to weigh in.
+
+The evidence is mixed. Multi-agent setups can use many times the tokens of a single model and
+often gain little, so measurement comes first:
+[#232](https://github.com/adlerqa/wardeniq/issues/232) adds token, latency, cost and overclaim
+metrics to the eval harness and needs no agent experience. Two in-process spikes follow, an
+independent verifier ([#233](https://github.com/adlerqa/wardeniq/issues/233)) and parallel workers
+for the Mind Map sweep ([#234](https://github.com/adlerqa/wardeniq/issues/234)), plus a hand-off
+schema design ([#235](https://github.com/adlerqa/wardeniq/issues/235)). The milestone ends in a
+published decision, **adopt, adopt in part, or shelve**
+([#236](https://github.com/adlerqa/wardeniq/issues/236)), and only an "adopt" unlocks an optional A2A
+adapter ([#237](https://github.com/adlerqa/wardeniq/issues/237)).
+
+It has to respect the principles below: bring-your-own-model, self-hosted first, and every new
+agent ships with its check. It also shares groundwork with the agentic PR review runtime
+([#55](https://github.com/adlerqa/wardeniq/issues/55)), so coordinate with that before starting a spike.
 
 ## Later — [Platform](https://github.com/adlerqa/wardeniq/milestone/4)
 
