@@ -1,0 +1,35 @@
+<?xml version="1.0" ?>
+<coverage line-rate="0.875" branch-rate="0.75" lines-covered="7" lines-valid="8" branches-covered="3" branches-valid="4">
+  <packages>
+    <package name="src">
+      <classes>
+        <class name="math_utils" filename="src/math_utils.py">
+          <lines>
+            <line number="1" hits="1"/>
+            <line number="2" hits="1" branch="true">
+              <conditions>
+                <condition number="0" type="jump" coverage="50%"/>
+                <condition number="1" type="jump" coverage="50%"/>
+              </conditions>
+            </line>
+            <line number="3" hits="0"/>
+            <line number="4" hits="1"/>
+          </lines>
+        </class>
+        <class name="greet" filename="src/greet.py">
+          <lines>
+            <line number="1" hits="1"/>
+            <line number="2" hits="1" branch="true">
+              <conditions>
+                <condition number="0" type="jump" coverage="100%"/>
+                <condition number="1" type="jump" coverage="100%"/>
+              </conditions>
+            </line>
+            <line number="3" hits="1"/>
+            <line number="4" hits="1"/>
+          </lines>
+        </class>
+      </classes>
+    </package>
+  </packages>
+</coverage>
