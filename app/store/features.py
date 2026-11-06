@@ -669,6 +669,7 @@ class FeaturesMixin(_Base):
             fid = str(f["_id"])
             out.append({"id": fid, "name": f.get("name"), "source": f.get("source"),
                         "key": f.get("key"), "version": f.get("version", 1),
+                        "project_id": f.get("project_id"),
                         "group_id": g, "versions": self.features.count_documents({"group_id": g}),
                         "case_count": self.assoc.count_documents({"feature_id": fid}),
                         "created_at": f.get("created_at")})
