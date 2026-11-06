@@ -161,7 +161,7 @@ tests/                        pytest suite (RBAC, pipeline, grounding, sheet imp
 
 ## 4. Startup / bootstrap sequence (`core/bootstrap.py`, wired from `main.py`)
 
-`main.py`'s `@app.on_event("startup")` handler starts a background `bootstrap()` thread
+`main.py`'s `lifespan` handler (via `_startup()`, then `_start_poller()`) starts a background `bootstrap()` thread
 (the function itself now lives in `core/bootstrap.py`, not `main.py` — see §3), plus a
 stale-job sweeper and import-reanalysis scheduler (`background/schedulers.py`).
 `BOOT = {stage, ready, detail}` tracks progress for the UI. Order:
@@ -290,7 +290,7 @@ Secrets at rest: Fernet in `crypto.py`, keyed off `ENCRYPTION_KEY || APP_SECRET`
 
 Ports: app `8001`, mongod `27017`, mongot `27027`/`9946`, ollama `11434`.
 Images pinned: `mongodb-community-server:8.3-ubi9` (MongoDB 8.1+ required), `mongodb-community-search:0.65.1`,
-`ollama/ollama:latest`, app `wardeniq:0.2.3` (source) / `adlerqa/wardeniq:beta` (published).
+`ollama/ollama:latest`, app `wardeniq:0.3.0` (source) / `adlerqa/wardeniq:beta` (published).
 
 ---
 

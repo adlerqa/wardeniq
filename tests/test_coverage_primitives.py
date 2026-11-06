@@ -58,6 +58,19 @@ class TestIsTestFile:
         for p in self.SPEC_TREE_PATHS:
             assert cov.is_test_file(p) is True, f"expected test/spec file: {p}"
 
+    # Regression: re.IGNORECASE made the CamelCase suffix rule (FooTest.go, BarIT.java)
+    # match any production file ending in "it", "test" or "spec".
+    CAMELCASE_LOOKALIKE_PATHS = [
+        "internal/audit.go",
+        "pkg/ratelimit/limit.go",
+        "app/models/edit.rb",
+        "src/Commit.cs",
+    ]
+
+    def test_camelcase_suffix_is_case_sensitive(self):
+        for p in self.CAMELCASE_LOOKALIKE_PATHS:
+            assert cov.is_test_file(p) is False, f"expected impl file: {p}"
+
     # Guard the other direction: widening the pattern must not swallow real source.
     NEAR_MISS_IMPL_PATHS = [
         "backend/src/controllers/auth.controller.ts",

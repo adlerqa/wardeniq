@@ -3,7 +3,7 @@ sources (Figma/Confluence), list/fetch features, regenerate, version, rename,
 delete, associate a case, set the manual PR match-key, and set the QA-readiness
 threshold.
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 14/20).
+Extracted from app/main.py (docs/dev/REFACTOR_PLAN.md section 14, Phase 6, router 14/20).
 Handler bodies are unchanged aside from the ``@app.`` -> ``@router.`` decorator swap.
 
 These 10 routes + 4 models were scattered across 4 non-contiguous regions in the
@@ -308,10 +308,10 @@ async def new_version(fid: str, text: str = Form(""), name: str = Form(""), key:
                                               exclude_group_id=prev_group):
             raise HTTPException(409, f"Epic '{eff_key}' is already associated with another feature")
         summary = _generate_feature_summary(name or prev["name"], raw)
+        diff = cov.diff_versions(current_llm(), prev.get("text", ""), raw, prev_cases)
         newfid = store.create_feature(name or prev["name"], prev["project_id"], sources, raw,
                                       summary, emb, key=eff_key, match_key=prev.get("match_key"),
                                       group_id=prev_group, version=new_v)
-        diff = cov.diff_versions(current_llm(), prev.get("text", ""), raw, prev_cases)
         keep = set(diff.get("keep", []))
         for cid in keep:
             store.associate(newfid, cid, "carried", None)
@@ -319,6 +319,8 @@ async def new_version(fid: str, text: str = Form(""), name: str = Form(""), key:
         retired = [{"id": r["id"], "title": (by_id.get(r["id"]) or {}).get("title"),
                     "reason": r.get("reason", "")} for r in diff.get("retire", [])]
         diff_summary = {"mode": "version", "version": new_v, "kept": len(keep), "retired": retired}
+        if diff.get("error"):
+            diff_summary["error"] = diff["error"]
     store.set_version_diff(newfid, diff_summary)
     if figma_data:
         store.set_feature_figma(newfid, figma_data)
