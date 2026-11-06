@@ -41,7 +41,10 @@ info() { printf '    %s\n' "$*"; }
 warn() { printf '%s!! %s%s\n' "$c_ylw" "$*" "$c_rst" >&2; }
 die()  { printf '%sxx %s%s\n' "$c_red" "$*" "$c_rst" >&2; exit 1; }
 
-TTY=""; [ -r /dev/tty ] && TTY="/dev/tty"
+# Probe by opening /dev/tty rather than checking its permission bits: the device can
+# be readable even when this process has no controlling terminal. Test both directions
+# because ask() writes the prompt and reads the answer through this device.
+TTY=""; if : 2>/dev/null > /dev/tty && : 2>/dev/null < /dev/tty; then TTY="/dev/tty"; fi
 ASSUME_YES="${WARDENIQ_ASSUME_YES:-0}"
 interactive() { [ -n "$TTY" ] && [ "$ASSUME_YES" != "1" ]; }
 

@@ -1,6 +1,6 @@
 """Environment-derived configuration constants.
 
-Moved verbatim out of main.py (Phase 1 of REFACTOR_PLAN.md). These are pure
+Moved verbatim out of main.py (Phase 1 of docs/dev/REFACTOR_PLAN.md). These are pure
 env-var reads with defaults — no singletons, no side effects beyond os.getenv
 and the DEFAULT_ADMIN_PASSWORD policy check. Consumers should import the exact
 names they need explicitly (avoid `from core.config import *`) so ruff's
@@ -32,7 +32,7 @@ ENV_FILE_PATH = os.getenv("ENV_FILE_PATH", "/app/.env")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "nomic-embed-text")
 EMBED_DIM = int(os.getenv("EMBED_DIM", "768"))
 GEN_MODEL = os.getenv("GEN_MODEL", "qwen2.5:3b")
-# Phase 6 (REFACTOR_PLAN.md): moved here (documented deviation, same reasoning as the
+# Phase 6 (docs/dev/REFACTOR_PLAN.md): moved here (documented deviation, same reasoning as the
 # other core/config.py constants) because both main.py's own generate-job code and the
 # new api/routes/jira_atlassian.py router's inbound jira_webhook need it.
 GEN_TOTAL = int(os.getenv("GEN_TOTAL", "16"))  # total target cases across all types
@@ -50,7 +50,7 @@ MINDMAP_SAMPLES = max(1, int(os.getenv("MINDMAP_SAMPLES", "1")))
 # windows. The former rank/chunk/per-file rationing knobs are gone — they existed only to
 # choose what to throw away.)
 DB_NAME = os.getenv("DB_NAME", "wardeniq")
-VERSION = "0.2.3"
+VERSION = "0.3.0"
 AUTO_SETUP = os.getenv("AUTO_SETUP", "true").lower() == "true"
 STEP_AUTO = float(os.getenv("STEP_AUTO_REUSE", "0.95"))
 CASE_AUTO = float(os.getenv("CASE_AUTO_REUSE", "0.93"))
@@ -109,8 +109,40 @@ PROVIDER_LOCK = os.getenv("LLM_PROVIDER_LOCK", "").strip().lower()
 # OTP_WINDOW_SECONDS (stops email-bombing / code brute-force churn).
 OTP_WINDOW_SECONDS = int(os.getenv("OTP_WINDOW_SECONDS", "900"))   # 15 min
 OTP_MAX_PER_WINDOW = int(os.getenv("OTP_MAX_PER_WINDOW", "5"))
+# Without SMTP, sign-in codes are only printed to the server log for the bootstrap
+# admin. OTP_DEV_CODES=true additionally logs every code and returns it to the sign-in
+# screen (demo/evaluation installs only) -- never honoured when APP_ENV=production.
+OTP_DEV_CODES = (os.getenv("OTP_DEV_CODES", "false").strip().lower() == "true"
+                 and not IS_PRODUCTION)
 
-# Stale-job sweep (Phase 4, REFACTOR_PLAN.md): how long a "running" job can go without
+
+def _env_int(name, default):
+    try:
+        return int(os.getenv(name, str(default)))
+    except ValueError:
+        return default
+
+
+# Brute-force protection for password sign-in, OTP verification, password reset and
+# the APP_SECRET master reset: failures are counted per account and per client IP in
+# a rolling window; reaching the limit locks that key out for AUTH_LOCKOUT_SECONDS.
+AUTH_FAILURE_WINDOW_SECONDS = _env_int("AUTH_FAILURE_WINDOW_SECONDS", 900)
+AUTH_LOCKOUT_SECONDS = _env_int("AUTH_LOCKOUT_SECONDS", 900)
+AUTH_MAX_FAILURES_PER_ACCOUNT = _env_int("AUTH_MAX_FAILURES_PER_ACCOUNT", 10)
+AUTH_MAX_FAILURES_PER_IP = _env_int("AUTH_MAX_FAILURES_PER_IP", 50)
+# Password-reset codes issued to one account per window (throttled requests are not
+# counted and never reset the attempt counter of an outstanding code).
+RESET_CODE_MAX_PER_WINDOW = _env_int("RESET_CODE_MAX_PER_WINDOW", 3)
+# Comma-separated proxy IPs/CIDRs whose X-Forwarded-For header is trusted when
+# identifying the client IP for rate limiting. Empty = never trust the header.
+TRUSTED_PROXIES = [x.strip() for x in os.getenv("TRUSTED_PROXIES", "").split(",") if x.strip()]
+# Upload / download size caps (MB): request bodies for document/sheet uploads, the
+# total uncompressed size of .docx/.xlsx archives, and repository archives.
+MAX_UPLOAD_MB = _env_int("MAX_UPLOAD_MB", 25)
+MAX_ARCHIVE_UNCOMPRESSED_MB = _env_int("MAX_ARCHIVE_UNCOMPRESSED_MB", 200)
+MAX_REPO_ARCHIVE_MB = _env_int("MAX_REPO_ARCHIVE_MB", 500)
+
+# Stale-job sweep (Phase 4, docs/dev/REFACTOR_PLAN.md): how long a "running" job can go without
 # a heartbeat before background/schedulers.py's `_stale_job_sweeper` fails it, and how
 # often the sweep runs.
 STALE_JOB_TTL_SECONDS = int(os.getenv("STALE_JOB_TTL_SECONDS", "600"))

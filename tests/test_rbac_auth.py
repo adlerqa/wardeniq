@@ -190,7 +190,7 @@ class TestSmtpAndPasswordLogin:
     def setup_class(cls):
         cls.main = _import_main()
         # smtp_status/login_password/request_otp/verify_otp and their Pydantic models
-        # moved to api/routes/auth.py in Phase 6 (REFACTOR_PLAN.md) — main.py imports
+        # moved to api/routes/auth.py in Phase 6 (docs/dev/REFACTOR_PLAN.md) — main.py imports
         # that module as `_auth_routes`, so it's reachable via the already-imported
         # main module without a second chdir-guarded import. `store`/`_smtp_cfg`/
         # `_deliver_otp` must be patched on THIS module (auth_routes), not on `main` —
@@ -278,7 +278,7 @@ class TestSmtpAndPasswordLogin:
                 return u
             def list_users(self):
                 return list(self.users.values())
-            def otp_recent_issue_count(self, uid, w):
+            def otp_recent_issue_count(self, uid, w, max_per_window=None):
                 return 0
             def set_otp(self, uid, h, exp):
                 pass

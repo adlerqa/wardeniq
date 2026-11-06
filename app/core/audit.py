@@ -1,12 +1,13 @@
 """Best-effort audit-log writer.
 
-Moved out of main.py (Phase 2 of REFACTOR_PLAN.md). Depends on
+Moved out of main.py (Phase 2 of docs/dev/REFACTOR_PLAN.md). Depends on
 `core.security._current_user` for its generic actor-resolution fallback (used
 when a caller doesn't pass `actor` explicitly) — `core/security.py`'s
 `auth_gateway` in turn needs to call `_audit`, which it does via a
 function-level import to avoid a module-level cycle (see the comment at that
 call site).
 """
+from core.client_ip import client_ip
 from core.logging_setup import get_logger
 from core.security import _current_user
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
@@ -20,11 +21,13 @@ def _audit(request, action, target=None, old=None, new=None, actor=None, detail=
     Never raises — auditing must not break the action it records."""
     try:
         actor = actor if actor is not None else _current_user(request)
+        if isinstance(actor, dict) and actor.get("is_service_account") and not actor.get("email"):
+            # API-token principal: record which token acted (it has no email).
+            actor = {**actor, "email": f"api-token:{actor.get('name') or actor.get('token_id')}"}
         ip = None
         ua = None
         if request is not None:
-            ip = (request.headers.get("x-forwarded-for") or
-                  (request.client.host if request.client else None))
+            ip = client_ip(request)
             ua = request.headers.get("user-agent")
         store.add_audit(action, actor=actor, target=target, old=old, new=new,
                         ip=ip, user_agent=ua, detail=detail)

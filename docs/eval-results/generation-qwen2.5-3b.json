@@ -1,0 +1,3009 @@
+{
+  "status": "finished",
+  "repeats_planned": 3,
+  "meta": {
+    "tool": "scripts/eval_generation.py",
+    "schema_version": 1,
+    "timestamp_utc": "2026-11-04T06:01:21+00:00",
+    "command": "python scripts/eval_generation.py --model qwen2.5:3b --repeats 3 --seed 42 --call-timeout 1800 --ollama-url http://127.0.0.1:11434 --mongo-uri <redacted> --note Apple M4, 16 GB RAM, native Homebrew Ollama (Metal) on 127.0.0.1:11434; wardenIQ Docker stack idle in the background; run on 2026-11-04 --out docs/eval-results/generation-qwen2.5-3b.json",
+    "git": {
+      "sha": "c2fe90eafc41d291c052653c44579ee51535be34",
+      "dirty": false
+    },
+    "provider": "ollama",
+    "model": "qwen2.5:3b",
+    "model_digest": "357c53fb659c",
+    "embed_model": "nomic-embed-text",
+    "embed_model_digest": "0a109f422b47",
+    "embed_dim": 768,
+    "corpus": {
+      "path": "examples/sample-prd.md",
+      "sha256": "26d999e19ac502ccae936772b2d5c7f47bcf3321079f3d84271dc1cee5239a41",
+      "bytes": 4031,
+      "feature_name": "Self-Service Password Reset"
+    },
+    "fixture_sha256": "96f6628e6d79e3a13277b625f45338facb66b441785ac467fe56ac496f85abdd",
+    "run_parameters": {
+      "repeats": 3,
+      "seed_base": 42,
+      "seed_rule": "seed_base + repeat - 1",
+      "total": 16,
+      "num_ctx_cap": 8192,
+      "call_timeout_seconds": 1800.0,
+      "call_timeout_mode": "override",
+      "output_cap_mode": "pipeline",
+      "output_cap_tokens": null,
+      "output_cap_rule": "each call's own max_tokens is sent to Ollama as num_predict"
+    },
+    "hardware": {
+      "platform": "macOS-26.3.1-arm64-arm-64bit-Mach-O",
+      "machine": "arm64",
+      "python": "3.14.6",
+      "cpu_count": 10,
+      "cpu": "Apple M4",
+      "ram_gb": 16.0
+    },
+    "runtime": {
+      "ollama_version": "0.31.1",
+      "ollama_host": "127.0.0.1",
+      "mongo_version": "7.0.37",
+      "note": "Apple M4, 16 GB RAM, native Homebrew Ollama (Metal) on 127.0.0.1:11434; wardenIQ Docker stack idle in the background; run on 2026-11-04"
+    },
+    "finished_utc": "2026-11-04T06:19:07+00:00"
+  },
+  "runs": [
+    {
+      "repeat": 1,
+      "seed": 42,
+      "database": "wardeniq_eval_20261104T060122_6fe8e0_r1",
+      "ok": true,
+      "complete": true,
+      "error": null,
+      "completeness": {
+        "complete": true,
+        "reasons": [],
+        "notes": [],
+        "attempted_calls": 10,
+        "answered_calls": 10,
+        "successful_calls": 10,
+        "failed_calls": 0,
+        "length_limited_count": 0,
+        "timeout_count": 0,
+        "http_error_count": 0,
+        "parse_error_count": 0,
+        "other_error_count": 0,
+        "pipeline_error_count": 0
+      },
+      "timings": {
+        "ingest_seconds": 8.045,
+        "pipeline_seconds": 356.089,
+        "total_seconds": 364.135
+      },
+      "runtime": {
+        "wall_clock_seconds": 364.135,
+        "decode_seconds": 298.697,
+        "completion_tokens": 11008,
+        "tokens_per_second": 36.85,
+        "queue_wait_seconds_estimate": 0.182,
+        "call_timeout_seconds": 1800.0,
+        "call_timeout_mode": "override",
+        "output_cap_mode": "pipeline",
+        "output_cap_tokens": null,
+        "length_limited_calls": 0,
+        "wall_clock_includes_timeout_waits": false,
+        "complete": true
+      },
+      "ingest": {
+        "summary_source": "model",
+        "summary_chars": 396,
+        "summary": "Registered users can request a password reset by clicking a 'Forgot password?' link on the sign-in screen. Upon submission, they receive a password reset email with a single-use token. After following the link, they set a new password and are redirected to the sign-in page with confirmation. The system ensures that account existence is not revealed and resets are rate-limited to prevent abuse.",
+        "chunks": 4
+      },
+      "pipeline": {
+        "cases_new": 21,
+        "cases_reused": 2,
+        "steps_new": 14,
+        "steps_reused": 17,
+        "by_type": {
+          "api": {
+            "new": 4,
+            "reused": 0
+          },
+          "ui": {
+            "new": 6,
+            "reused": 0
+          },
+          "functional": {
+            "new": 5,
+            "reused": 1
+          },
+          "e2e": {
+            "new": 5,
+            "reused": 1
+          },
+          "nfr": {
+            "new": 1,
+            "reused": 0
+          }
+        },
+        "discovered_api_count": 2,
+        "rag_gap_count": 0,
+        "errors": []
+      },
+      "filter": {
+        "available": true,
+        "generated": 40,
+        "persisted": 23,
+        "rejected": 17,
+        "persisted_rate": 0.575,
+        "rejected_rate": 0.425,
+        "reasons": {
+          "exemplar-copy": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "hybrid-scaffold": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "no-source-grounding": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "duplicate": {
+            "count": 17,
+            "rate": 0.425
+          },
+          "edge-suppressed": {
+            "count": 0,
+            "rate": 0.0
+          }
+        },
+        "other_reasons": {},
+        "ignored_reason_entries": [],
+        "reasons_sum_matches_rejected": true
+      },
+      "requirement_gaps": {
+        "count": 0,
+        "items": []
+      },
+      "requirement_coverage": {
+        "method": "keyword-heuristic",
+        "total": 11,
+        "covered": 6,
+        "rate": 0.5455,
+        "uncovered_ids": [
+          "FR-1",
+          "FR-3",
+          "FR-7",
+          "NFR-2",
+          "NFR-4"
+        ],
+        "invalid_requirements": 0,
+        "per_requirement": [
+          {
+            "id": "FR-1",
+            "covered": false,
+            "case_count": 0
+          },
+          {
+            "id": "FR-2",
+            "covered": true,
+            "case_count": 3
+          },
+          {
+            "id": "FR-3",
+            "covered": false,
+            "case_count": 0
+          },
+          {
+            "id": "FR-4",
+            "covered": true,
+            "case_count": 10
+          },
+          {
+            "id": "FR-5",
+            "covered": true,
+            "case_count": 1
+          },
+          {
+            "id": "FR-6",
+            "covered": true,
+            "case_count": 2
+          },
+          {
+            "id": "FR-7",
+            "covered": false,
+            "case_count": 0
+          },
+          {
+            "id": "NFR-1",
+            "covered": true,
+            "case_count": 13
+          },
+          {
+            "id": "NFR-2",
+            "covered": false,
+            "case_count": 0
+          },
+          {
+            "id": "NFR-3",
+            "covered": true,
+            "case_count": 4
+          },
+          {
+            "id": "NFR-4",
+            "covered": false,
+            "case_count": 0
+          }
+        ]
+      },
+      "persisted_cases": [
+        {
+          "type": "functional",
+          "title": "User cannot set new password with token that has expired or is invalid and receives error message"
+        },
+        {
+          "type": "functional",
+          "title": "User cannot request password reset with already used email and receives error message"
+        },
+        {
+          "type": "functional",
+          "title": "User cannot set new password with invalid or expired token and receives error message"
+        },
+        {
+          "type": "functional",
+          "title": "Reset link must expire within 30 minutes after issuance"
+        },
+        {
+          "type": "functional",
+          "title": "Password must contain at least one letter and one number"
+        },
+        {
+          "type": "e2e",
+          "title": "User requests password reset and receives email with valid token"
+        },
+        {
+          "type": "e2e",
+          "title": "User requests password reset with invalid email address and receives error message"
+        },
+        {
+          "type": "e2e",
+          "title": "User requests password reset with expired token and receives error message"
+        },
+        {
+          "type": "e2e",
+          "title": "User requests password reset with invalid token and receives error message"
+        },
+        {
+          "type": "e2e",
+          "title": "User successfully resets their password with new token and receives confirmation message"
+        },
+        {
+          "type": "api",
+          "title": "Participant receives 403 when attempting to request password reset with invalid token"
+        },
+        {
+          "type": "api",
+          "title": "Participant receives 403 when attempting to reset password with a non-existent email address"
+        },
+        {
+          "type": "api",
+          "title": "Participant receives 403 when attempting to reset password without valid token"
+        },
+        {
+          "type": "api",
+          "title": "Participant receives 429 Too Many Requests when attempting to reset password too frequently"
+        },
+        {
+          "type": "ui",
+          "title": "The email address field is required to submit a password reset request."
+        },
+        {
+          "type": "ui",
+          "title": "The new password must be at least 12 characters long."
+        },
+        {
+          "type": "ui",
+          "title": "The new password confirmation must match the entered password."
+        },
+        {
+          "type": "ui",
+          "title": "The reset token is required to complete the password reset process."
+        },
+        {
+          "type": "ui",
+          "title": "The email field must contain a valid email address to submit the password reset request."
+        },
+        {
+          "type": "ui",
+          "title": "The email address must be unique to prevent multiple password resets from the same account."
+        },
+        {
+          "type": "nfr",
+          "title": "User attempts to request password reset with already used email address and receives error message"
+        }
+      ],
+      "stages": [
+        {
+          "stage": "Pass 0: extracting verbatim API specification",
+          "progress": 5,
+          "seconds": 0.001
+        },
+        {
+          "stage": "Pass 0 complete: 2 verbatim API endpoint(s) found",
+          "progress": 9,
+          "seconds": 0.0
+        },
+        {
+          "stage": "Pass 1: grounded entity and API extraction",
+          "progress": 12,
+          "seconds": 7.739
+        },
+        {
+          "stage": "Pass 1 complete: 0 entities, 0 APIs, 2 UI components survived sanitization",
+          "progress": 17,
+          "seconds": 0.0
+        },
+        {
+          "stage": "Pass 2: constrained CRUD inference",
+          "progress": 20,
+          "seconds": 0.0
+        },
+        {
+          "stage": "Discovery complete: 2 grounded API endpoint(s)",
+          "progress": 24,
+          "seconds": 0.415
+        },
+        {
+          "stage": "Fusion: analyzing previous and project test coverage",
+          "progress": 28,
+          "seconds": 22.298
+        },
+        {
+          "stage": "Fusion complete: 5 inheritance candidate(s)",
+          "progress": 33,
+          "seconds": 0.01
+        },
+        {
+          "stage": "DAG layer 1: generating API and UI tests",
+          "progress": 38,
+          "seconds": 36.153
+        },
+        {
+          "stage": "DAG layer 1: completed 1/5 API/UI workers",
+          "progress": 41,
+          "seconds": 30.886
+        },
+        {
+          "stage": "DAG layer 1: completed 2/5 API/UI workers",
+          "progress": 44,
+          "seconds": 23.986
+        },
+        {
+          "stage": "DAG layer 1: completed 3/5 API/UI workers",
+          "progress": 46,
+          "seconds": 28.053
+        },
+        {
+          "stage": "DAG layer 1: completed 4/5 API/UI workers",
+          "progress": 49,
+          "seconds": 13.774
+        },
+        {
+          "stage": "DAG layer 1: completed 5/5 API/UI workers",
+          "progress": 52,
+          "seconds": 0.005
+        },
+        {
+          "stage": "DAG layer 1 complete: 5 API tests and 11 UI validations",
+          "progress": 53,
+          "seconds": 0.0
+        },
+        {
+          "stage": "DAG layer 2: generating E2E, edge, and business tests",
+          "progress": 58,
+          "seconds": 188.748
+        },
+        {
+          "stage": "DAG layer 2 complete: 6 E2E, 1 edge, 8 business tests",
+          "progress": 66,
+          "seconds": 0.0
+        },
+        {
+          "stage": "RAG validation: checking requirement coverage",
+          "progress": 70,
+          "seconds": 0.003
+        },
+        {
+          "stage": "RAG validation complete: 0 coverage gap(s) detected",
+          "progress": 73,
+          "seconds": 0.013
+        },
+        {
+          "stage": "Filter: 40 generated, 23 persisted (17 duplicate)",
+          "progress": 80,
+          "seconds": 0.0
+        },
+        {
+          "stage": "Persisting normalized and deduplicated test cases",
+          "progress": 82,
+          "seconds": 3.988
+        },
+        {
+          "stage": "Generation complete",
+          "progress": 100,
+          "seconds": 0.0
+        }
+      ],
+      "grounding_survivors": {
+        "entities": 0,
+        "apis": 0,
+        "ui_components": 2
+      },
+      "llm_calls": {
+        "count": 10,
+        "attempted": 10,
+        "successful": 10,
+        "answered": 10,
+        "failed": 0,
+        "length_limited": 0,
+        "timeouts": 0,
+        "http_errors": 0,
+        "parse_errors": 0,
+        "other_errors": 0,
+        "by_outcome": {
+          "ok": 10,
+          "length_limited": 0,
+          "timeout": 0,
+          "http_error": 0,
+          "parse_error": 0,
+          "other": 0
+        },
+        "total_seconds": 568.799,
+        "max_seconds": 142.344,
+        "mean_seconds": 56.88,
+        "prompt_chars": 135086,
+        "response_chars": 45838,
+        "completion_tokens": 11008,
+        "decode_seconds": 298.697,
+        "tokens_per_second": 36.85,
+        "queue_wait_seconds_estimate": 0.182,
+        "by_task": {
+          "Analyze Cross-Feature Overlap (Graph Fusion)": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 22.291,
+            "max_seconds": 22.291,
+            "mean_seconds": 22.291,
+            "prompt_chars": 9011,
+            "response_chars": 2823,
+            "completion_tokens": 699,
+            "decode_seconds": 17.874,
+            "tokens_per_second": 39.11,
+            "queue_wait_seconds_estimate": 0.016
+          },
+          "Extract API entities and endpoints from product documents": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 7.734,
+            "max_seconds": 7.734,
+            "mean_seconds": 7.734,
+            "prompt_chars": 12327,
+            "response_chars": 240,
+            "completion_tokens": 66,
+            "decode_seconds": 1.671,
+            "tokens_per_second": 39.5,
+            "queue_wait_seconds_estimate": 0.01
+          },
+          "Feature summary (ingest)": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 7.107,
+            "max_seconds": 7.107,
+            "mean_seconds": 7.107,
+            "prompt_chars": 4437,
+            "response_chars": 411,
+            "completion_tokens": 82,
+            "decode_seconds": 1.972,
+            "tokens_per_second": 41.58,
+            "queue_wait_seconds_estimate": 0.01
+          },
+          "Generate CHAOS AND CONCURRENCY TESTS ONLY for the assigned API endpoints": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 91.017,
+            "max_seconds": 91.017,
+            "mean_seconds": 91.017,
+            "prompt_chars": 16484,
+            "response_chars": 3097,
+            "completion_tokens": 717,
+            "decode_seconds": 19.077,
+            "tokens_per_second": 37.58,
+            "queue_wait_seconds_estimate": 0.023
+          },
+          "Generate E2E flows, edge cases, and business rule tests": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 46.398,
+            "max_seconds": 46.398,
+            "mean_seconds": 46.398,
+            "prompt_chars": 28095,
+            "response_chars": 4224,
+            "completion_tokens": 964,
+            "decode_seconds": 28.009,
+            "tokens_per_second": 34.42,
+            "queue_wait_seconds_estimate": 0.023
+          },
+          "Generate HAPPY PATH TESTS ONLY for the assigned API endpoints": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 36.142,
+            "max_seconds": 36.142,
+            "mean_seconds": 36.142,
+            "prompt_chars": 15101,
+            "response_chars": 4310,
+            "completion_tokens": 1051,
+            "decode_seconds": 28.36,
+            "tokens_per_second": 37.06,
+            "queue_wait_seconds_estimate": 0.021
+          },
+          "Generate NEGATIVE AND VALIDATION TESTS ONLY for the assigned API endpoints": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 67.024,
+            "max_seconds": 67.024,
+            "mean_seconds": 67.024,
+            "prompt_chars": 15169,
+            "response_chars": 4442,
+            "completion_tokens": 1006,
+            "decode_seconds": 26.749,
+            "tokens_per_second": 37.61,
+            "queue_wait_seconds_estimate": 0.023
+          },
+          "Generate UI field validation test cases": {
+            "count": 2,
+            "attempted": 2,
+            "successful": 2,
+            "answered": 2,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 2,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 148.742,
+            "max_seconds": 82.928,
+            "mean_seconds": 74.371,
+            "prompt_chars": 25400,
+            "response_chars": 6001,
+            "completion_tokens": 1438,
+            "decode_seconds": 37.362,
+            "tokens_per_second": 38.49,
+            "queue_wait_seconds_estimate": 0.033
+          },
+          "Generate one business rule test per requirement rule": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 142.344,
+            "max_seconds": 142.344,
+            "mean_seconds": 142.344,
+            "prompt_chars": 9062,
+            "response_chars": 20290,
+            "completion_tokens": 4985,
+            "decode_seconds": 137.623,
+            "tokens_per_second": 36.22,
+            "queue_wait_seconds_estimate": 0.023
+          }
+        }
+      },
+      "calls": [
+        {
+          "label": "Feature summary (ingest)",
+          "outcome": "ok",
+          "seconds": 7.107,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 4000,
+          "output_cap_tokens": 4000,
+          "parse_ok": null,
+          "prompt_chars": 4437,
+          "response_chars": 411,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 1058,
+          "completion_tokens": 82,
+          "decode_seconds": 1.972,
+          "tokens_per_second": 41.58,
+          "queue_wait_seconds_estimate": 0.01,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Extract API entities and endpoints from product documents",
+          "outcome": "ok",
+          "seconds": 7.734,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 4000,
+          "output_cap_tokens": 4000,
+          "parse_ok": null,
+          "prompt_chars": 12327,
+          "response_chars": 240,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 2835,
+          "completion_tokens": 66,
+          "decode_seconds": 1.671,
+          "tokens_per_second": 39.5,
+          "queue_wait_seconds_estimate": 0.01,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Analyze Cross-Feature Overlap (Graph Fusion)",
+          "outcome": "ok",
+          "seconds": 22.291,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6000,
+          "output_cap_tokens": 6000,
+          "parse_ok": null,
+          "prompt_chars": 9011,
+          "response_chars": 2823,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 2137,
+          "completion_tokens": 699,
+          "decode_seconds": 17.874,
+          "tokens_per_second": 39.11,
+          "queue_wait_seconds_estimate": 0.016,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate HAPPY PATH TESTS ONLY for the assigned API endpoints",
+          "outcome": "ok",
+          "seconds": 36.142,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6500,
+          "output_cap_tokens": 6500,
+          "parse_ok": null,
+          "prompt_chars": 15101,
+          "response_chars": 4310,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 3547,
+          "completion_tokens": 1051,
+          "decode_seconds": 28.36,
+          "tokens_per_second": 37.06,
+          "queue_wait_seconds_estimate": 0.021,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate NEGATIVE AND VALIDATION TESTS ONLY for the assigned API endpoints",
+          "outcome": "ok",
+          "seconds": 67.024,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6500,
+          "output_cap_tokens": 6500,
+          "parse_ok": null,
+          "prompt_chars": 15169,
+          "response_chars": 4442,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 3595,
+          "completion_tokens": 1006,
+          "decode_seconds": 26.749,
+          "tokens_per_second": 37.61,
+          "queue_wait_seconds_estimate": 0.023,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate CHAOS AND CONCURRENCY TESTS ONLY for the assigned API endpoints",
+          "outcome": "ok",
+          "seconds": 91.017,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 5000,
+          "output_cap_tokens": 5000,
+          "parse_ok": null,
+          "prompt_chars": 16484,
+          "response_chars": 3097,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 3878,
+          "completion_tokens": 717,
+          "decode_seconds": 19.077,
+          "tokens_per_second": 37.58,
+          "queue_wait_seconds_estimate": 0.023,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate UI field validation test cases",
+          "outcome": "ok",
+          "seconds": 82.928,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6500,
+          "output_cap_tokens": 6500,
+          "parse_ok": null,
+          "prompt_chars": 12515,
+          "response_chars": 3916,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 2856,
+          "completion_tokens": 939,
+          "decode_seconds": 24.447,
+          "tokens_per_second": 38.41,
+          "queue_wait_seconds_estimate": 0.018,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate UI field validation test cases",
+          "outcome": "ok",
+          "seconds": 65.814,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6500,
+          "output_cap_tokens": 6500,
+          "parse_ok": null,
+          "prompt_chars": 12885,
+          "response_chars": 2085,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 2948,
+          "completion_tokens": 499,
+          "decode_seconds": 12.915,
+          "tokens_per_second": 38.64,
+          "queue_wait_seconds_estimate": 0.015,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate E2E flows, edge cases, and business rule tests",
+          "outcome": "ok",
+          "seconds": 46.398,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 10000,
+          "output_cap_tokens": 10000,
+          "parse_ok": null,
+          "prompt_chars": 28095,
+          "response_chars": 4224,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 6897,
+          "completion_tokens": 964,
+          "decode_seconds": 28.009,
+          "tokens_per_second": 34.42,
+          "queue_wait_seconds_estimate": 0.023,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate one business rule test per requirement rule",
+          "outcome": "ok",
+          "seconds": 142.344,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6000,
+          "output_cap_tokens": 6000,
+          "parse_ok": null,
+          "prompt_chars": 9062,
+          "response_chars": 20290,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 2098,
+          "completion_tokens": 4985,
+          "decode_seconds": 137.623,
+          "tokens_per_second": 36.22,
+          "queue_wait_seconds_estimate": 0.023,
+          "done_reason": "stop"
+        }
+      ],
+      "usage": {
+        "by_model": {
+          "qwen2.5:3b": {
+            "calls": 10,
+            "prompt_tokens": 31849,
+            "completion_tokens": 11008,
+            "total_tokens": 42857,
+            "kind": "llm",
+            "estimated": false,
+            "cost_usd": 0.0
+          },
+          "nomic-embed-text": {
+            "calls": 63,
+            "prompt_tokens": 5927,
+            "completion_tokens": 0,
+            "total_tokens": 5927,
+            "kind": "embedding",
+            "estimated": true,
+            "cost_usd": 0.0
+          }
+        },
+        "prompt_tokens": 37776,
+        "completion_tokens": 11008,
+        "total_tokens": 48784,
+        "cost_usd": 0.0
+      },
+      "search_degraded": {}
+    },
+    {
+      "repeat": 2,
+      "seed": 43,
+      "database": "wardeniq_eval_20261104T060726_c77e33_r2",
+      "ok": true,
+      "complete": true,
+      "error": null,
+      "completeness": {
+        "complete": true,
+        "reasons": [],
+        "notes": [],
+        "attempted_calls": 10,
+        "answered_calls": 10,
+        "successful_calls": 10,
+        "failed_calls": 0,
+        "length_limited_count": 0,
+        "timeout_count": 0,
+        "http_error_count": 0,
+        "parse_error_count": 0,
+        "other_error_count": 0,
+        "pipeline_error_count": 0
+      },
+      "timings": {
+        "ingest_seconds": 2.236,
+        "pipeline_seconds": 306.234,
+        "total_seconds": 308.47
+      },
+      "runtime": {
+        "wall_clock_seconds": 308.47,
+        "decode_seconds": 249.908,
+        "completion_tokens": 9220,
+        "tokens_per_second": 36.89,
+        "queue_wait_seconds_estimate": 0.195,
+        "call_timeout_seconds": 1800.0,
+        "call_timeout_mode": "override",
+        "output_cap_mode": "pipeline",
+        "output_cap_tokens": null,
+        "length_limited_calls": 0,
+        "wall_clock_includes_timeout_waits": false,
+        "complete": true
+      },
+      "ingest": {
+        "summary_source": "model",
+        "summary_chars": 316,
+        "summary": "Registered users can request a password reset by clicking a 'Forgot password?' link on the sign-in screen. Upon submission, they receive an email with a single-use token that allows them to set a new password. The system ensures account privacy and limits abuse through rate limiting and token expiration mechanisms.",
+        "chunks": 4
+      },
+      "pipeline": {
+        "cases_new": 28,
+        "cases_reused": 1,
+        "steps_new": 20,
+        "steps_reused": 24,
+        "by_type": {
+          "api": {
+            "new": 6,
+            "reused": 0
+          },
+          "ui": {
+            "new": 6,
+            "reused": 0
+          },
+          "functional": {
+            "new": 6,
+            "reused": 0
+          },
+          "e2e": {
+            "new": 5,
+            "reused": 1
+          },
+          "nfr": {
+            "new": 5,
+            "reused": 0
+          }
+        },
+        "discovered_api_count": 2,
+        "rag_gap_count": 1,
+        "errors": []
+      },
+      "filter": {
+        "available": true,
+        "generated": 33,
+        "persisted": 29,
+        "rejected": 4,
+        "persisted_rate": 0.8788,
+        "rejected_rate": 0.1212,
+        "reasons": {
+          "exemplar-copy": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "hybrid-scaffold": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "no-source-grounding": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "duplicate": {
+            "count": 4,
+            "rate": 0.1212
+          },
+          "edge-suppressed": {
+            "count": 0,
+            "rate": 0.0
+          }
+        },
+        "other_reasons": {},
+        "ignored_reason_entries": [],
+        "reasons_sum_matches_rejected": true
+      },
+      "requirement_gaps": {
+        "count": 1,
+        "items": [
+          "Never reveal whether a given email address has an account (prevents account"
+        ]
+      },
+      "requirement_coverage": {
+        "method": "keyword-heuristic",
+        "total": 11,
+        "covered": 6,
+        "rate": 0.5455,
+        "uncovered_ids": [
+          "FR-1",
+          "FR-3",
+          "FR-4",
+          "FR-6",
+          "FR-7"
+        ],
+        "invalid_requirements": 0,
+        "per_requirement": [
+          {
+            "id": "FR-1",
+            "covered": false,
+            "case_count": 0
+          },
+          {
+            "id": "FR-2",
+            "covered": true,
+            "case_count": 5
+          },
+          {
+            "id": "FR-3",
+            "covered": false,
+            "case_count": 0
+          },
+          {
+            "id": "FR-4",
+            "covered": false,
+            "case_count": 0
+          },
+          {
+            "id": "FR-5",
+            "covered": true,
+            "case_count": 3
+          },
+          {
+            "id": "FR-6",
+            "covered": false,
+            "case_count": 0
+          },
+          {
+            "id": "FR-7",
+            "covered": false,
+            "case_count": 0
+          },
+          {
+            "id": "NFR-1",
+            "covered": true,
+            "case_count": 4
+          },
+          {
+            "id": "NFR-2",
+            "covered": true,
+            "case_count": 2
+          },
+          {
+            "id": "NFR-3",
+            "covered": true,
+            "case_count": 3
+          },
+          {
+            "id": "NFR-4",
+            "covered": true,
+            "case_count": 1
+          }
+        ]
+      },
+      "persisted_cases": [
+        {
+          "type": "functional",
+          "title": "User must enter at least 12 characters for their new password and receive an error message if the length is insufficient"
+        },
+        {
+          "type": "functional",
+          "title": "User must include at least one letter and one number in their new password and receive an error message if the complexity requirements are not met"
+        },
+        {
+          "type": "functional",
+          "title": "User must confirm their new password with the reset token and receive an error message if they do not match"
+        },
+        {
+          "type": "functional",
+          "title": "User must submit a valid reset token and receive an error message if it is invalid or expired"
+        },
+        {
+          "type": "functional",
+          "title": "User must submit a valid new password and receive an error message if it fails the complexity rule in FR-5"
+        },
+        {
+          "type": "functional",
+          "title": "User must submit a valid reset token and receive an error message if they have already used it within the 30-minute window"
+        },
+        {
+          "type": "e2e",
+          "title": "User submits password reset request with valid email and receives a reset token via email"
+        },
+        {
+          "type": "e2e",
+          "title": "User submits password reset request with invalid email and receives an error message indicating a required field is missing"
+        },
+        {
+          "type": "e2e",
+          "title": "User submits password reset request with an expired token and receives an error message indicating the token is invalid or expired"
+        },
+        {
+          "type": "e2e",
+          "title": "User submits password reset request with an invalid token and receives an error message indicating the token is invalid or already used"
+        },
+        {
+          "type": "e2e",
+          "title": "User submits password reset request with a valid new password and receives a successful password reset confirmation message"
+        },
+        {
+          "type": "api",
+          "title": "User receives 200 OK after successful password reset request"
+        },
+        {
+          "type": "api",
+          "title": "User receives 400 Bad Request after submitting invalid password reset request"
+        },
+        {
+          "type": "api",
+          "title": "Participant receives 403 when attempting to request password reset with invalid email format"
+        },
+        {
+          "type": "api",
+          "title": "Participant receives 403 when attempting to request password reset with an already used email address"
+        },
+        {
+          "type": "api",
+          "title": "Participant receives 422 when attempting to request password reset with a new password that does not meet complexity requirements"
+        },
+        {
+          "type": "api",
+          "title": "Participant receives 409 Conflict when attempting to reset password with invalid email"
+        },
+        {
+          "type": "ui",
+          "title": "The email address field requires a valid email format to ensure the user enters a correct contact information."
+        },
+        {
+          "type": "ui",
+          "title": "The new password field requires at least 12 characters to meet complexity requirements."
+        },
+        {
+          "type": "ui",
+          "title": "The confirm new password field requires a match with the new password to prevent typos."
+        },
+        {
+          "type": "ui",
+          "title": "The reset token field is required to ensure users can complete the password reset process."
+        },
+        {
+          "type": "ui",
+          "title": "The reset request form requires a valid email address to send the password reset link."
+        },
+        {
+          "type": "ui",
+          "title": "The reset request form requires a valid email address to send the password reset link."
+        },
+        {
+          "type": "nfr",
+          "title": "User submits password reset request with an invalid email address and receives an error message indicating the field is required"
+        },
+        {
+          "type": "nfr",
+          "title": "Password reset request fails with invalid token"
+        },
+        {
+          "type": "nfr",
+          "title": "Password reset request with valid token updates the password successfully"
+        },
+        {
+          "type": "nfr",
+          "title": "Rate limiting on password reset requests works as expected"
+        },
+        {
+          "type": "nfr",
+          "title": "Audit logging of password resets is working as expected"
+        }
+      ],
+      "stages": [
+        {
+          "stage": "Pass 0: extracting verbatim API specification",
+          "progress": 5,
+          "seconds": 0.0
+        },
+        {
+          "stage": "Pass 0 complete: 2 verbatim API endpoint(s) found",
+          "progress": 9,
+          "seconds": 0.0
+        },
+        {
+          "stage": "Pass 1: grounded entity and API extraction",
+          "progress": 12,
+          "seconds": 7.988
+        },
+        {
+          "stage": "Pass 1 complete: 0 entities, 0 APIs, 2 UI components survived sanitization",
+          "progress": 17,
+          "seconds": 0.0
+        },
+        {
+          "stage": "Pass 2: constrained CRUD inference",
+          "progress": 20,
+          "seconds": 0.0
+        },
+        {
+          "stage": "Discovery complete: 2 grounded API endpoint(s)",
+          "progress": 24,
+          "seconds": 0.265
+        },
+        {
+          "stage": "Fusion: analyzing previous and project test coverage",
+          "progress": 28,
+          "seconds": 42.926
+        },
+        {
+          "stage": "Fusion complete: 15 inheritance candidate(s)",
+          "progress": 33,
+          "seconds": 0.018
+        },
+        {
+          "stage": "DAG layer 1: generating API and UI tests",
+          "progress": 38,
+          "seconds": 35.892
+        },
+        {
+          "stage": "DAG layer 1: completed 1/5 API/UI workers",
+          "progress": 41,
+          "seconds": 30.904
+        },
+        {
+          "stage": "DAG layer 1: completed 2/5 API/UI workers",
+          "progress": 44,
+          "seconds": 45.331
+        },
+        {
+          "stage": "DAG layer 1: completed 3/5 API/UI workers",
+          "progress": 46,
+          "seconds": 28.39
+        },
+        {
+          "stage": "DAG layer 1: completed 4/5 API/UI workers",
+          "progress": 49,
+          "seconds": 14.033
+        },
+        {
+          "stage": "DAG layer 1: completed 5/5 API/UI workers",
+          "progress": 52,
+          "seconds": 0.002
+        },
+        {
+          "stage": "DAG layer 1 complete: 9 API tests and 6 UI validations",
+          "progress": 53,
+          "seconds": 0.0
+        },
+        {
+          "stage": "DAG layer 2: generating E2E, edge, and business tests",
+          "progress": 58,
+          "seconds": 53.09
+        },
+        {
+          "stage": "DAG layer 2 complete: 6 E2E, 1 edge, 6 business tests",
+          "progress": 66,
+          "seconds": 0.0
+        },
+        {
+          "stage": "RAG validation: checking requirement coverage",
+          "progress": 70,
+          "seconds": 0.002
+        },
+        {
+          "stage": "RAG validation complete: 1 coverage gap(s) detected",
+          "progress": 73,
+          "seconds": 43.021
+        },
+        {
+          "stage": "Filter: 33 generated, 29 persisted (4 duplicate)",
+          "progress": 80,
+          "seconds": 0.0
+        },
+        {
+          "stage": "Persisting normalized and deduplicated test cases",
+          "progress": 82,
+          "seconds": 4.362
+        },
+        {
+          "stage": "Generation complete",
+          "progress": 100,
+          "seconds": 0.0
+        }
+      ],
+      "grounding_survivors": {
+        "entities": 0,
+        "apis": 0,
+        "ui_components": 2
+      },
+      "llm_calls": {
+        "count": 10,
+        "attempted": 10,
+        "successful": 10,
+        "answered": 10,
+        "failed": 0,
+        "length_limited": 0,
+        "timeouts": 0,
+        "http_errors": 0,
+        "parse_errors": 0,
+        "other_errors": 0,
+        "by_outcome": {
+          "ok": 10,
+          "length_limited": 0,
+          "timeout": 0,
+          "http_error": 0,
+          "parse_error": 0,
+          "other": 0
+        },
+        "total_seconds": 556.0,
+        "max_seconds": 112.123,
+        "mean_seconds": 55.6,
+        "prompt_chars": 138047,
+        "response_chars": 39131,
+        "completion_tokens": 9220,
+        "decode_seconds": 249.908,
+        "tokens_per_second": 36.89,
+        "queue_wait_seconds_estimate": 0.195,
+        "by_task": {
+          "Analyze Cross-Feature Overlap (Graph Fusion)": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 42.917,
+            "max_seconds": 42.917,
+            "mean_seconds": 42.917,
+            "prompt_chars": 9011,
+            "response_chars": 6196,
+            "completion_tokens": 1624,
+            "decode_seconds": 42.689,
+            "tokens_per_second": 38.04,
+            "queue_wait_seconds_estimate": 0.02
+          },
+          "Extract API entities and endpoints from product documents": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 7.982,
+            "max_seconds": 7.982,
+            "mean_seconds": 7.982,
+            "prompt_chars": 12087,
+            "response_chars": 240,
+            "completion_tokens": 66,
+            "decode_seconds": 1.708,
+            "tokens_per_second": 38.64,
+            "queue_wait_seconds_estimate": 0.018
+          },
+          "Feature summary (ingest)": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 1.832,
+            "max_seconds": 1.832,
+            "mean_seconds": 1.832,
+            "prompt_chars": 4437,
+            "response_chars": 331,
+            "completion_tokens": 64,
+            "decode_seconds": 1.559,
+            "tokens_per_second": 41.05,
+            "queue_wait_seconds_estimate": 0.017
+          },
+          "Generate CHAOS AND CONCURRENCY TESTS ONLY for the assigned API endpoints": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 112.123,
+            "max_seconds": 112.123,
+            "mean_seconds": 112.123,
+            "prompt_chars": 16404,
+            "response_chars": 6226,
+            "completion_tokens": 1455,
+            "decode_seconds": 40.124,
+            "tokens_per_second": 36.26,
+            "queue_wait_seconds_estimate": 0.021
+          },
+          "Generate E2E flows, edge cases, and business rule tests": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 53.088,
+            "max_seconds": 53.088,
+            "mean_seconds": 53.088,
+            "prompt_chars": 24504,
+            "response_chars": 5803,
+            "completion_tokens": 1333,
+            "decode_seconds": 38.047,
+            "tokens_per_second": 35.04,
+            "queue_wait_seconds_estimate": 0.016
+          },
+          "Generate HAPPY PATH TESTS ONLY for the assigned API endpoints": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 35.888,
+            "max_seconds": 35.888,
+            "mean_seconds": 35.888,
+            "prompt_chars": 15021,
+            "response_chars": 4355,
+            "completion_tokens": 1023,
+            "decode_seconds": 27.514,
+            "tokens_per_second": 37.18,
+            "queue_wait_seconds_estimate": 0.025
+          },
+          "Generate NEGATIVE AND VALIDATION TESTS ONLY for the assigned API endpoints": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 66.788,
+            "max_seconds": 66.788,
+            "mean_seconds": 66.788,
+            "prompt_chars": 15089,
+            "response_chars": 4334,
+            "completion_tokens": 987,
+            "decode_seconds": 26.512,
+            "tokens_per_second": 37.23,
+            "queue_wait_seconds_estimate": 0.027
+          },
+          "Generate UI field validation test cases": {
+            "count": 2,
+            "attempted": 2,
+            "successful": 2,
+            "answered": 2,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 2,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 192.378,
+            "max_seconds": 104.623,
+            "mean_seconds": 96.189,
+            "prompt_chars": 25240,
+            "response_chars": 5916,
+            "completion_tokens": 1415,
+            "decode_seconds": 37.805,
+            "tokens_per_second": 37.43,
+            "queue_wait_seconds_estimate": 0.031
+          },
+          "Generate a minimal delta patch for the existing test suite": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 43.004,
+            "max_seconds": 43.004,
+            "mean_seconds": 43.004,
+            "prompt_chars": 16254,
+            "response_chars": 5730,
+            "completion_tokens": 1253,
+            "decode_seconds": 33.95,
+            "tokens_per_second": 36.91,
+            "queue_wait_seconds_estimate": 0.02
+          }
+        }
+      },
+      "calls": [
+        {
+          "label": "Feature summary (ingest)",
+          "outcome": "ok",
+          "seconds": 1.832,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 4000,
+          "output_cap_tokens": 4000,
+          "parse_ok": null,
+          "prompt_chars": 4437,
+          "response_chars": 331,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 1058,
+          "completion_tokens": 64,
+          "decode_seconds": 1.559,
+          "tokens_per_second": 41.05,
+          "queue_wait_seconds_estimate": 0.017,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Extract API entities and endpoints from product documents",
+          "outcome": "ok",
+          "seconds": 7.982,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 4000,
+          "output_cap_tokens": 4000,
+          "parse_ok": null,
+          "prompt_chars": 12087,
+          "response_chars": 240,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 2781,
+          "completion_tokens": 66,
+          "decode_seconds": 1.708,
+          "tokens_per_second": 38.64,
+          "queue_wait_seconds_estimate": 0.018,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Analyze Cross-Feature Overlap (Graph Fusion)",
+          "outcome": "ok",
+          "seconds": 42.917,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6000,
+          "output_cap_tokens": 6000,
+          "parse_ok": null,
+          "prompt_chars": 9011,
+          "response_chars": 6196,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 2137,
+          "completion_tokens": 1624,
+          "decode_seconds": 42.689,
+          "tokens_per_second": 38.04,
+          "queue_wait_seconds_estimate": 0.02,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate HAPPY PATH TESTS ONLY for the assigned API endpoints",
+          "outcome": "ok",
+          "seconds": 35.888,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6500,
+          "output_cap_tokens": 6500,
+          "parse_ok": null,
+          "prompt_chars": 15021,
+          "response_chars": 4355,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 3519,
+          "completion_tokens": 1023,
+          "decode_seconds": 27.514,
+          "tokens_per_second": 37.18,
+          "queue_wait_seconds_estimate": 0.025,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate NEGATIVE AND VALIDATION TESTS ONLY for the assigned API endpoints",
+          "outcome": "ok",
+          "seconds": 66.788,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6500,
+          "output_cap_tokens": 6500,
+          "parse_ok": null,
+          "prompt_chars": 15089,
+          "response_chars": 4334,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 3567,
+          "completion_tokens": 987,
+          "decode_seconds": 26.512,
+          "tokens_per_second": 37.23,
+          "queue_wait_seconds_estimate": 0.027,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate CHAOS AND CONCURRENCY TESTS ONLY for the assigned API endpoints",
+          "outcome": "ok",
+          "seconds": 112.123,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 5000,
+          "output_cap_tokens": 5000,
+          "parse_ok": null,
+          "prompt_chars": 16404,
+          "response_chars": 6226,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 3850,
+          "completion_tokens": 1455,
+          "decode_seconds": 40.124,
+          "tokens_per_second": 36.26,
+          "queue_wait_seconds_estimate": 0.021,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate UI field validation test cases",
+          "outcome": "ok",
+          "seconds": 104.623,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6500,
+          "output_cap_tokens": 6500,
+          "parse_ok": null,
+          "prompt_chars": 12435,
+          "response_chars": 3844,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 2828,
+          "completion_tokens": 917,
+          "decode_seconds": 24.701,
+          "tokens_per_second": 37.12,
+          "queue_wait_seconds_estimate": 0.019,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate UI field validation test cases",
+          "outcome": "ok",
+          "seconds": 87.755,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6500,
+          "output_cap_tokens": 6500,
+          "parse_ok": null,
+          "prompt_chars": 12805,
+          "response_chars": 2072,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 2920,
+          "completion_tokens": 498,
+          "decode_seconds": 13.104,
+          "tokens_per_second": 38.0,
+          "queue_wait_seconds_estimate": 0.012,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate E2E flows, edge cases, and business rule tests",
+          "outcome": "ok",
+          "seconds": 53.088,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 10000,
+          "output_cap_tokens": 10000,
+          "parse_ok": null,
+          "prompt_chars": 24504,
+          "response_chars": 5803,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 5877,
+          "completion_tokens": 1333,
+          "decode_seconds": 38.047,
+          "tokens_per_second": 35.04,
+          "queue_wait_seconds_estimate": 0.016,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate a minimal delta patch for the existing test suite",
+          "outcome": "ok",
+          "seconds": 43.004,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 7000,
+          "output_cap_tokens": 7000,
+          "parse_ok": null,
+          "prompt_chars": 16254,
+          "response_chars": 5730,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 3878,
+          "completion_tokens": 1253,
+          "decode_seconds": 33.95,
+          "tokens_per_second": 36.91,
+          "queue_wait_seconds_estimate": 0.02,
+          "done_reason": "stop"
+        }
+      ],
+      "usage": {
+        "by_model": {
+          "qwen2.5:3b": {
+            "calls": 10,
+            "prompt_tokens": 32415,
+            "completion_tokens": 9220,
+            "total_tokens": 41635,
+            "kind": "llm",
+            "estimated": false,
+            "cost_usd": 0.0
+          },
+          "nomic-embed-text": {
+            "calls": 82,
+            "prompt_tokens": 6986,
+            "completion_tokens": 0,
+            "total_tokens": 6986,
+            "kind": "embedding",
+            "estimated": true,
+            "cost_usd": 0.0
+          }
+        },
+        "prompt_tokens": 39401,
+        "completion_tokens": 9220,
+        "total_tokens": 48621,
+        "cost_usd": 0.0
+      },
+      "search_degraded": {}
+    },
+    {
+      "repeat": 3,
+      "seed": 44,
+      "database": "wardeniq_eval_20261104T061234_dd8c4b_r3",
+      "ok": true,
+      "complete": true,
+      "error": null,
+      "completeness": {
+        "complete": true,
+        "reasons": [],
+        "notes": [
+          "1 model call(s) stopped at the output token cap (the model's response; reported, not disqualifying)"
+        ],
+        "attempted_calls": 10,
+        "answered_calls": 10,
+        "successful_calls": 9,
+        "failed_calls": 1,
+        "length_limited_count": 1,
+        "timeout_count": 0,
+        "http_error_count": 0,
+        "parse_error_count": 0,
+        "other_error_count": 0,
+        "pipeline_error_count": 0
+      },
+      "timings": {
+        "ingest_seconds": 2.14,
+        "pipeline_seconds": 390.573,
+        "total_seconds": 392.713
+      },
+      "runtime": {
+        "wall_clock_seconds": 392.713,
+        "decode_seconds": 337.5,
+        "completion_tokens": 12379,
+        "tokens_per_second": 36.68,
+        "queue_wait_seconds_estimate": 0.179,
+        "call_timeout_seconds": 1800.0,
+        "call_timeout_mode": "override",
+        "output_cap_mode": "pipeline",
+        "output_cap_tokens": null,
+        "length_limited_calls": 1,
+        "wall_clock_includes_timeout_waits": false,
+        "complete": true
+      },
+      "ingest": {
+        "summary_source": "model",
+        "summary_chars": 315,
+        "summary": "Registered users can request a password reset by clicking a 'Forgot password?' link on the sign-in screen. Upon submission, they receive an email with a single-use token that allows them to set a new password. The system ensures account privacy and limits abuse through rate limiting and expiration of reset tokens.",
+        "chunks": 4
+      },
+      "pipeline": {
+        "cases_new": 29,
+        "cases_reused": 1,
+        "steps_new": 23,
+        "steps_reused": 20,
+        "by_type": {
+          "api": {
+            "new": 7,
+            "reused": 0
+          },
+          "ui": {
+            "new": 7,
+            "reused": 0
+          },
+          "functional": {
+            "new": 7,
+            "reused": 0
+          },
+          "e2e": {
+            "new": 6,
+            "reused": 0
+          },
+          "nfr": {
+            "new": 2,
+            "reused": 1
+          }
+        },
+        "discovered_api_count": 2,
+        "rag_gap_count": 0,
+        "errors": []
+      },
+      "filter": {
+        "available": true,
+        "generated": 41,
+        "persisted": 30,
+        "rejected": 11,
+        "persisted_rate": 0.7317,
+        "rejected_rate": 0.2683,
+        "reasons": {
+          "exemplar-copy": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "hybrid-scaffold": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "no-source-grounding": {
+            "count": 0,
+            "rate": 0.0
+          },
+          "duplicate": {
+            "count": 11,
+            "rate": 0.2683
+          },
+          "edge-suppressed": {
+            "count": 0,
+            "rate": 0.0
+          }
+        },
+        "other_reasons": {},
+        "ignored_reason_entries": [],
+        "reasons_sum_matches_rejected": true
+      },
+      "requirement_gaps": {
+        "count": 0,
+        "items": []
+      },
+      "requirement_coverage": {
+        "method": "keyword-heuristic",
+        "total": 11,
+        "covered": 6,
+        "rate": 0.5455,
+        "uncovered_ids": [
+          "FR-1",
+          "FR-3",
+          "FR-6",
+          "NFR-2",
+          "NFR-4"
+        ],
+        "invalid_requirements": 0,
+        "per_requirement": [
+          {
+            "id": "FR-1",
+            "covered": false,
+            "case_count": 0
+          },
+          {
+            "id": "FR-2",
+            "covered": true,
+            "case_count": 4
+          },
+          {
+            "id": "FR-3",
+            "covered": false,
+            "case_count": 0
+          },
+          {
+            "id": "FR-4",
+            "covered": true,
+            "case_count": 3
+          },
+          {
+            "id": "FR-5",
+            "covered": true,
+            "case_count": 4
+          },
+          {
+            "id": "FR-6",
+            "covered": false,
+            "case_count": 0
+          },
+          {
+            "id": "FR-7",
+            "covered": true,
+            "case_count": 1
+          },
+          {
+            "id": "NFR-1",
+            "covered": true,
+            "case_count": 9
+          },
+          {
+            "id": "NFR-2",
+            "covered": false,
+            "case_count": 0
+          },
+          {
+            "id": "NFR-3",
+            "covered": true,
+            "case_count": 6
+          },
+          {
+            "id": "NFR-4",
+            "covered": false,
+            "case_count": 0
+          }
+        ]
+      },
+      "persisted_cases": [
+        {
+          "type": "functional",
+          "title": "User cannot reset password if email address is not registered and receives appropriate message"
+        },
+        {
+          "type": "functional",
+          "title": "User cannot request password reset if already requested within 30 minutes and receives appropriate message"
+        },
+        {
+          "type": "functional",
+          "title": "User cannot use an expired or invalid token and receives appropriate message"
+        },
+        {
+          "type": "functional",
+          "title": "User cannot reset password if new password does not meet complexity requirements and receives appropriate message"
+        },
+        {
+          "type": "functional",
+          "title": "User cannot reset password if token is already used and receives appropriate message"
+        },
+        {
+          "type": "functional",
+          "title": "Reset link must be single-use and expire within 30 minutes"
+        },
+        {
+          "type": "functional",
+          "title": "Password reset requires at least 12 characters and one number"
+        },
+        {
+          "type": "e2e",
+          "title": "User requests password reset and receives an email with a valid token"
+        },
+        {
+          "type": "e2e",
+          "title": "User clicks on valid reset link and is redirected to set new password form"
+        },
+        {
+          "type": "e2e",
+          "title": "User enters invalid email address and receives an error message"
+        },
+        {
+          "type": "e2e",
+          "title": "User enters valid new password and receives confirmation of successful reset"
+        },
+        {
+          "type": "e2e",
+          "title": "User attempts to request another password reset within 30 minutes and receives an error message"
+        },
+        {
+          "type": "e2e",
+          "title": "User attempts to use an expired reset link and receives an error message"
+        },
+        {
+          "type": "api",
+          "title": "Invalid email in request-password-reset endpoint results in 400 Bad Request"
+        },
+        {
+          "type": "api",
+          "title": "Expired password reset link results in 400 Bad Request"
+        },
+        {
+          "type": "api",
+          "title": "Password reset request with invalid new password results in 422 Unprocessable Entity"
+        },
+        {
+          "type": "api",
+          "title": "User receives 200 OK upon successful password reset request"
+        },
+        {
+          "type": "api",
+          "title": "User receives 400 Bad Request upon invalid email address in password reset request"
+        },
+        {
+          "type": "api",
+          "title": "User receives 200 OK upon successful password reset completion via POST /api/auth/reset-password"
+        },
+        {
+          "type": "api",
+          "title": "Participant receives 403 when attempting to reset password without valid token"
+        },
+        {
+          "type": "ui",
+          "title": "The email address field requires a valid email format to ensure the user enters a correct contact information."
+        },
+        {
+          "type": "ui",
+          "title": "The new password must be at least 12 characters long to meet security requirements."
+        },
+        {
+          "type": "ui",
+          "title": "The new password confirmation must match the entered password to prevent typos."
+        },
+        {
+          "type": "ui",
+          "title": "The reset link must be valid and active within 30 minutes to prevent abuse."
+        },
+        {
+          "type": "ui",
+          "title": "The email address field must not allow duplicate requests within 30 minutes to prevent abuse."
+        },
+        {
+          "type": "ui",
+          "title": "The email address field must be required to proceed with password reset."
+        },
+        {
+          "type": "ui",
+          "title": "The new password fields must be at least 12 characters long to meet complexity requirements."
+        },
+        {
+          "type": "nfr",
+          "title": "User attempts to request password reset with an already used email address and receives a message indicating account in use"
+        },
+        {
+          "type": "nfr",
+          "title": "User attempts to set new password with less than 12 characters and receives appropriate validation errors"
+        }
+      ],
+      "stages": [
+        {
+          "stage": "Pass 0: extracting verbatim API specification",
+          "progress": 5,
+          "seconds": 0.0
+        },
+        {
+          "stage": "Pass 0 complete: 2 verbatim API endpoint(s) found",
+          "progress": 9,
+          "seconds": 0.0
+        },
+        {
+          "stage": "Pass 1: grounded entity and API extraction",
+          "progress": 12,
+          "seconds": 7.911
+        },
+        {
+          "stage": "Pass 1 complete: 0 entities, 0 APIs, 2 UI components survived sanitization",
+          "progress": 17,
+          "seconds": 0.0
+        },
+        {
+          "stage": "Pass 2: constrained CRUD inference",
+          "progress": 20,
+          "seconds": 0.0
+        },
+        {
+          "stage": "Discovery complete: 2 grounded API endpoint(s)",
+          "progress": 24,
+          "seconds": 0.264
+        },
+        {
+          "stage": "Fusion: analyzing previous and project test coverage",
+          "progress": 28,
+          "seconds": 14.341
+        },
+        {
+          "stage": "Fusion complete: 4 inheritance candidate(s)",
+          "progress": 33,
+          "seconds": 0.008
+        },
+        {
+          "stage": "DAG layer 1: generating API and UI tests",
+          "progress": 38,
+          "seconds": 52.859
+        },
+        {
+          "stage": "DAG layer 1: completed 1/5 API/UI workers",
+          "progress": 41,
+          "seconds": 27.807
+        },
+        {
+          "stage": "DAG layer 1: completed 2/5 API/UI workers",
+          "progress": 44,
+          "seconds": 26.268
+        },
+        {
+          "stage": "DAG layer 1: completed 3/5 API/UI workers",
+          "progress": 46,
+          "seconds": 28.462
+        },
+        {
+          "stage": "DAG layer 1: completed 4/5 API/UI workers",
+          "progress": 49,
+          "seconds": 12.526
+        },
+        {
+          "stage": "DAG layer 1: completed 5/5 API/UI workers",
+          "progress": 52,
+          "seconds": 0.002
+        },
+        {
+          "stage": "DAG layer 1 complete: 9 API tests and 7 UI validations",
+          "progress": 53,
+          "seconds": 0.0
+        },
+        {
+          "stage": "DAG layer 2: generating E2E, edge, and business tests",
+          "progress": 58,
+          "seconds": 214.72
+        },
+        {
+          "stage": "DAG layer 2 complete: 6 E2E, 3 edge, 14 business tests",
+          "progress": 66,
+          "seconds": 0.0
+        },
+        {
+          "stage": "RAG validation: checking requirement coverage",
+          "progress": 70,
+          "seconds": 0.003
+        },
+        {
+          "stage": "RAG validation complete: 0 coverage gap(s) detected",
+          "progress": 73,
+          "seconds": 0.013
+        },
+        {
+          "stage": "Filter: 41 generated, 30 persisted (11 duplicate)",
+          "progress": 80,
+          "seconds": 0.0
+        },
+        {
+          "stage": "Persisting normalized and deduplicated test cases",
+          "progress": 82,
+          "seconds": 5.377
+        },
+        {
+          "stage": "Generation complete",
+          "progress": 100,
+          "seconds": 0.0
+        }
+      ],
+      "grounding_survivors": {
+        "entities": 0,
+        "apis": 0,
+        "ui_components": 2
+      },
+      "llm_calls": {
+        "count": 10,
+        "attempted": 10,
+        "successful": 9,
+        "answered": 10,
+        "failed": 1,
+        "length_limited": 1,
+        "timeouts": 0,
+        "http_errors": 0,
+        "parse_errors": 0,
+        "other_errors": 0,
+        "by_outcome": {
+          "ok": 9,
+          "length_limited": 1,
+          "timeout": 0,
+          "http_error": 0,
+          "parse_error": 0,
+          "other": 0
+        },
+        "total_seconds": 628.977,
+        "max_seconds": 168.761,
+        "mean_seconds": 62.898,
+        "prompt_chars": 131356,
+        "response_chars": 53902,
+        "completion_tokens": 12379,
+        "decode_seconds": 337.5,
+        "tokens_per_second": 36.68,
+        "queue_wait_seconds_estimate": 0.179,
+        "by_task": {
+          "Analyze Cross-Feature Overlap (Graph Fusion)": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 14.335,
+            "max_seconds": 14.335,
+            "mean_seconds": 14.335,
+            "prompt_chars": 9011,
+            "response_chars": 2234,
+            "completion_tokens": 559,
+            "decode_seconds": 14.11,
+            "tokens_per_second": 39.62,
+            "queue_wait_seconds_estimate": 0.01
+          },
+          "Extract API entities and endpoints from product documents": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 7.909,
+            "max_seconds": 7.909,
+            "mean_seconds": 7.909,
+            "prompt_chars": 12084,
+            "response_chars": 240,
+            "completion_tokens": 66,
+            "decode_seconds": 1.708,
+            "tokens_per_second": 38.64,
+            "queue_wait_seconds_estimate": 0.009
+          },
+          "Feature summary (ingest)": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 1.788,
+            "max_seconds": 1.788,
+            "mean_seconds": 1.788,
+            "prompt_chars": 4437,
+            "response_chars": 330,
+            "completion_tokens": 65,
+            "decode_seconds": 1.554,
+            "tokens_per_second": 41.83,
+            "queue_wait_seconds_estimate": 0.008
+          },
+          "Generate CHAOS AND CONCURRENCY TESTS ONLY for the assigned API endpoints": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 106.931,
+            "max_seconds": 106.931,
+            "mean_seconds": 106.931,
+            "prompt_chars": 16403,
+            "response_chars": 3293,
+            "completion_tokens": 777,
+            "decode_seconds": 21.1,
+            "tokens_per_second": 36.82,
+            "queue_wait_seconds_estimate": 0.022
+          },
+          "Generate E2E flows, edge cases, and business rule tests": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 45.942,
+            "max_seconds": 45.942,
+            "mean_seconds": 45.942,
+            "prompt_chars": 25094,
+            "response_chars": 4619,
+            "completion_tokens": 1041,
+            "decode_seconds": 30.33,
+            "tokens_per_second": 34.32,
+            "queue_wait_seconds_estimate": 0.018
+          },
+          "Generate HAPPY PATH TESTS ONLY for the assigned API endpoints": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 80.662,
+            "max_seconds": 80.662,
+            "mean_seconds": 80.662,
+            "prompt_chars": 15020,
+            "response_chars": 3699,
+            "completion_tokens": 874,
+            "decode_seconds": 23.578,
+            "tokens_per_second": 37.07,
+            "queue_wait_seconds_estimate": 0.019
+          },
+          "Generate NEGATIVE AND VALIDATION TESTS ONLY for the assigned API endpoints": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 1,
+            "answered": 1,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 1,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 52.854,
+            "max_seconds": 52.854,
+            "mean_seconds": 52.854,
+            "prompt_chars": 15088,
+            "response_chars": 6948,
+            "completion_tokens": 1631,
+            "decode_seconds": 44.527,
+            "tokens_per_second": 36.63,
+            "queue_wait_seconds_estimate": 0.018
+          },
+          "Generate UI field validation test cases": {
+            "count": 2,
+            "attempted": 2,
+            "successful": 2,
+            "answered": 2,
+            "failed": 0,
+            "length_limited": 0,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 2,
+              "length_limited": 0,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 149.795,
+            "max_seconds": 82.538,
+            "mean_seconds": 74.898,
+            "prompt_chars": 25238,
+            "response_chars": 5714,
+            "completion_tokens": 1366,
+            "decode_seconds": 36.423,
+            "tokens_per_second": 37.5,
+            "queue_wait_seconds_estimate": 0.039
+          },
+          "Generate one business rule test per requirement rule": {
+            "count": 1,
+            "attempted": 1,
+            "successful": 0,
+            "answered": 1,
+            "failed": 1,
+            "length_limited": 1,
+            "timeouts": 0,
+            "http_errors": 0,
+            "parse_errors": 0,
+            "other_errors": 0,
+            "by_outcome": {
+              "ok": 0,
+              "length_limited": 1,
+              "timeout": 0,
+              "http_error": 0,
+              "parse_error": 0,
+              "other": 0
+            },
+            "total_seconds": 168.761,
+            "max_seconds": 168.761,
+            "mean_seconds": 168.761,
+            "prompt_chars": 8981,
+            "response_chars": 26825,
+            "completion_tokens": 6000,
+            "decode_seconds": 164.17,
+            "tokens_per_second": 36.55,
+            "queue_wait_seconds_estimate": 0.036
+          }
+        }
+      },
+      "calls": [
+        {
+          "label": "Feature summary (ingest)",
+          "outcome": "ok",
+          "seconds": 1.788,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 4000,
+          "output_cap_tokens": 4000,
+          "parse_ok": null,
+          "prompt_chars": 4437,
+          "response_chars": 330,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 1058,
+          "completion_tokens": 65,
+          "decode_seconds": 1.554,
+          "tokens_per_second": 41.83,
+          "queue_wait_seconds_estimate": 0.008,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Extract API entities and endpoints from product documents",
+          "outcome": "ok",
+          "seconds": 7.909,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 4000,
+          "output_cap_tokens": 4000,
+          "parse_ok": null,
+          "prompt_chars": 12084,
+          "response_chars": 240,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 2784,
+          "completion_tokens": 66,
+          "decode_seconds": 1.708,
+          "tokens_per_second": 38.64,
+          "queue_wait_seconds_estimate": 0.009,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Analyze Cross-Feature Overlap (Graph Fusion)",
+          "outcome": "ok",
+          "seconds": 14.335,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6000,
+          "output_cap_tokens": 6000,
+          "parse_ok": null,
+          "prompt_chars": 9011,
+          "response_chars": 2234,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 2137,
+          "completion_tokens": 559,
+          "decode_seconds": 14.11,
+          "tokens_per_second": 39.62,
+          "queue_wait_seconds_estimate": 0.01,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate NEGATIVE AND VALIDATION TESTS ONLY for the assigned API endpoints",
+          "outcome": "ok",
+          "seconds": 52.854,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6500,
+          "output_cap_tokens": 6500,
+          "parse_ok": null,
+          "prompt_chars": 15088,
+          "response_chars": 6948,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 3566,
+          "completion_tokens": 1631,
+          "decode_seconds": 44.527,
+          "tokens_per_second": 36.63,
+          "queue_wait_seconds_estimate": 0.018,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate HAPPY PATH TESTS ONLY for the assigned API endpoints",
+          "outcome": "ok",
+          "seconds": 80.662,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6500,
+          "output_cap_tokens": 6500,
+          "parse_ok": null,
+          "prompt_chars": 15020,
+          "response_chars": 3699,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 3518,
+          "completion_tokens": 874,
+          "decode_seconds": 23.578,
+          "tokens_per_second": 37.07,
+          "queue_wait_seconds_estimate": 0.019,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate CHAOS AND CONCURRENCY TESTS ONLY for the assigned API endpoints",
+          "outcome": "ok",
+          "seconds": 106.931,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 5000,
+          "output_cap_tokens": 5000,
+          "parse_ok": null,
+          "prompt_chars": 16403,
+          "response_chars": 3293,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 3849,
+          "completion_tokens": 777,
+          "decode_seconds": 21.1,
+          "tokens_per_second": 36.82,
+          "queue_wait_seconds_estimate": 0.022,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate UI field validation test cases",
+          "outcome": "ok",
+          "seconds": 82.538,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6500,
+          "output_cap_tokens": 6500,
+          "parse_ok": null,
+          "prompt_chars": 12434,
+          "response_chars": 3765,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 2827,
+          "completion_tokens": 919,
+          "decode_seconds": 24.808,
+          "tokens_per_second": 37.04,
+          "queue_wait_seconds_estimate": 0.016,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate UI field validation test cases",
+          "outcome": "ok",
+          "seconds": 67.257,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6500,
+          "output_cap_tokens": 6500,
+          "parse_ok": null,
+          "prompt_chars": 12804,
+          "response_chars": 1949,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 2919,
+          "completion_tokens": 447,
+          "decode_seconds": 11.615,
+          "tokens_per_second": 38.48,
+          "queue_wait_seconds_estimate": 0.023,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate E2E flows, edge cases, and business rule tests",
+          "outcome": "ok",
+          "seconds": 45.942,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 10000,
+          "output_cap_tokens": 10000,
+          "parse_ok": null,
+          "prompt_chars": 25094,
+          "response_chars": 4619,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 6056,
+          "completion_tokens": 1041,
+          "decode_seconds": 30.33,
+          "tokens_per_second": 34.32,
+          "queue_wait_seconds_estimate": 0.018,
+          "done_reason": "stop"
+        },
+        {
+          "label": "Generate one business rule test per requirement rule",
+          "outcome": "length_limited",
+          "seconds": 168.761,
+          "timeout_seconds": 1800.0,
+          "max_tokens_requested": 6000,
+          "output_cap_tokens": 6000,
+          "parse_ok": true,
+          "prompt_chars": 8981,
+          "response_chars": 26825,
+          "http_status": null,
+          "error_type": null,
+          "prompt_tokens": 2081,
+          "completion_tokens": 6000,
+          "decode_seconds": 164.17,
+          "tokens_per_second": 36.55,
+          "queue_wait_seconds_estimate": 0.036,
+          "done_reason": "length"
+        }
+      ],
+      "usage": {
+        "by_model": {
+          "qwen2.5:3b": {
+            "calls": 10,
+            "prompt_tokens": 30795,
+            "completion_tokens": 12379,
+            "total_tokens": 43174,
+            "kind": "llm",
+            "estimated": false,
+            "cost_usd": 0.0
+          },
+          "nomic-embed-text": {
+            "calls": 81,
+            "prompt_tokens": 6953,
+            "completion_tokens": 0,
+            "total_tokens": 6953,
+            "kind": "embedding",
+            "estimated": true,
+            "cost_usd": 0.0
+          }
+        },
+        "prompt_tokens": 37748,
+        "completion_tokens": 12379,
+        "total_tokens": 50127,
+        "cost_usd": 0.0
+      },
+      "search_degraded": {}
+    }
+  ],
+  "aggregate": {
+    "repeats_planned": 3,
+    "repeats_total": 3,
+    "repeats_ok": 3,
+    "repeats_complete": 3,
+    "repeats_incomplete": 0,
+    "repeats_missing": 0,
+    "valid_baseline": true,
+    "all_repeats_complete": true,
+    "statement": "VALID BASELINE: all 3 repeats completed without timeouts, HTTP errors or other infrastructure failures.",
+    "metrics": {
+      "completion_tokens": {
+        "n": 3,
+        "mean": 10869.0,
+        "min": 9220,
+        "max": 12379
+      },
+      "decode_tokens_per_second": {
+        "n": 3,
+        "mean": 36.8067,
+        "min": 36.68,
+        "max": 36.89
+      },
+      "duplicate_count": {
+        "n": 3,
+        "mean": 10.6667,
+        "min": 4,
+        "max": 17
+      },
+      "duplicate_rate": {
+        "n": 3,
+        "mean": 0.2715,
+        "min": 0.1212,
+        "max": 0.425
+      },
+      "exemplar_copy_count": {
+        "n": 3,
+        "mean": 0.0,
+        "min": 0,
+        "max": 0
+      },
+      "exemplar_copy_rate": {
+        "n": 3,
+        "mean": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "generated": {
+        "n": 3,
+        "mean": 38.0,
+        "min": 33,
+        "max": 41
+      },
+      "grounding_apis": {
+        "n": 3,
+        "mean": 0.0,
+        "min": 0,
+        "max": 0
+      },
+      "grounding_entities": {
+        "n": 3,
+        "mean": 0.0,
+        "min": 0,
+        "max": 0
+      },
+      "grounding_ui_components": {
+        "n": 3,
+        "mean": 2.0,
+        "min": 2,
+        "max": 2
+      },
+      "hybrid_scaffold_count": {
+        "n": 3,
+        "mean": 0.0,
+        "min": 0,
+        "max": 0
+      },
+      "hybrid_scaffold_rate": {
+        "n": 3,
+        "mean": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "ingest_seconds": {
+        "n": 3,
+        "mean": 4.1403,
+        "min": 2.14,
+        "max": 8.045
+      },
+      "model_call_length_limited": {
+        "n": 3,
+        "mean": 0.3333,
+        "min": 0,
+        "max": 1
+      },
+      "model_call_parse_errors": {
+        "n": 3,
+        "mean": 0.0,
+        "min": 0,
+        "max": 0
+      },
+      "model_calls_attempted": {
+        "n": 3,
+        "mean": 10.0,
+        "min": 10,
+        "max": 10
+      },
+      "no_source_grounding_count": {
+        "n": 3,
+        "mean": 0.0,
+        "min": 0,
+        "max": 0
+      },
+      "no_source_grounding_rate": {
+        "n": 3,
+        "mean": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "persisted": {
+        "n": 3,
+        "mean": 27.3333,
+        "min": 23,
+        "max": 30
+      },
+      "persisted_rate": {
+        "n": 3,
+        "mean": 0.7285,
+        "min": 0.575,
+        "max": 0.8788
+      },
+      "pipeline_error_count": {
+        "n": 3,
+        "mean": 0.0,
+        "min": 0,
+        "max": 0
+      },
+      "pipeline_gap_count": {
+        "n": 3,
+        "mean": 0.3333,
+        "min": 0,
+        "max": 1
+      },
+      "pipeline_seconds": {
+        "n": 3,
+        "mean": 350.9653,
+        "min": 306.234,
+        "max": 390.573
+      },
+      "prompt_tokens": {
+        "n": 3,
+        "mean": 38308.3333,
+        "min": 37748,
+        "max": 39401
+      },
+      "queue_wait_seconds_estimate": {
+        "n": 3,
+        "mean": 0.1853,
+        "min": 0.179,
+        "max": 0.195
+      },
+      "rejected": {
+        "n": 3,
+        "mean": 10.6667,
+        "min": 4,
+        "max": 17
+      },
+      "rejected_rate": {
+        "n": 3,
+        "mean": 0.2715,
+        "min": 0.1212,
+        "max": 0.425
+      },
+      "requirement_coverage_rate": {
+        "n": 3,
+        "mean": 0.5455,
+        "min": 0.5455,
+        "max": 0.5455
+      }
+    },
+    "provisional_metrics": {},
+    "notes": [
+      "repeat 3: 1 model call(s) stopped at the output token cap (the model's response; reported, not disqualifying)"
+    ],
+    "incomplete_diagnostics": []
+  }
+}

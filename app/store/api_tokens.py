@@ -5,15 +5,17 @@ session, resolved through core/security.py's principal-resolver registry
 scheme (auth.hash_token/token_matches) rather than inventing one — only the
 hash is ever stored, matching store/users_auth.py's invite-token pattern.
 
-Moved out to its own mixin (Phase 5 style, REFACTOR_PLAN.md Option A) rather
+Moved out to its own mixin (Phase 5 style, docs/dev/REFACTOR_PLAN.md Option A) rather
 than folded into users_auth.py: an API token is not a user account (no email,
 no invite lifecycle, no password) even though it shares the project-scoping
 shape.
 """
 
 import time
+from datetime import datetime, timezone
 
 from bson import ObjectId
+from pymongo import ReturnDocument
 
 
 from typing import TYPE_CHECKING
@@ -105,9 +107,14 @@ class ApiTokensMixin(_Base):
         within the window (including this one)."""
         now = time.time()
         cutoff = now - window_seconds
-        doc = self.api_token_failures.find_one({"_id": key}) or {}
-        attempts = [t for t in (doc.get("attempts") or []) if t >= cutoff]
-        attempts.append(now)
-        self.api_token_failures.update_one(
-            {"_id": key}, {"$set": {"attempts": attempts[-50:]}}, upsert=True)
-        return len(attempts)
+        # Atomic updates (no read-modify-write race); the per-key array is capped
+        # and the doc expires via the TTL index on `expires_at` once idle.
+        self.api_token_failures.update_one({"_id": key},
+                                           {"$pull": {"attempts": {"$lt": cutoff}}})
+        doc = self.api_token_failures.find_one_and_update(
+            {"_id": key},
+            {"$push": {"attempts": {"$each": [now], "$slice": -50}},
+             "$set": {"expires_at": datetime.fromtimestamp(now + window_seconds,
+                                                           tz=timezone.utc)}},
+            upsert=True, return_document=ReturnDocument.AFTER) or {}
+        return len([t for t in (doc.get("attempts") or []) if t >= cutoff])

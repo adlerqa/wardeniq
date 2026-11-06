@@ -14,7 +14,7 @@ from core.logging_setup import get_logger
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
                                # mutated, never rebound)
 from extract import chunk as chunk_doc
-from testgen.service import generate_fresh_testcases_pipeline
+from testgen.service import generate_fresh_testcases_pipeline, stage_durations
 
 from workers.registry import JOB_WORKERS, launch_job
 from workers.repo_scan_worker import _apply_import_overlays, _rescan_pool_for_feature
@@ -23,6 +23,10 @@ log = get_logger("generation")
 
 
 def _gen_worker(jid, params):
+    # Declared outside the try so a mid-pipeline exception still leaves whatever
+    # stages DID complete available below (issue #48 — capture timing data even
+    # when a stage fails, "where practical").
+    _timing_sink: list = []
     try:
         def update_fn(stage, progress=None):
             store.update_job_progress(jid, stage, progress)
@@ -32,7 +36,8 @@ def _gen_worker(jid, params):
             llm=current_llm(),
             embedder=state.embedder,
             params=params,
-            update_job_fn=update_fn
+            update_job_fn=update_fn,
+            timing_sink=_timing_sink,
         )
         store.merge_job_result(jid, **res)
 
@@ -72,6 +77,8 @@ def _gen_worker(jid, params):
         except Exception as re_e:  # noqa: BLE001
             log.warning("[import-recheck] skipped: %s", re_e)
     except Exception as e:
+        if len(_timing_sink) > 1:   # more than just the "_start" sentinel
+            store.merge_job_result(jid, stage_timings=stage_durations(_timing_sink))
         store.update_job(jid, status="failed", stage="error", error=str(e))
         raise e
 
@@ -127,7 +134,7 @@ def _reembed_worker(jid, params):
     """Switch the embedding model: rebuild all vector indexes at the new dimension
     and re-embed every stored vector. Search/dedup/Mind-Map are degraded until this
     finishes (the vectors and indexes are being replaced)."""
-    # CRITICAL (REFACTOR_PLAN.md 2.6): rebind via the qualified `state.embedder`
+    # CRITICAL (docs/dev/REFACTOR_PLAN.md 2.6): rebind via the qualified `state.embedder`
     # attribute, never `global embedder` — this is the app's one live-reassignment
     # of the embedder singleton, and every other consumer reads `state.embedder`
     # (not a name-imported local), so they must all observe this exact rebind.
@@ -148,21 +155,71 @@ JOB_WORKERS["reembed"] = _reembed_worker
 
 
 def _migrate_worker(jid, params):
-    """Copy the whole database to a target MongoDB, then point MONGO_URI at it (.env).
-    The app keeps running on the CURRENT database until the user restarts, so a failed
-    or partial copy never strands them — the source stays authoritative."""
+    """Copy the whole database to a target MongoDB, VERIFY the copy, then point MONGO_URI
+    at it (.env). The app keeps running on the CURRENT database until the user restarts,
+    so a failed or partial copy never strands them -- the source stays authoritative.
+
+    Fails closed (#111): if the copy cannot be verified, or verification finds a
+    mismatch, the job FAILS with the details in its error, `.env` is NOT written, and
+    the result records `switched: False` -- the user is never shown an ordinary success
+    for a target that might be incomplete. A failed job also ends the "migration in
+    progress" state, so new work is accepted again.
+
+    KNOWN GAP (#111, documented rather than fixed here -- it needs its own sizing):
+    progress (update_job_progress) is written only to the SOURCE database's `jobs`
+    collection. If the app process restarts mid-migration that record is not visible
+    from the target and the copy is not resumable. The idle check in
+    api/routes/settings.py's db_migrate() makes this rare (nothing else should be
+    running), but an operator-initiated restart mid-copy still hits it.
+    Migration is a best-effort snapshot taken while the system is idle, not a
+    transactionally consistent point-in-time backup."""
     target = params["target_uri"]
     overwrite = bool(params.get("overwrite"))
+    override_busy = bool(params.get("override_busy"))
     store.update_job_progress(jid, "Starting migration", 2)
     counts = store.migrate_to(
         target, overwrite=overwrite,
         progress=lambda s, p: store.update_job_progress(jid, s, p))
+
+    store.update_job_progress(jid, "Verifying the copied data", 92)
+    try:
+        verification = store.verify_migration(target, counts, allow_source_drift=override_busy)
+    except Exception as e:  # noqa: BLE001
+        log.error("[migrate] job=%s verification could not run: %r", jid, e)
+        store.merge_job_result(jid, copied=counts, verified=False, switched=False,
+                               restart_required=False)
+        raise RuntimeError(
+            "The data was copied, but the copy could not be verified "
+            f"({type(e).__name__}: {str(e)[:150]}). wardenIQ was NOT switched to the new "
+            "database. Check the target is reachable, then run the switch again "
+            "(choose to replace the data already copied).") from e
+    store.merge_job_result(jid, copied=counts, total_docs=sum(counts.values()),
+                           verification=verification, verified=verification["ok"],
+                           warnings=verification["warnings"])
+    if not verification["ok"]:
+        log.error("[migrate] job=%s verification FAILED: %s", jid, verification["failures"])
+        store.merge_job_result(jid, switched=False, restart_required=False)
+        raise RuntimeError(
+            "The copy did not pass verification, so wardenIQ was NOT switched to the new "
+            "database: " + "; ".join(verification["failures"]) + ". Your current database "
+            "is unchanged. Run the switch again (choose to replace the data already "
+            "copied) once nothing else is running.")
+    if verification["warnings"]:
+        log.warning("[migrate] job=%s best-effort snapshot (override): %s", jid,
+                    verification["warnings"])
+
     store.update_job_progress(jid, "Pointing wardenIQ at the new database (.env)", 97)
     ok, err = _write_env_var(ENV_FILE_PATH, "MONGO_URI", target)
     if not ok:
         raise RuntimeError(f"data was copied, but writing the config file failed: {err}")
-    store.merge_job_result(jid, copied=counts, total_docs=sum(counts.values()),
-                           restart_required=True, apply_cmd="docker compose up -d")
+    store.merge_job_result(
+        jid, switched=True, restart_required=True, apply_cmd="docker compose up -d",
+        # Index rebuilding on the target happens via ensure_indexes() on the next boot,
+        # which only happens once the user restarts -- this is how to confirm it worked.
+        post_restart_check="After restarting, sign in as an admin and open /api/db-status: "
+                           "boot.ready should be true and every entry under indexes "
+                           "should be true (search indexes are queryable). Details: "
+                           "docs/configuration.md, \"Switching databases\".")
     store.update_job_progress(jid, "done", 100)
 
 

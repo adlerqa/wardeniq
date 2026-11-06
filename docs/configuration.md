@@ -196,6 +196,112 @@ instead, set `APP_IMAGE=adlerqa/wardeniq:1.2.0` in `.env`, then run the same com
 
 ---
 
+## Switching databases
+
+**Configuration → Database → Switch to this database** (admin only) copies your data to
+another MongoDB-compatible database, checks the copy, and points wardenIQ at it. Your
+current database is never modified, and wardenIQ keeps running on it until **you** restart,
+so a failed or abandoned switch loses nothing.
+
+**What it does, in order**
+
+1. Checks the target: reachable, a replica set, and Vector Search actually works (a
+   throwaway collection and indexes are created and removed, nothing of yours is touched).
+   It also refuses a target that **is the database wardenIQ is already using** (however the
+   address is spelled: `localhost`, `127.0.0.1`, a service name), because copying a database
+   onto itself would erase it. Nothing is copied in that case.
+2. Refuses to start while a GitHub/GitLab sync or any other job is running, or while
+   another migration is running. The "wardenIQ is busy" prompt lets you **Start anyway**
+   for a *best-effort* copy; a migration that is already running can never be overridden.
+   While a migration runs, new jobs are refused ("a database migration is in progress").
+3. Copies every collection (indexes are not copied; they are rebuilt on the next start).
+4. **Verifies the copy.** For every collection it compares the number of documents copied
+   with the target and with the source. If they differ, or the check cannot run, the job
+   **fails** ("wardenIQ was NOT switched"), `.env` is left untouched and your current
+   database is unchanged. Start the switch again, choosing to replace the data already copied.
+5. Only after a passing check does it write `MONGO_URI` to `.env` and tell you to restart
+   (see [Starting wardenIQ after the switch](#starting-wardeniq-after-the-switch) below).
+
+**Retrying a failed switch.** **Jobs → Retry** on a failed migration runs the same checks
+again (admin only, target re-validated, never the database wardenIQ is using, not allowed
+while another migration or job is running). It keeps only the original target. It never
+repeats an earlier "start anyway" **or** an earlier "replace existing data", because the
+target may hold something else now: a target that already contains data is refused. To
+replace data in a target, start the switch again from Configuration → Database, where you
+are asked to confirm.
+
+### Starting wardenIQ after the switch
+
+The screen shows `docker compose up -d` as the command to finish switching. Run it from the
+folder you installed wardenIQ in, in the form that matches your install:
+
+```bash
+docker compose -f docker-compose.app.yml up -d --no-build   # bring-your-own MongoDB install
+docker compose up -d --no-build                             # bundled all-in-one install
+```
+
+These are the same start commands as under "Day to day" above. In a bring-your-own folder
+there is no default Compose file, so the bare `docker compose up -d` fails with "no
+configuration file provided".
+
+**Limitations**
+
+- It is a **best-effort snapshot taken while wardenIQ is idle**, not a point-in-time backup.
+  Anything written to the old database after it was copied (and before you restart) stays
+  only in the old database. A busy copy started with **Start anyway** reports any change it
+  noticed as a warning instead of failing.
+- Progress is recorded only in the **old** database. If wardenIQ is restarted in the middle
+  of a copy, that progress is not visible from the new database and the copy cannot be
+  resumed; start the switch again and choose to replace the data.
+- Locking is per process, which is how wardenIQ ships (one app container).
+
+### After the restart: verify the new database
+
+Do this once, after the start command from [Starting wardenIQ after the switch](#starting-wardeniq-after-the-switch)
+has finished and wardenIQ is reachable again.
+Search indexes are built on the new database during start-up and can take a few minutes on a
+large database.
+
+1. Sign in as an **admin** and open `/api/db-status` on your wardenIQ address in the same
+   browser (for example `http://localhost:8001/api/db-status`). It is a read-only page that
+   returns JSON. It needs an admin session; API tokens cannot be used because they are never
+   admin.
+2. Check these fields:
+
+   | Field | Healthy value |
+   |---|---|
+   | `boot.ready` (and `boot.stage`) | `true` (`"ready"`) |
+   | `search_available` | `true` |
+   | `indexes` | every value `true` |
+   | `hosts`, `replica_set`, `db_name` | the new database |
+
+   ```json
+   "indexes": {
+     "features":   {"vector_index": true},
+     "test_steps": {"vector_index": true},
+     "test_cases": {"vector_index": true, "text_index": true}
+   }
+   ```
+
+   `indexes: true` means that index is **queryable**. `boot.ready` alone only means index
+   creation was accepted. The Configuration → Database **Connection** row shows the same
+   boot state.
+3. If something is not ready:
+   - `boot.stage` is `"indexing"` or an index shows `false`: wait a minute and reload. A
+     bundled search engine is still syncing; `docker compose logs mongot` shows progress
+     (`mongot-percona` on the Percona stack).
+   - `boot.stage` is `"error"`: `boot.detail` says why (for example the database has no
+     Vector Search, or your Atlas tier allows too few search indexes).
+   - To go back, set `MONGO_URI` in `.env` to its previous value (or delete the line if you
+     had none, on the bundled stack) and run the same start command again (same form as
+     above); the old database
+     was never changed. `./collect-logs.sh` gathers logs if you need help.
+
+> **Limitation:** `/api/db-status` lists the indexes on `features`, `test_steps` and
+> `test_cases` (4 of the 6 search indexes). The two chunk indexes (`feature_chunks`,
+> `code_chunks`) are created in the same start-up step but are not listed there; if their
+> creation failed, `boot.stage` is `"error"`.
+
 ---
 
 ## Bring your own LLM
@@ -214,6 +320,181 @@ re-embed so the vector index stays on one consistent model/dimension. Everything
 on-prem unless you choose a hosted provider.
 
 ---
+
+## Choosing a model
+
+The model you pick changes three things, and they pull against each other.
+
+- **Quality.** Models differ in how well they stay grounded in your documents, how often
+  they copy the prompt's own examples instead of your requirements, and how often their
+  output is malformed. wardenIQ filters generated candidates (copied examples, cases with
+  no support in the source text, duplicates) and reports how many each filter rejected;
+  the evaluation below measures exactly that.
+- **Cost.** Hosted providers bill per token. A local Ollama model has no per-token cost
+  but needs RAM and disk, and a larger one means a longer first download.
+- **Speed.** A local model runs on your hardware, and on a CPU a single generation run can
+  take many minutes. A hosted model is usually faster but depends on the network.
+
+### Which model should I use?
+
+Measured on one machine with one document (see [Limits of the current evidence](#limits-of-the-current-evidence)).
+These are guidance, not guarantees.
+
+| If you want... | Use | Why |
+|---|---|---|
+| To try wardenIQ, or the fastest local run | `qwen2.5:3b` (the bundled default) | Keeps about 27 test cases per run in about 6 minutes. About a quarter of what it writes is duplicates, and it covers fewer requirements than the 7B. |
+| The best quality from a local model | `qwen2.5:7b` | Highest requirement coverage, few duplicates, no unparseable replies. Needs about 16 GB of RAM and takes about twice as long. |
+| To avoid | `llama3.2:3b`, `gemma3:4b` | `llama3.2:3b` copies the prompt's own examples and lost more than half of what it wrote. `gemma3:4b` wrote few cases and sometimes returned replies the pipeline could not parse. |
+
+The smallest model that gave usable output in this evaluation is `qwen2.5:3b`. Hosted
+providers (OpenAI, Anthropic, Bedrock) were **not** benchmarked, so this page makes no
+claim about them. The bundled default is unchanged: the numbers show a trade-off
+between speed and quality, not a clear reason to ship a larger download to everyone.
+
+#### Results
+
+Apple M4, 16 GB RAM, native Ollama 0.31.1 (Metal), seed 42, 3 repeats per model, run on
+2026-11-04 from commit `c2fe90e`. Every repeat completed (no timeouts or HTTP errors), so each
+row is a valid baseline. Values are the mean over the 3 repeats. The result files are in
+[`docs/eval-results/`](eval-results/).
+
+| | `qwen2.5:3b` | `llama3.2:3b` | `gemma3:4b` | `qwen2.5:7b` |
+|---|---|---|---|---|
+| Cases written by the model | 38 | 30 | 15 | 32 |
+| Cases kept after filtering | 27 | 11 | 15 | 27 |
+| Rejected by the filters | 27% | 62% | 0% | 15% |
+| Copied the prompt's examples | 0% | 16% | 0% | 0% |
+| Requirement coverage (keyword heuristic) | 55% | 48% | 67% | 85% |
+| Replies the pipeline could not parse, per run | 0 | 0 | 1.7 | 0 |
+| Pipeline time per run | 5.9 min | 6.7 min | 5.2 min | 11.5 min |
+| Decode speed | 37 tok/s | 35 tok/s | 32 tok/s | 19 tok/s |
+
+How to read it: "kept" is what ended up in the database after the duplicate, copied-example and
+no-source filters. `gemma3:4b` shows 0% rejected because it wrote very little, not because it
+wrote well. Coverage is a keyword match against hand-labelled requirements; it shows that some
+case mentions a requirement's key terms, not that the case is correct.
+
+### What the evaluation measures
+
+`scripts/eval_generation.py` runs the real generation pipeline on one fixed document and
+records what the pipeline itself reports:
+
+- candidates **generated**, **persisted** and **rejected**, and why: a copy of the prompt's
+  own example (`exemplar-copy`), prompt scaffolding (`hybrid-scaffold`), no support in the
+  source text (`no-source-grounding`), or a duplicate. Rates are against the candidates the
+  model produced *before* filtering.
+- how many grounded entities, APIs and UI components survived the grounding pass (read from
+  the pipeline's progress message, so it is blank if that wording changes);
+- the pipeline's own requirement-gap list, plus a **keyword heuristic** for requirement
+  coverage against hand-labelled requirements in `tests/eval/generation_fixture.py`. The
+  heuristic only shows that some case mentions a requirement's key terms; it does not judge
+  whether the case is correct;
+- every model call, classified as `ok`, `length_limited` (the reply was cut off at the output
+  cap), `timeout`, `http_error`, `parse_error` or `other`, with its duration and, where the
+  server reports them, token counts and decode speed.
+
+Each run records the model and its digest, the git commit, a hash of the corpus and of the
+labels, the seed, the call timeout and the hardware, so a result can be reproduced and
+interpreted later.
+
+### Timeouts and incomplete runs
+
+The pipeline gives each model call 180 to 300 seconds. A CPU-only model decodes at roughly
+10 to 15 tokens per second, and a single-slot Ollama queues the pipeline's parallel
+workers behind each other, so on CPU a call can be cut off before the model finishes. When
+that happens a whole category of tests is silently not generated, and the counts and rates
+then describe the timeout, not the model.
+
+- **A longer timeout is a benchmark setting, not an app change.** `--call-timeout SECONDS`
+  replaces the timeout of every model call in the runner's own client only. It is recorded in
+  the result. Without it the pipeline's own timeouts apply, which is useful for seeing what a
+  first run on that hardware looks like, but is not a model comparison. On CPU-only hardware
+  start with something like `--call-timeout 1800`. The application's own timeouts are not
+  changed by this.
+- **Runaway generations and the output cap.** The app's Ollama client never sends an output
+  limit, so a model that falls into a repetition loop can keep generating until the client
+  times out: in one observed run a 3B call generated roughly 20,000 tokens in 30 minutes,
+  where every other call stopped at about 5,400 tokens or fewer. A longer timeout cannot fix that. The pipeline already asks for a limit
+  on every call (3,000 to 10,000 tokens, and the Anthropic and Bedrock paths enforce it), so
+  the runner's own client sends that limit to Ollama as `num_predict`.
+  `--max-output-tokens pipeline` (the default) sends each call's own limit, `N` sends one
+  fixed cap on every call, and `none` sends no cap, as the app behaves. The mode and the
+  tokens are recorded in the result; the application's own client is not changed.
+- **A reply cut off at the cap is reported, never `ok`.** Ollama says so with
+  `done_reason: length`, and the call is recorded as `length_limited`. Truncated JSON can
+  still parse, so it is classified by how it ended, not by whether it parses. It is the
+  model's own output: it does not make a repeat incomplete, but it is counted and listed in
+  the repeat's notes.
+- **A repeat is complete only if no call hit an infrastructure failure** (a timeout, an HTTP
+  error such as the model server being killed, or another error). A reply the pipeline
+  cannot parse (`parse_error`) or that was cut off at the cap (`length_limited`) is the
+  model's own output and does not make a repeat incomplete; leaving such repeats out would
+  flatter the model.
+- **A baseline needs every requested repeat to complete.** `aggregate.valid_baseline` is
+  true only when all requested repeats ran and all are complete, and the runner exits with
+  status 0 only then. If any repeat is incomplete, failed or never ran, there is no valid
+  baseline: `metrics` is empty, and the statistics of the repeats that did complete appear
+  only under `provisional_metrics`, for reference.
+- **Incomplete repeats stay in the result file as diagnostics** (`incomplete_diagnostics`)
+  and never enter any statistics. If none is complete, the result says there is no valid
+  baseline.
+- **Results affected by timeouts or resource exhaustion are diagnostic, not model-quality
+  evidence.** Do not compare models using them.
+- **Runtime is hardware-specific.** Wall-clock time includes queueing and any timeout waits,
+  so it is not model speed. Use the recorded decode speed (`tokens_per_second`) for that, and
+  quote it together with the hardware.
+- The result file is rewritten after every repeat, so a crash or an interrupted run keeps the
+  repeats that finished (`status` is `in_progress`, `aborted` or `finished`).
+
+### Limits of the current evidence
+
+- **One document.** The corpus is `examples/sample-prd.md`, a simple password-reset PRD. It
+  is an initial fixed corpus, not a representative benchmark, and says nothing about other
+  kinds of documents.
+- **One machine, three repeats.** All four models ran on the same Apple M4 with 16 GB RAM, three
+  repeats each. The spread between repeats is in the result files; some differences between
+  models (for example the two 3B-class models on coverage) are within that spread.
+- **Non-determinism.** Runs send a seed to Ollama and are repeated, but model output still
+  varies. Treat the numbers as descriptions of those repeats on that machine.
+- **Hardware.** Speed depends heavily on the machine and on how Ollama runs (for example in
+  Docker on CPU versus natively).
+- **The ingest summary.** The app asks the model under test to write the feature summary at
+  ingest, so that summary is part of what each model is judged on.
+- **Search backend.** The runner uses a plain MongoDB, so retrieval uses the app's exact
+  fallback rather than the bundled stack's vector search.
+- **Cost.** Token counts are recorded, but a local model has no per-token cost, and no
+  hosted model has been run.
+
+### Running it yourself
+
+The runner never touches your wardenIQ settings or database. Each repeat uses its own
+throwaway `wardeniq_eval_*` database and drops it afterwards. It only uses a local Ollama,
+reads no API keys, and never downloads a model.
+
+It needs only two things: a running Ollama with the model and the embedding model already
+pulled, and a MongoDB it may create throwaway databases on. It does not need the wardenIQ
+app or the bundled database stack. On a laptop, Ollama in Docker shares the Docker VM's
+memory (often 8 GB) with every other container; if the model server is killed for lack of
+memory mid-run, the repeat is reported incomplete. For a baseline, stop the containers you do
+not need (`docker stop <name>` or `docker compose stop <service>`) and start them again
+afterwards. Do **not** use `docker compose down -v`, which deletes your data.
+
+```bash
+# a disposable MongoDB for the runner to create throwaway databases on
+docker run -d --rm --name wardeniq-eval-mongo -p 127.0.0.1:27099:27017 mongo:7
+
+ollama pull <model>          # the runner will not do this for you
+
+python scripts/eval_generation.py --model <model> --repeats 3 --call-timeout 1800 \
+  --mongo-uri 'mongodb://127.0.0.1:27099/?directConnection=true' \
+  --out docs/eval-results/generation-<model>.json
+```
+
+Exit status 0 means a valid baseline (every requested repeat finished and was complete); 1
+means at least one repeat failed, was incomplete or did not run (the file is still written);
+2 means bad options or a failed pre-flight check, and nothing was run. Check
+`aggregate.valid_baseline` and `aggregate.statement` in the result before using it, and read
+`aggregate.notes` for any replies that stopped at the output cap.
 
 ---
 
@@ -255,6 +536,14 @@ startup and secrets.
 | `ADMIN_PASSWORD` | _(empty)_ | Bootstrap password for the local `admin` login (the installer prompts for it). Set ⇒ replaces the `admin123` default. Blank ⇒ `admin123` with forced change on first login |
 | `COOKIE_SECURE` | `false` | Set `true` when serving over HTTPS |
 | `SESSION_TTL_SECONDS` / `OTP_TTL_SECONDS` | `604800` / `600` | Session lifetime (7 d) / code lifetime (10 min) |
+| `OTP_DEV_CODES` | `false` | Demo/evaluation only: without SMTP, log **and** show every sign-in code on the sign-in screen. Ignored when `APP_ENV=production`. Off ⇒ only the bootstrap admin's code is printed to the server log |
+| `AUTH_MAX_FAILURES_PER_ACCOUNT` / `AUTH_MAX_FAILURES_PER_IP` | `10` / `50` | Failed sign-in / code / reset attempts allowed per account and per client IP within `AUTH_FAILURE_WINDOW_SECONDS` before a lockout |
+| `AUTH_FAILURE_WINDOW_SECONDS` / `AUTH_LOCKOUT_SECONDS` | `900` / `900` | Failure-counting window and lockout duration (seconds) |
+| `RESET_CODE_MAX_PER_WINDOW` | `3` | Password-reset codes emailed to one account per `OTP_WINDOW_SECONDS` |
+| `MAX_UPLOAD_MB` | `25` | Largest accepted upload per file (HTTP 413 beyond); all files in one request together may total 4x this |
+| `MAX_ARCHIVE_UNCOMPRESSED_MB` | `200` | `.docx`/`.xlsx` uploads whose unpacked size (or compression ratio) exceeds this are rejected before parsing |
+| `MAX_REPO_ARCHIVE_MB` | `500` | Largest repository archive downloaded for scans/analysis (streamed to a temporary file) |
+| `TRUSTED_PROXIES` | _(empty)_ | Comma-separated reverse-proxy IPs/CIDRs whose `X-Forwarded-For` is trusted for client-IP rate limiting. Blank ⇒ the header is ignored, so behind a reverse proxy every user shares the proxy's address and one client's 50 failed attempts can lock sign-in for everyone: set this to the proxy's address when you run one |
 | `MONGO_URI` | _(empty = bundled DB)_ | Bring your own MongoDB; also settable in-app |
 | `MONGO_IMAGE` / `MONGOT_IMAGE` | pinned | Override the bundled MongoDB / mongot images. Bundled MongoDB must be **8.1+** because `config/mongod.conf` enables `useGrpcForSearch` for mongot's gRPC transport |
 | `APP_IMAGE` | `adlerqa/wardeniq:latest` _(set by the installer; empty = build from source)_ | Which published image tag to run. `latest` tracks every release; pin e.g. `adlerqa/wardeniq:0.2.0` to freeze a version |
@@ -267,6 +556,10 @@ strictness when a verdict is going in front of someone who will act on it.
 | Var | Default | Purpose |
 |---|---|---|
 | `COVERAGE_REVIEW_THRESHOLD` | `0.7` | Coverage verdicts at or below this confidence are flagged **needs review** in the result instead of being trusted outright. Raise it to send more borderline verdicts to a human |
+| `PR_SEMANTIC_MAPPING` | `on` | A PR with no epic key and no match tag is matched to a feature by embedding similarity (title, body and changed file paths against the project's feature documents). The result is stored on the PR as a **suggestion** with its method, score and margin over the runner-up; the PR stays unmapped for coverage. `off` skips it (and its one embedding call per unmapped PR) |
+| `PR_SEMANTIC_FLOOR` | `0.85` | Minimum similarity (mongot's `(1 + cosine) / 2` scale) for a semantic suggestion. Calibrated on a small synthetic set with `nomic-embed-text` (clear PRs scored 0.86-0.94, vague or off-topic ones at most 0.83); **other embedding models score on different ranges, so retune it if you change the embedding model** |
+| `PR_SEMANTIC_MARGIN` | `0.05` | The best feature must lead the runner-up by at least this much, otherwise the PR is ambiguous and gets no suggestion |
+| `PR_SEMANTIC_COUNTS_TOWARD_COVERAGE` | `false` | Keep it `false` unless you want fuzzy matches in your numbers: with the default, an epic key, ticket or match tag are the only things that map a PR for coverage, so existing figures do not change. `true` lets a semantic match map the PR with method `semantic` and the similarity as its confidence |
 | `MINDMAP_SAMPLES` | `1` | How many independent passes the Mind Map reviewer makes per batch. `2`+ keeps a `covered` verdict **only when every pass agrees**, cutting hallucination variance - at N x the tokens |
 | `WARDENIQ_REUSE_SIM_API` | `0.35` | Token-similarity floor for reusing an existing **API** test case (applied after method/endpoint/scenario must already match exactly) |
 | `WARDENIQ_REUSE_SIM_GENERAL` | `0.65` | Same floor for non-API cases. **Not empirically calibrated** - see the measured trade-off in `tests/eval/dataset.py` (`KNOWN_LIMITATION_PAIRS`) before changing it |

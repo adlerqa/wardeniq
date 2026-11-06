@@ -172,7 +172,7 @@ export default function Header() {
           </div>
 
           {/* Email / role */}
-          <div className="flex min-w-0 flex-col ">
+          <div className="flex min-w-0 flex-col items-start gap-1">
             <span
               id="user-email"
               className="
@@ -180,6 +180,7 @@ export default function Header() {
                 block
                 max-w-[155px]
                 truncate
+                pl-[9px]
                 text-[13px]
                 font-medium
                 leading-[18px]
@@ -192,7 +193,6 @@ export default function Header() {
               className="
                 rolebadge
                 viewer
-                mt-0.5
                 w-fit
                 text-[10px]
               "

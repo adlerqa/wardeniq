@@ -187,7 +187,8 @@ if (-not (Test-Path ".env")) { Copy-Item ".env.example" ".env"; Say "created .en
 else { Info ".env already exists - updating only the values you choose" }
 if (-not (Select-String -Path ".env" -Pattern '^APP_IMAGE=' -Quiet)) { SetEnv "APP_IMAGE" $AppImageRef }
 
-$curSecret = (Select-String -Path ".env" -Pattern '^APP_SECRET=(.*)$').Matches.Groups[1].Value
+$secretLine = Select-String -Path ".env" -Pattern '^APP_SECRET=(.*)$' | Select-Object -First 1
+$curSecret = if ($secretLine) { $secretLine.Matches[0].Groups[1].Value } else { "" }
 if ($curSecret -in @("", "change-me-in-production", "change-me", "changeme", "mongoT-qa-dev-key-change-me")) {
     SetEnv "APP_SECRET" (Rand 48); Info "generated a strong APP_SECRET"
 }

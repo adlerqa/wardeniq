@@ -2,7 +2,7 @@
 browsing, connecting a repo (with webhook registration), listing/branches/watch/sync,
 deleting a repo, and GitHub rate-limit/my-repos lookups.
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 8/20).
+Extracted from app/main.py (docs/dev/REFACTOR_PLAN.md section 14, Phase 6, router 8/20).
 Handler bodies are unchanged aside from the ``@app.`` -> ``@router.`` decorator swap.
 
 DOCUMENTED DEVIATION — PR-workflow routes NOT moved here despite the "repos_prs"
@@ -169,6 +169,33 @@ class RepoIn(BaseModel):
     default_branch: str = "main"
 
 
+def _require_github_repo(client, owner: str, name: str) -> None:
+    """Raise a clean HTTPException unless GitHub confirms the repository is reachable.
+
+    Runs BEFORE anything is persisted or watched. Failures are kept distinct instead
+    of all meaning "not found": a 404 (GitHub also answers 404 for a private repo the
+    token cannot see), auth, forbidden, rate limiting and network/server errors each
+    get their own status, via the shared _ext_error mapping. A provider 401 comes back
+    as 400 there, because the UI treats any 401 as an expired login session.
+    """
+    import httpx
+    try:
+        client.get_repo(owner, name)
+    except httpx.HTTPStatusError as e:
+        resp = e.response
+        status = resp.status_code
+        if status == 404:
+            raise HTTPException(
+                404, f"GitHub repository {owner}/{name} was not found, or the "
+                     "configured token cannot access it — check the URL and the PAT")
+        if status == 403 and (resp.headers.get("x-ratelimit-remaining") == "0"
+                              or "retry-after" in resp.headers):
+            raise HTTPException(429, "GitHub: rate limited — please try again shortly")
+        raise _ext_error("GitHub", e)
+    except Exception as e:  # noqa: BLE001
+        raise _ext_error("GitHub", e)
+
+
 @router.post("/api/projects/{pid}/repos")
 def add_repo(pid: str, body: RepoIn, request: Request):
     provider = (body.git_provider or "github").lower()
@@ -179,6 +206,7 @@ def add_repo(pid: str, body: RepoIn, request: Request):
         path = body.repo_full_name or body.url or ""
         try:
             full = gitlab_mod.parse_repo_url(path) if "://" in path or path.endswith(".git") else path
+            full = gitlab_mod.validate_project_path(full)
         except ValueError as e:
             raise HTTPException(400, str(e))
         if "/" not in full:
@@ -209,6 +237,9 @@ def add_repo(pid: str, body: RepoIn, request: Request):
                 if not token:
                     raise HTTPException(400, "GitHub PAT not configured for this project")
                 client = github.GitHub(token, GITHUB_API)
+                # Not swallowed like the webhook calls below: reject a missing repo
+                # before any webhook, persistence or PR sync (issue #126).
+                _require_github_repo(client, owner, name)
                 # Reuse existing webhook for the same target_url if one exists.
                 existing = None
                 try:

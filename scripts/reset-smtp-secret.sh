@@ -27,13 +27,12 @@ const s = db.settings.findOne({ _id: "app" }) || {};
 print("Before:  smtp_host=" + JSON.stringify(s.smtp_host) +
       "  smtp_user=" + JSON.stringify(s.smtp_user) +
       "  smtp_pass_set=" + Boolean(s.smtp_pass_enc));
-// Clear the whole SMTP block. You will re-enter all of it in Configuration ->
-// Email (re-encrypts with the current APP_SECRET).
+// Clear only the stored password. You re-enter it in Configuration -> Email
+// (re-encrypts with the current APP_SECRET); host/port/user/from stay as they are.
 const res = db.settings.updateOne(
   { _id: "app" },
-  { $unset: { smtp_host: "", smtp_port: "", smtp_user: "",
-              smtp_from: "", smtp_pass_enc: "", smtp_tls: "", smtp_ssl: "" } });
-print("Cleared SMTP config (matched " + res.matchedCount + ", modified " + res.modifiedCount + ").");
+  { $unset: { smtp_pass_enc: "" } });
+print("Cleared SMTP password (matched " + res.matchedCount + ", modified " + res.modifiedCount + ").");
 const s2 = db.settings.findOne({ _id: "app" }) || {};
 print("After:   smtp_host=" + JSON.stringify(s2.smtp_host) +
       "  smtp_pass_set=" + Boolean(s2.smtp_pass_enc));

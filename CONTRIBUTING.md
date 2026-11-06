@@ -65,9 +65,9 @@ printed to the server log — `docker logs warden-app`). Configure SMTP under
 
 ## Repository layout
 
-See `PROJECT_CONTEXT.md` §3 for the full annotated breakdown. Highlights
+See `docs/dev/PROJECT_CONTEXT.md` §3 for the full annotated breakdown. Highlights
 (updated for the backend restructure — `app/main.py` and `app/store.py` were
-split into packages; behavior is unchanged, see REFACTOR_PLAN.md):
+split into packages; behavior is unchanged, see docs/dev/REFACTOR_PLAN.md):
 
 - `app/main.py` (201 lines) — app assembly only: `FastAPI()`, middleware
   registration, the 20 `api/routes/` router includes. **No route handlers
@@ -124,7 +124,7 @@ reason.
   model, update the `_ensure_*` helpers in `app/store/base.py` so fresh
   installs and existing databases converge, and document the change in
   `CHANGELOG.md`.
-- **Keep diffs small and compatible.** wardenIQ is `v0.2.3`; users are
+- **Keep diffs small and compatible.** wardenIQ is `v0.3.0`; users are
   running it. Prefer additive changes over breaking ones.
 - **Do not commit generated artifacts, `.env` files, credentials, or
   vendored model weights.**

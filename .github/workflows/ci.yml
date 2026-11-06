@@ -42,6 +42,18 @@ jobs:
       - name: Run unit + API + RBAC tests
         run: pytest -m "not dbintegration"
 
+      - name: Evaluation harness gate (deterministic, no model/database needed)
+        # tests/test_eval_harness.py (part of the pytest run above) already exercises
+        # this same logic; this step additionally proves the documented CLI entry
+        # point itself (see docs/architecture.md) works end-to-end and is a real merge
+        # gate — issue #42's original "wire the leakage and groundedness checks into
+        # CI as regression gates". Only the offline sections (adversarial grounding
+        # probes + dedup pairs) run here: no LLM call, no database, expected to score
+        # 1.0. --coverage (needs a real, reachable LLM) is deliberately NOT run in CI —
+        # see docs/architecture.md's "Measuring accuracy" section — and stays a manual/
+        # on-demand benchmark, not a merge gate.
+        run: python -m tests.eval.run_eval --probes --dedup
+
   # Same store.py surface, but against a real MongoDB — catches things the
   # mocked unit tests structurally can't (real unique-index violations, actual
   # query/update behavior, ObjectId edge cases, encrypted-settings round trip).
@@ -54,6 +66,9 @@ jobs:
   # verification step, not a CI one, per CLAUDE.md's architecture notes.
   db-integration-tests:
     runs-on: ubuntu-latest
+    # A healthy run takes ~1 minute; this job has stalled for 8-14 minutes on some runs. Fail fast
+    # instead of burning the default 6 hours, and let the diagnostics step below explain why.
+    timeout-minutes: 8
     services:
       mongo:
         image: mongo:7
@@ -81,7 +96,22 @@ jobs:
       - name: Run DB integration tests
         env:
           MONGO_TEST_URI: mongodb://localhost:27017
-        run: pytest -m dbintegration -v
+        # -o addopts="" drops pytest.ini's -q so -v really prints each test name as it starts (the
+        # last name in a stalled run is the stuck test); faulthandler_timeout dumps every thread's
+        # stack once a single test exceeds 90s, which shows exactly where it is blocked.
+        run: pytest -m dbintegration -v -o addopts="" -o faulthandler_timeout=90 --durations=10
+
+      - name: Diagnostics (runner + mongo service state)
+        if: failure() || cancelled()
+        run: |
+          date -u; uptime; free -m; df -h / | tail -1
+          docker ps -a
+          for c in $(docker ps -aq); do
+            docker inspect -f '--- {{.Name}} status={{.State.Status}} oom={{.State.OOMKilled}} exit={{.State.ExitCode}}' "$c"
+            docker logs --tail 80 "$c" 2>&1 | cut -c1-300
+          done
+          docker stats --no-stream || true
+          sudo dmesg 2>/dev/null | tail -30 || true
 
   # frontend/package.json defines test/lint/check scripts; nothing ran them in
   # CI before this job, so a regression in frontend/src or frontend/tests

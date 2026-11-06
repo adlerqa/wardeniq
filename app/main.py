@@ -1,4 +1,5 @@
 import threading
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException  # noqa: F401  (HTTPException: re-exported
                                                             # for tests/test_rbac_project_access.py's
@@ -10,7 +11,7 @@ from fastapi import FastAPI, HTTPException  # noqa: F401  (HTTPException: re-exp
                                                             # so re-exporting it is safe.
 from llm import TEST_TYPES
 
-# Phase 1 (REFACTOR_PLAN.md): env-derived config constants and the true
+# Phase 1 (docs/dev/REFACTOR_PLAN.md): env-derived config constants and the true
 # application singletons (store, SYNC, embedder-placeholder) now live in
 # core/config.py and core/state.py respectively. Explicit imports (not `*`)
 # so ruff's dead-import signal keeps working. MONGO_URI, DB_NAME, EMBED_DIM,
@@ -34,18 +35,37 @@ from core.state import store  # noqa: F401
 # every route shape, parameter and model to anonymous callers. Local/dev keeps them.
 _docs_kwargs = ({"docs_url": None, "redoc_url": None, "openapi_url": None}
                 if IS_PRODUCTION else {})
+
+
+# Startup sequence (issue #198): formerly two `@app.on_event("startup")`
+# handlers, deprecated in FastAPI. `_startup`/`_start_poller` are defined
+# below and are only resolved when the lifespan runs — after this module
+# has fully imported — so the forward references are safe. Same threads,
+# same order as before; there is no shutdown work (the old handlers had
+# none either).
+@asynccontextmanager
+async def lifespan(app):
+    _startup()
+    _start_poller()
+    yield
+
+
 app = FastAPI(title="wardenIQ — Test Intelligence Platform", version=VERSION,
-              **_docs_kwargs)
+              lifespan=lifespan, **_docs_kwargs)
 
 
-# Phase 2 (REFACTOR_PLAN.md): the InvalidId exception + its handler now live in
+# Phase 2 (docs/dev/REFACTOR_PLAN.md): the InvalidId exception + its handler now live in
 # app/core/exceptions.py. Registration stays here — it needs the `app` instance.
-from core.exceptions import _InvalidId, invalid_id_handler  # noqa: E402
+from core.exceptions import (  # noqa: E402
+    MigrationInProgress, _InvalidId, invalid_id_handler, migration_in_progress_handler,
+)
 
 app.exception_handler(_InvalidId)(invalid_id_handler)
+# #111: any NEW background job is refused with a clean 409 while a database migration runs.
+app.exception_handler(MigrationInProgress)(migration_in_progress_handler)
 
 
-# Phase 2 (REFACTOR_PLAN.md): RBAC, the auth gateway + security-headers
+# Phase 2 (docs/dev/REFACTOR_PLAN.md): RBAC, the auth gateway + security-headers
 # middleware, project-access-control helpers, and the principal-resolver
 # registry now live in app/core/security.py. The audit-log writer lives in
 # app/core/audit.py. Bootstrap (secret checks, DB connect/index retry loop,
@@ -68,7 +88,7 @@ from core.security import (  # noqa: E402
 from core.security import _filter_projects_for, _allowed_project_ids, _require_project  # noqa: E402,F401
 # Re-exported for tests that reach these via `main.<name>` even though main.py's own
 # code no longer calls them directly (the logic that used to live here — auth_gateway
-# — now lives entirely in core/security.py). See refactor-baseline/main-namespace-refs.txt.
+# — now lives entirely in core/security.py).
 from core.security import (  # noqa: E402,F401
     VIEWER_POST_OK, _is_public, _min_role, _target_project_for_path,
     _user_all_projects, _user_can_access_project,
@@ -88,7 +108,7 @@ register_principal_resolver("/api/", bearer_token_principal)
 app.middleware("http")(auth_gateway)
 app.middleware("http")(security_headers)
 
-# Phase 6 (REFACTOR_PLAN.md): routers extracted from main.py. Each router file's
+# Phase 6 (docs/dev/REFACTOR_PLAN.md): routers extracted from main.py. Each router file's
 # handlers are byte-identical to their old main.py bodies (only the decorator changed
 # from @app. to @router.); include_router here preserves the same paths/behavior.
 from api.routes import documents as _documents_routes  # noqa: E402
@@ -111,7 +131,7 @@ from api.routes import code_coverage as _code_coverage_routes  # noqa: E402
 from api.routes import develop as _develop_routes  # noqa: E402
 from api.routes import webhooks as _webhooks_routes  # noqa: E402
 from api.routes import system as _system_routes  # noqa: E402
-# static_spa.py must be included LAST (REFACTOR_PLAN.md section 7/14) — it's
+# static_spa.py must be included LAST (docs/dev/REFACTOR_PLAN.md section 7/14) — it's
 # where the /assets mount + SPA fallback routes sat at the end of the
 # original main.py.
 from api.routes import static_spa as _static_spa_routes  # noqa: E402
@@ -142,7 +162,7 @@ app.include_router(_static_spa_routes.router)  # LAST — see import comment abo
 # the real `app` instance here instead.
 _static_spa_routes.mount_assets(app)
 
-# Re-exported for tests that reach these via `main.<name>` (REFACTOR_PLAN.md section
+# Re-exported for tests that reach these via `main.<name>` (docs/dev/REFACTOR_PLAN.md section
 # 2.4; Phase 6, router 12/20: api/routes/test_import.py). Not used by main.py itself
 # post-refactor — do not remove without updating tests/test_sheet_import_main_helpers.py.
 from api.routes.test_import import (  # noqa: E402,F401
@@ -151,14 +171,13 @@ from api.routes.test_import import (  # noqa: E402,F401
 from workers.repo_scan_worker import _promote_imported_row_to_feature  # noqa: E402,F401
 
 
-# Phase 4 (REFACTOR_PLAN.md): the stale-job sweeper and the imported-sheet
+# Phase 4 (docs/dev/REFACTOR_PLAN.md): the stale-job sweeper and the imported-sheet
 # project-wide re-analysis scheduler now live in app/background/schedulers.py.
 # Re-imported here because `_startup` (below) starts both as daemon threads —
 # same wiring, same order, same count as before the move.
 from background.schedulers import _import_reanalysis_scheduler, _stale_job_sweeper  # noqa: E402
 
 
-@app.on_event("startup")
 def _startup():
     threading.Thread(target=bootstrap, daemon=True).start()
     threading.Thread(target=_stale_job_sweeper, daemon=True).start()
@@ -178,14 +197,14 @@ def _targets_from_focus(focus: dict, total: int = GEN_TOTAL) -> dict:
     return {t: round(f[t] / s * total) for t in TEST_TYPES}
 
 
-# Phase 3 (REFACTOR_PLAN.md): the "validator" job now lives in
+# Phase 3 (docs/dev/REFACTOR_PLAN.md): the "validator" job now lives in
 # app/workers/validator_worker.py. Importing it is required even though
 # nothing here binds a name from it: the import itself is what runs
 # `JOB_WORKERS["validator"] = _validator_worker` as a side effect.
 from workers import validator_worker  # noqa: E402,F401
 
 
-# Phase 3 (REFACTOR_PLAN.md): test-case generation, corpus ingestion, the
+# Phase 3 (docs/dev/REFACTOR_PLAN.md): test-case generation, corpus ingestion, the
 # embedding-model switch, and DB migration job workers now live in
 # app/workers/generation.py. Importing it is required even though nothing
 # here binds a name from it: the import itself is what runs
@@ -202,7 +221,6 @@ from workers import generation  # noqa: E402,F401
 from background.poller import poller  # noqa: E402
 
 
-@app.on_event("startup")
 def _start_poller():
     threading.Thread(target=poller, daemon=True).start()
 

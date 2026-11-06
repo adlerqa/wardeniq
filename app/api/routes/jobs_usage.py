@@ -2,7 +2,7 @@
 model switch (which launches a re-embed migration job), and the usage/billing
 dashboard.
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 15/20).
+Extracted from app/main.py (docs/dev/REFACTOR_PLAN.md section 14, Phase 6, router 15/20).
 Handler bodies are unchanged aside from the ``@app.`` -> ``@router.`` decorator swap.
 
 These 6 routes + 1 model were one contiguous block in the original main.py; no
@@ -23,7 +23,7 @@ from core.config import GEN_TOTAL
 from core.deps import _ext_error, current_ollama_url
 from core.security import _allowed_project_ids, _current_user, _require_job_project
 from core.state import store
-from workers.registry import JOB_WORKERS, launch_job
+from workers.registry import JOB_RETRY_HANDLERS, JOB_WORKERS, RETRY_REQUIRES_HANDLER, launch_job
 
 router = APIRouter()
 
@@ -40,11 +40,16 @@ def jobs_list(request: Request, status: str | None = None, type: str | None = No
 
 
 @router.get("/api/usage")
-def usage_dashboard(project_id: str | None = None):
+def usage_dashboard(request: Request, project_id: str | None = None):
     """LLM/embedding token usage + cost: totals, per-model, per-project, and
-    recent processes. Cost is priced live from the current Settings price table."""
+    recent processes. Cost is priced live from the current Settings price table.
+    Users limited to some projects only see usage of those projects."""
+    allowed = _allowed_project_ids(_current_user(request))
+    if project_id and allowed is not None and project_id not in allowed:
+        raise HTTPException(403, "you don't have access to this project")
     prices = store.get_settings().get("llm_prices") or {}
-    return store.usage_summary(project_id=project_id, prices=prices)
+    return store.usage_summary(project_id=project_id, prices=prices,
+                               project_ids=None if project_id else allowed)
 
 
 class CostEstimateIn(BaseModel):
@@ -86,16 +91,22 @@ def switch_embedding(body: EmbeddingIn):
     if not model:
         raise HTTPException(400, "an embedding model name is required")
     s = store.get_settings()
-    # reuse the stored key if the caller didn't supply a new one
-    key = (body.api_key or "").strip() or (
-        crypto.decrypt(s.get("embed_api_key_enc", "")) if s.get("embed_api_key_enc") else "")
+    base_url = (body.base_url or "").strip()
+    # Reuse the stored key only when the caller didn't supply a new one AND the key
+    # would go to the same destination it was saved for (same provider + endpoint).
+    # A stored credential is never forwarded to a different provider or base URL.
+    same_target = (provider == (s.get("embed_provider") or "ollama")
+                   and base_url == (s.get("embed_base_url") or "").strip())
+    supplied = (body.api_key or "").strip()
+    reuse_stored = not supplied and same_target and bool(s.get("embed_api_key_enc"))
+    key = supplied or (crypto.decrypt(s.get("embed_api_key_enc", "")) if reuse_stored else "")
     region = (body.region or "").strip() if body.region is not None else s.get("embed_region", "")
     # Bedrock authenticates via region + (IAM role or access:secret in api_key),
     # so it doesn't require a standalone API key the way other hosted providers do.
     if provider not in ("ollama", "bedrock") and not key:
         raise HTTPException(400, f"{provider} needs an API key")
     trial = Embedder(provider=provider, model=model, api_key=key,
-                     base_url=(body.base_url or "").strip(), ollama_url=current_ollama_url(),
+                     base_url=base_url, ollama_url=current_ollama_url(),
                      region=region)
     # Probe: confirms connectivity/auth AND measures the true output dimension.
     try:
@@ -105,10 +116,14 @@ def switch_embedding(body: EmbeddingIn):
     if not dim or dim < 8:
         raise HTTPException(400, "embedding provider returned an invalid vector")
     upd = {"embed_provider": provider, "embed_model": model,
-           "embed_base_url": (body.base_url or "").strip(),
+           "embed_base_url": base_url,
            "embed_region": region, "embed_dim": int(dim)}
     if body.api_key is not None:
         upd["embed_api_key_enc"] = crypto.encrypt(body.api_key) if body.api_key else ""
+    elif not same_target:
+        # Destination changed without a new key: drop the old one so it is never
+        # sent to the new endpoint by later embedding calls.
+        upd["embed_api_key_enc"] = ""
     store.save_settings(upd)
     jid = launch_job("reembed", {"dim": int(dim)},
                      label=f"Re-embed all vectors → {provider}/{model} ({dim}-d)")
@@ -164,9 +179,18 @@ def job_stream(jid: str, request: Request):
 
 
 @router.post("/api/jobs/{jid}/retry")
-def job_retry(jid: str, request: Request):
+def job_retry(jid: str, request: Request, override_busy: bool = False):
     j = _require_job_project(request, jid)
     if j["type"] not in JOB_WORKERS:
+        raise HTTPException(400, f"job type '{j['type']}' cannot be retried")
+    # Job types with launch preconditions (a database migration) are retried through the
+    # same checks as their normal entry point, never by calling launch_job() directly --
+    # otherwise a retry would bypass the idle check and the one-migration rule (#111).
+    handler = JOB_RETRY_HANDLERS.get(j["type"])
+    if handler:
+        return {"job_id": handler(request, j, override_busy)}
+    if j["type"] in RETRY_REQUIRES_HANDLER:
+        # Fail closed: never fall back to re-launching a migration's stored params.
         raise HTTPException(400, f"job type '{j['type']}' cannot be retried")
     nid = launch_job(j["type"], j.get("params", {}), label=j.get("label", "") + " (retry)",
                      project_id=j.get("project_id"), feature_id=j.get("feature_id"))

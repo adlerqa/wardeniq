@@ -18,6 +18,10 @@ def client(monkeypatch):
         "detail": "mongodb://private-user:secret@internal-host:27017 raw driver error",
     })
     monkeypatch.setattr(routes.store, "has_users", lambda: False)
+    # Sign-in throttling bookkeeping would otherwise reach for a real database.
+    monkeypatch.setattr(routes.store, "throttle_locked_for", lambda key: 0)
+    monkeypatch.setattr(routes.store, "throttle_record_failure", lambda *a, **k: 1)
+    monkeypatch.setattr(routes.store, "throttle_clear", lambda key: None)
     return TestClient(main.app)
 
 

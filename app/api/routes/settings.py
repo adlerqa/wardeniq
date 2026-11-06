@@ -2,7 +2,7 @@
 LLM connectivity test, audit-log listing, DB status/config/migrate, and the SMTP/S3
 connectivity tests.
 
-Extracted from app/main.py (REFACTOR_PLAN.md section 14, Phase 6, router 6/20).
+Extracted from app/main.py (docs/dev/REFACTOR_PLAN.md section 14, Phase 6, router 6/20).
 Handler bodies are unchanged aside from the ``@app.`` -> ``@router.`` decorator swap.
 
 This is one contiguous domain in the original main.py (get_settings through s3_test),
@@ -48,9 +48,10 @@ from core.deps import (
     current_llm, current_ollama_url, current_poll_interval,
 )
 from core.logging_setup import get_logger
+from core.security import _current_user
 from core.state import store
-from store.base import TEXT_INDEX, VECTOR_INDEX
-from workers.registry import launch_job
+from store.base import SELF_TARGET_MSG, TEXT_INDEX, VECTOR_INDEX
+from workers.registry import JOB_RETRY_HANDLERS, launch_job, migration_blocker
 
 log = get_logger("settings")
 
@@ -190,24 +191,49 @@ class SettingsIn(BaseModel):
     s3_prefix: str | None = None
 
 
+def _changed(new, stored) -> bool:
+    """True when a submitted value differs from the stored one (None = not sent)."""
+    return new is not None and str(new).strip() != str(stored or "").strip()
+
+
+def _secret_target_changed(body: SettingsIn, s: dict) -> dict:
+    """Per stored secret: has the destination it is sent to changed in this request?
+
+    A stored credential is only ever reused for the same destination it was saved
+    for. When the destination changes (provider/endpoint/host) and no new secret is
+    supplied, the stored one is neither used for validation nor kept afterwards."""
+    llm_target = (
+        _changed(body.llm_provider, s.get("llm_provider", "ollama"))
+        or _changed(body.llm_base_url, s.get("llm_base_url", ""))
+        # The LLM key is also sent to the Ollama endpoint (secured remote Ollama).
+        or (not _ENV_OLLAMA and _changed(body.ollama_url, s.get("ollama_url", "")))
+    )
+    return {
+        "llm": llm_target,
+        "jira": _changed(body.jira_base_url, s.get("jira_base_url", "")),
+        "smtp": _changed(body.smtp_host, s.get("smtp_host", "")),
+    }
+
+
 def _merged_settings_dict(body: SettingsIn):
     s = store.get_settings()
+    moved = _secret_target_changed(body, s)
     return {
         "llm_provider": body.llm_provider if body.llm_provider is not None else s.get("llm_provider", "ollama"),
         "llm_base_url": body.llm_base_url.strip() if body.llm_base_url is not None else s.get("llm_base_url", ""),
         "llm_model": body.llm_model if body.llm_model is not None else s.get("llm_model", GEN_MODEL),
         "llm_region": body.llm_region.strip() if body.llm_region is not None else s.get("llm_region", ""),
         "llm_api_key": body.llm_api_key.strip() if (body.llm_api_key is not None and body.llm_api_key.strip() != "") else (
-            crypto.decrypt(s.get("llm_api_key_enc", "")) if s.get("llm_api_key_enc") else ""
+            crypto.decrypt(s.get("llm_api_key_enc", "")) if (s.get("llm_api_key_enc") and not moved["llm"]) else ""
         ),
         "jira_base_url": body.jira_base_url.strip() if body.jira_base_url is not None else s.get("jira_base_url", ""),
         "jira_email": body.jira_email.strip() if body.jira_email is not None else s.get("jira_email", ""),
-        "jira_api_token": body.jira_api_token.strip() if (body.jira_api_token is not None and body.jira_api_token.strip() != "") else _jira_token_status(s)[2],
+        "jira_api_token": body.jira_api_token.strip() if (body.jira_api_token is not None and body.jira_api_token.strip() != "") else ("" if moved["jira"] else _jira_token_status(s)[2]),
         "smtp_host": body.smtp_host.strip() if body.smtp_host is not None else s.get("smtp_host", ""),
         "smtp_port": body.smtp_port if body.smtp_port is not None else s.get("smtp_port", ""),
         "smtp_user": body.smtp_user.strip() if body.smtp_user is not None else s.get("smtp_user", ""),
         "smtp_pass": body.smtp_pass if (body.smtp_pass is not None and body.smtp_pass != "") else (
-            crypto.decrypt(s.get("smtp_pass_enc", "")) if s.get("smtp_pass_enc") else ""
+            crypto.decrypt(s.get("smtp_pass_enc", "")) if (s.get("smtp_pass_enc") and not moved["smtp"]) else ""
         ),
         "smtp_from": body.smtp_from.strip() if body.smtp_from is not None else s.get("smtp_from", ""),
         "smtp_tls": body.smtp_tls if body.smtp_tls is not None else s.get("smtp_tls", True),
@@ -235,6 +261,12 @@ def put_settings(body: SettingsIn, request: Request):
         body.llm_api_key is not None or
         body.llm_region is not None
     )
+    if (llm_updated and s.get("llm_api_key_enc") and not merged["llm_api_key"]
+            and merged["llm_provider"] not in ("ollama", "bedrock")):
+        # The stored key is not reused for a different provider/endpoint.
+        raise HTTPException(status_code=400, detail=(
+            "LLM validation failed: the provider or endpoint changed — please "
+            "re-enter the API key."))
     if llm_updated:
         # Validate against the Ollama URL being submitted now (if any), not the stale
         # saved one — otherwise a combined provider+endpoint change pings the old host.
@@ -270,6 +302,11 @@ def put_settings(body: SettingsIn, request: Request):
                 # forgot to fill in fields you can see are already there", it's "the
                 # token you already entered can't be used anymore, re-enter it".
                 has_enc, readable, _ = _jira_token_status(s)
+                if (body.jira_api_token is None or body.jira_api_token.strip() == "") and has_enc \
+                        and _secret_target_changed(body, s)["jira"]:
+                    raise HTTPException(status_code=400, detail=(
+                        "Jira validation failed: the Jira base URL changed — please "
+                        "re-enter the API token for the new site."))
                 if (body.jira_api_token is None or body.jira_api_token.strip() == "") and has_enc and not readable:
                     raise HTTPException(status_code=400, detail=(
                         "Jira validation failed: the saved API token can no longer be "
@@ -322,6 +359,15 @@ def put_settings(body: SettingsIn, request: Request):
             raise HTTPException(status_code=400, detail=f"SMTP validation failed: {err}")
 
     upd = {}
+    moved = _secret_target_changed(body, s)
+    # Destination changed without a new secret: drop the stored one so it can never be
+    # sent to the new provider/endpoint/host by later calls.
+    if moved["llm"] and not (body.llm_api_key or "").strip():
+        upd["llm_api_key_enc"] = ""
+    if moved["jira"] and not (body.jira_api_token or "").strip():
+        upd["jira_api_token_enc"] = ""
+    if moved["smtp"] and not (body.smtp_pass or ""):
+        upd["smtp_pass_enc"] = ""
     if body.llm_provider is not None:
         upd["llm_provider"] = body.llm_provider
     if body.llm_base_url is not None:
@@ -425,7 +471,11 @@ def ollama_models():
     Ollama URL + the saved LLM token (for a secured/remote Ollama). Best-effort."""
     url = current_ollama_url().rstrip("/")
     s = store.get_settings()
-    key = crypto.decrypt(s.get("llm_api_key_enc", "")) if s.get("llm_api_key_enc") else ""
+    # The saved LLM key is only sent when it IS an Ollama token (provider=ollama);
+    # a hosted provider's key never goes to the Ollama endpoint.
+    key = (crypto.decrypt(s.get("llm_api_key_enc", ""))
+           if s.get("llm_api_key_enc") and (PROVIDER_LOCK or s.get("llm_provider", "ollama")) == "ollama"
+           else "")
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     try:
         import httpx
@@ -769,14 +819,27 @@ def set_db_config(body: DbConfigIn, request: Request):
 class DbMigrateIn(BaseModel):
     target_uri: str | None = None
     overwrite: bool | None = False
+    # #111: start even though something else is running (see workers.registry's
+    # migration_blocker()) -- accepts a best-effort snapshot. Separate from `overwrite`,
+    # which answers a different question (may the TARGET's existing data be replaced?).
+    override_busy: bool | None = False
 
 
-@router.post("/api/db-migrate")
-def db_migrate(body: DbMigrateIn, request: Request):
-    """Copy ALL data from the current database into a target MongoDB and point
-    MONGO_URI at it (admin-only). Runs as a background job; the app stays on the
-    current DB until the user restarts, so a partial copy never loses data."""
-    uri = (body.target_uri or "").strip()
+def _preflight_migration(uri, overwrite: bool, override_busy: bool, via_retry: bool = False) -> str:
+    """Everything that must hold before a migration job may be launched. Shared by EVERY
+    way of starting one (POST /api/db-migrate and the retry of a failed migrate job), so
+    the checks cannot be skipped by choosing a different entry point (#111). Returns the
+    cleaned URI; raises HTTPException otherwise.
+
+    The idle / one-migration-at-a-time rules are enforced again, atomically with the job
+    creation, inside workers.registry.launch_job() -- the check here is the cheap
+    fast-fail that avoids a long capability probe when the answer would be "no" anyway.
+    Likewise the "target is this very database" rule is enforced again inside
+    Store.migrate_to() and verify_migration(), where the data would actually be erased.
+
+    `overwrite` is the caller's explicit, per-request choice to replace data already in the
+    target; it is never taken from a stored job (see _retry_migration)."""
+    uri = (uri or "").strip()
     if not uri:
         raise HTTPException(400, "Enter the target MongoDB connection string.")
     if not (uri.startswith("mongodb://") or uri.startswith("mongodb+srv://")):
@@ -784,6 +847,9 @@ def db_migrate(body: DbMigrateIn, request: Request):
     if not _env_file_writable():
         raise HTTPException(500, f"Cannot write to the config file ({ENV_FILE_PATH}); the ./.env "
                                  "bind-mount in docker-compose.app.yml must be present and writable.")
+    blocker = migration_blocker(override_busy)
+    if blocker:
+        raise HTTPException(409, blocker)
     # The target must be reachable AND search-capable — otherwise the copy would land
     # in a database the app can't actually run on.
     probe = _probe_mongo(uri, dim=store.dim)
@@ -792,9 +858,29 @@ def db_migrate(body: DbMigrateIn, request: Request):
                                  "Nothing copied.")
     if not probe["search_ok"]:
         raise HTTPException(400, f"{probe['detail']} Migration cancelled — nothing copied.")
+    # The target must be a DIFFERENT database. A migration with `overwrite` deletes the
+    # target's documents before copying, so a target that is this very database (however its
+    # URI is spelled -- this is proven, not guessed from the string) would erase the data.
+    # Fails closed: if it cannot be determined, nothing is copied.
+    try:
+        if store.target_is_this_database(uri):
+            raise HTTPException(400, SELF_TARGET_MSG)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        log.error("[db-config] could not confirm the target is a different database: %r", e)
+        raise HTTPException(400, "Couldn't confirm that the target is a different database "
+                                 "from the one wardenIQ is using, so nothing was copied "
+                                 "(details in the server logs).")
     # Guard against clobbering a target that already has data (unless the caller insists).
     try:
-        if not body.overwrite and store.target_has_data(uri):
+        if not overwrite and store.target_has_data(uri):
+            if via_retry:
+                raise HTTPException(409, "The target database already contains data (for "
+                                         "example from the earlier attempt). A retry never "
+                                         "replaces existing data, so to replace it start the "
+                                         "switch again from Configuration > Database and "
+                                         "choose to replace it.")
             raise HTTPException(409, "The target database already contains data. Re-run with "
                                      "'overwrite' to replace it, or pick an empty database.")
     except HTTPException:
@@ -804,10 +890,60 @@ def db_migrate(body: DbMigrateIn, request: Request):
         raise HTTPException(400, "Couldn't inspect the target database — check the "
                                  "connection string, credentials and network access "
                                  "(details in the server logs)")
-    jid = launch_job("migrate", {"target_uri": uri, "overwrite": bool(body.overwrite)},
-                     label="Migrate data to a new database")
-    _audit(request, "db.migrate.started", detail="migration to a new MongoDB started")
+    return uri
+
+
+def _start_migration(request: Request, uri, overwrite: bool, override_busy: bool,
+                     label: str, via_retry: bool = False) -> str:
+    """Preflight, then launch. launch_job() makes the final admission decision atomically
+    with creating the job row (raising MigrationBlocked -> 409 if another migration or,
+    without override_busy, any other job is running) and writes the audit entry first, so
+    the audit insert cannot land mid-copy and count as the source changing."""
+    uri = _preflight_migration(uri, overwrite, override_busy, via_retry=via_retry)
+    return launch_job(
+        "migrate",
+        {"target_uri": uri, "overwrite": bool(overwrite), "override_busy": bool(override_busy)},
+        label=label,
+        before_start=lambda: _audit(request, "db.migrate.started",
+                                    detail="migration to a new MongoDB started"))
+
+
+@router.post("/api/db-migrate")
+def db_migrate(body: DbMigrateIn, request: Request):
+    """Copy ALL data from the current database into a target MongoDB and point
+    MONGO_URI at it (admin-only). Runs as a background job; the app stays on the
+    current DB until the user restarts, so a partial copy never loses data."""
+    jid = _start_migration(request, body.target_uri, bool(body.overwrite),
+                           bool(body.override_busy), label="Migrate data to a new database")
     return {"job_id": jid}
+
+
+def _retry_migration(request: Request, job: dict, override_busy: bool = False) -> str:
+    """POST /api/jobs/{id}/retry for a `migrate` job (registered in JOB_RETRY_HANDLERS).
+
+    A retry is a NEW migration request, so it goes through exactly the same preflight and
+    admission as POST /api/db-migrate: admin only, capability probe, "not this very
+    database", non-empty-target guard, idle check, never two migrations at once. It keeps
+    the original target and nothing else that was a choice:
+      * `override_busy` (accepting a best-effort snapshot) must be repeated explicitly
+        (`?override_busy=true`) for each attempt;
+      * `overwrite` (replacing the target's existing data) is NEVER re-applied. It was a
+        destructive confirmation for one particular attempt against whatever the target held
+        then; the target may hold something else now (another application's data, or --
+        because a migration copies the jobs table -- this very database), and a retry button
+        offers no chance to confirm again. A retry therefore always runs with overwrite off:
+        a non-empty target is refused and the user is told to start the switch again from
+        Configuration > Database, where replacing data is asked for explicitly."""
+    user = _current_user(request)
+    if user and user.get("role") != "admin":
+        raise HTTPException(403, "Only an admin can start a database migration.")
+    params = job.get("params") or {}
+    label = (job.get("label") or "Migrate data to a new database") + " (retry)"
+    return _start_migration(request, params.get("target_uri"), False,
+                            bool(override_busy), label=label, via_retry=True)
+
+
+JOB_RETRY_HANDLERS["migrate"] = _retry_migration
 
 
 @router.post("/api/smtp/test")

@@ -1,7 +1,7 @@
 """Test steps and test cases: CRUD, display-id allocation, similarity search
 (mongot + numpy fallback), and case/feature association.
 
-Moved out of store.py (Phase 5 of REFACTOR_PLAN.md). `cosine_atlas` and
+Moved out of store.py (Phase 5 of docs/dev/REFACTOR_PLAN.md). `cosine_atlas` and
 `VECTOR_INDEX` are shared cross-domain constants defined in store/base.py.
 """
 
@@ -820,8 +820,17 @@ class StepsTestCasesMixin(_Base):
         }})
         return result.matched_count > 0
 
-    def all_tags(self):
-        return sorted({t for c in self.cases.find({}, {"tags": 1}) for t in c.get("tags", [])})
+    def all_tags(self, project_ids=None):
+        """Every tag in use; with `project_ids`, only tags of cases linked to those
+        projects' current feature versions."""
+        q = {}
+        if project_ids is not None:
+            ids = set()
+            for pid in project_ids:
+                afids, _ = self.active_feature_ids(pid)
+                ids |= self.active_case_ids(afids)
+            q = {"_id": {"$in": [ObjectId(i) for i in ids if ObjectId.is_valid(i)]}}
+        return sorted({t for c in self.cases.find(q, {"tags": 1}) for t in c.get("tags", [])})
 
     def delete_case(self, cid, force=False):
         linked_features = self.feature_count_for_case(cid)
