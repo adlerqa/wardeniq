@@ -1,4 +1,3 @@
-import os
 import re
 from pathlib import Path
 
@@ -36,7 +35,6 @@ def test_env_example_contains_all_documented_vars():
     assert docs_path.exists(), "docs/configuration.md must exist"
     assert env_path.exists(), ".env.example must exist"
 
-    doc_vars = parse_doc_variables(docs_path)
     env_vars = parse_env_example_variables(env_path)
 
     # Specific required documented vars that must be present in .env.example
@@ -48,6 +46,7 @@ def test_env_example_contains_all_documented_vars():
         "GEN_MODEL",
         "EMBED_MODEL",
         "EMBED_DIM",
+        "LLM_TIMEOUT_SECONDS",
         "GITHUB_TOKEN",
         "POLL_INTERVAL_SECONDS",
         "WEBHOOK_SECRET",

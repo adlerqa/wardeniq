@@ -8,13 +8,44 @@ import os
 import httpx
 
 import usage
+from core.logging_setup import get_logger
 from prompts import SYSTEM, build_prompt, TYPE_GUIDANCE
+
+log = get_logger("llm")
 
 # Upper bound on the context window requested from a local Ollama model. Kept modest by
 # default because a large num_ctx on a CPU-only container thrashes memory; raise it when
 # the host can afford it (see coverage.excerpt_total_chars, which scales the amount of
 # source code shown to the reviewer from this same number).
 OLLAMA_MAX_NUM_CTX = int(os.getenv("OLLAMA_MAX_NUM_CTX", "8192"))
+
+
+def _timeout_from_env(raw: str | None) -> float | None:
+    """Parse LLM_TIMEOUT_SECONDS. Blank, invalid or non-positive means "unset"."""
+    value = (raw or "").strip()
+    if not value:
+        return None
+    try:
+        seconds = float(value)
+    except ValueError:
+        log.warning("Ignoring LLM_TIMEOUT_SECONDS=%r: not a number", value)
+        return None
+    if seconds <= 0:
+        log.warning("Ignoring LLM_TIMEOUT_SECONDS=%r: must be greater than 0", value)
+        return None
+    return seconds
+
+
+# One timeout (seconds) for every LLM call. Unset keeps each call site's built-in
+# default (180-300 s for generation, 300 s Ollama / 120 s hosted elsewhere; Bedrock keeps
+# botocore's 60 s). A CPU-only Ollama can need several minutes per call, so raise it
+# there instead of failing passes.
+LLM_TIMEOUT_SECONDS = _timeout_from_env(os.getenv("LLM_TIMEOUT_SECONDS"))
+
+
+def resolve_timeout(default: float) -> float:
+    """LLM_TIMEOUT_SECONDS when configured, otherwise the call site's own default."""
+    return LLM_TIMEOUT_SECONDS if LLM_TIMEOUT_SECONDS is not None else default
 
 TEST_TYPES = list(TYPE_GUIDANCE.keys())  # functional, e2e, api, nfr
 
@@ -73,7 +104,7 @@ class LLM:
             return parts[0], parts[1], (parts[2] if len(parts) > 2 else "")
         return "", "", ""
 
-    def _bedrock_client(self):
+    def _bedrock_client(self, timeout_seconds: float | None = None):
         import boto3  # lazy — only needed when Bedrock is selected
         ak, sk, tok = self._aws_creds()
         kw = {"region_name": self.region or None}
@@ -83,13 +114,20 @@ class LLM:
             if tok:
                 kw["aws_session_token"] = tok
         session = boto3.session.Session(**kw)
+        client_kw = {}
+        if timeout_seconds:
+            from botocore.config import Config
+            client_kw["config"] = Config(connect_timeout=timeout_seconds,
+                                         read_timeout=timeout_seconds)
         # base_url doubles as an optional private VPC/PrivateLink endpoint.
-        return session.client("bedrock-runtime", endpoint_url=(self.base_url or None))
+        return session.client("bedrock-runtime", endpoint_url=(self.base_url or None),
+                              **client_kw)
 
-    def _bedrock_chat(self, system, user, temperature, max_tokens) -> str:
+    def _bedrock_chat(self, system, user, temperature, max_tokens,
+                      timeout_seconds: float | None = None) -> str:
         # Converse is model-agnostic across Claude / Llama / Mistral / Titan / Nova,
         # so switching Bedrock models needs no code change.
-        client = self._bedrock_client()
+        client = self._bedrock_client(timeout_seconds)
         resp = client.converse(
             modelId=self.model,
             system=[{"text": system + " Respond with a single JSON object only."}],
@@ -128,7 +166,12 @@ class LLM:
     def _raw_chat(self, system, user, num_ctx, temperature, max_tokens,
                   timeout_seconds: float | None = None) -> str:
         if self.provider == "bedrock":
-            return self._bedrock_chat(system, user, temperature, max_tokens)
+            # Bedrock never honoured the per-call timeouts: unset LLM_TIMEOUT_SECONDS keeps
+            # botocore's own 60 s connect/read timeout, which retries a timed-out call.
+            timeout = (timeout_seconds or LLM_TIMEOUT_SECONDS
+                       if LLM_TIMEOUT_SECONDS is not None else None)
+            return self._bedrock_chat(system, user, temperature, max_tokens,
+                                      timeout_seconds=timeout)
         if self.provider == "ollama":
             # Cap num_ctx for local Ollama to prevent memory thrashing/crashes on CPU.
             # Configurable because the cap also bounds how much source code the Mind Map
@@ -137,7 +180,7 @@ class LLM:
             # improves coverage accuracy. Default is unchanged at 8192.
             ollama_ctx = min(num_ctx or 8192, OLLAMA_MAX_NUM_CTX)
             r = httpx.post(f"{self.ollama_url}/api/chat",
-                           timeout=timeout_seconds or 300.0,
+                           timeout=timeout_seconds or resolve_timeout(300.0),
                            headers=self._ollama_headers(), json={
                 "model": self.model, "stream": False, "format": "json",
                 "messages": [{"role": "system", "content": system},
@@ -160,7 +203,7 @@ class LLM:
             return (data.get("message") or {}).get("content") or ""
         if self.provider == "anthropic":
             r = httpx.post(f"{self.base_url}/v1/messages",
-                           timeout=timeout_seconds or 120.0,
+                           timeout=timeout_seconds or resolve_timeout(120.0),
                            headers={"x-api-key": self.api_key,
                                     "anthropic-version": "2023-06-01",
                                     "content-type": "application/json"},
@@ -191,13 +234,14 @@ class LLM:
         # once we've seen that for a model we stop sending it (no wasted retries).
         if self.model not in _NO_CUSTOM_TEMPERATURE:
             payload["temperature"] = temperature
-        r = httpx.post(url, timeout=timeout_seconds or 120.0, headers=headers, json=payload)
+        timeout = timeout_seconds or resolve_timeout(120.0)
+        r = httpx.post(url, timeout=timeout, headers=headers, json=payload)
         # First time a model rejects the temperature: remember it, drop the param,
         # and retry once. Subsequent calls skip temperature upfront.
         if r.status_code == 400 and "temperature" in (r.text or "").lower():
             _NO_CUSTOM_TEMPERATURE.add(self.model)
             payload.pop("temperature", None)
-            r = httpx.post(url, timeout=timeout_seconds or 120.0, headers=headers, json=payload)
+            r = httpx.post(url, timeout=timeout, headers=headers, json=payload)
         if r.status_code in (400, 404):
             raise _friendly_model_error(self.provider, self.model, r)
         r.raise_for_status()

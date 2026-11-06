@@ -52,6 +52,9 @@ services:
       # Small default so the bundled (CPU-only in Docker) demo is usable everywhere.
       # For higher quality, use a bigger model on native Ollama or a hosted provider.
       - GEN_MODEL=${GEN_MODEL:-qwen2.5:3b}
+      # Seconds allowed per LLM call. Blank = built-in per-call defaults; raise it on
+      # CPU-only machines where the bundled model needs minutes per call.
+      - LLM_TIMEOUT_SECONDS=${LLM_TIMEOUT_SECONDS:-}
       - DB_NAME=${DB_NAME:-wardeniq}
       # ── App config ──
       - AUTO_SETUP=true
