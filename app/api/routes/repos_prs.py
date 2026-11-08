@@ -25,12 +25,13 @@ import threading
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
+from urllib.parse import urlsplit
 
 import crypto
 import github
 import gitlab as gitlab_mod
 from background.poller import sync_repo
-from core.config import GITHUB_API, GITHUB_TOKEN
+from core.config import GITHUB_API, GITHUB_TOKEN, GITLAB_BASE_URL
 from core.deps import (
     _ext_error, _oid, _repo_list_branches, _webhook_base_url,
     project_github_token, project_gitlab_token,
@@ -195,15 +196,29 @@ def _require_github_repo(client, owner: str, name: str) -> None:
     except Exception as e:  # noqa: BLE001
         raise _ext_error("GitHub", e)
 
+def _resolve_git_provider(source: str, fallback: str) -> str:
+    split_result = urlsplit(source)
+    gitlab_host = urlsplit(GITLAB_BASE_URL).hostname
+    if split_result.hostname is None:
+        return fallback
+    elif split_result.hostname == gitlab_host:
+        return "gitlab"
+    elif split_result.hostname == "github.com":
+        return "github"
+    raise ValueError("Unsupported provider", str(split_result.hostname))
 
 @router.post("/api/projects/{pid}/repos")
 def add_repo(pid: str, body: RepoIn, request: Request):
-    provider = (body.git_provider or "github").lower()
+    path = body.repo_full_name or body.url or ""
+    fallback = (body.git_provider or "github").lower()
+    try:
+        provider = _resolve_git_provider(path, fallback)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     repo_type = "test" if (body.repo_type or "").lower() == "test" else "app"
 
     # Resolve owner/name
     if provider == "gitlab":
-        path = body.repo_full_name or body.url or ""
         try:
             full = gitlab_mod.parse_repo_url(path) if "://" in path or path.endswith(".git") else path
             full = gitlab_mod.validate_project_path(full)
@@ -213,9 +228,8 @@ def add_repo(pid: str, body: RepoIn, request: Request):
             raise HTTPException(400, "GitLab project path must include namespace/name")
         owner, name = full.rsplit("/", 1)
     else:
-        src = body.repo_full_name or body.url or ""
         try:
-            owner, name = github.parse_repo_url(src)
+            owner, name = github.parse_repo_url(path)
         except ValueError as e:
             raise HTTPException(400, str(e))
 

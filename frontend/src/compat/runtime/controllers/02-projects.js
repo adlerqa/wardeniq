@@ -153,7 +153,6 @@ window.openProjectSettings = async (pid) => {
     document.querySelectorAll("[data-pd-provider]").forEach((b) => {
       const isMatch = b.dataset.pdProvider === dp;
       b.classList.toggle("active", isMatch);
-      b.style.display = isMatch ? "" : "none";
     });
     if ($("#pd-pat"))
       $("#pd-pat").placeholder = dp === "gitlab" ? "glpat-..." : "ghp_...";
@@ -714,35 +713,44 @@ window.deleteProjectFromCard = async (pid) => {
 
 // Project-detail provider toggle + PAT management
 let PD_PROVIDER = "github";
+let PD_GITLAB_HOST = null;
 // Repos fetched via "Load my repositories" for the Connect-repository box
 // below. Kept in memory and never mutated by selection/filtering, so picking
 // one repo doesn't shrink what's offered the next time the suggestion panel
 // reopens — see renderRepoSuggest().
 let REPO_PICK_CACHE = [];
 document.querySelectorAll("[data-pd-provider]").forEach((btn) => {
-  btn.onclick = async () => {
-    PD_PROVIDER = btn.dataset.pdProvider;
-    document
-      .querySelectorAll("[data-pd-provider]")
-      .forEach((b) => b.classList.toggle("active", b === btn));
-    if ($("#pd-pat"))
-      $("#pd-pat").placeholder =
-        PD_PROVIDER === "gitlab" ? "glpat-..." : "ghp_...";
-    // Persist the change so future PR coverage routes through the right API.
-    if (currentProject) {
-      try {
-        await api(`/api/projects/${currentProject}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ default_git_provider: PD_PROVIDER }),
-        });
-      } catch (e) {
-        /* non-fatal — toggle still takes effect for this session */
-      }
-    }
-    refreshProjectPatStatus();
-  };
+  btn.onclick = async () => setProjectProvider(btn.dataset.pdProvider);
 });
+
+async function setProjectProvider(provider) {
+  if (provider === PD_PROVIDER) return;
+  PD_PROVIDER = provider;
+
+  document
+    .querySelectorAll("[data-pd-provider]")
+    .forEach((b) => b.classList.toggle("active", provider === b.dataset.pdProvider));
+  if ($("#pd-pat")) {
+    $("#pd-pat").placeholder =
+      PD_PROVIDER === "gitlab" ? "glpat-..." : "ghp_...";
+  }
+  REPO_PICK_CACHE = [];
+  renderRepoSuggest("");
+  // Persist the change so future PR coverage routes through the right API.
+  if (currentProject) {
+    try {
+      await api(`/api/projects/${currentProject}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ default_git_provider: PD_PROVIDER }),
+      });
+    } catch (e) {
+      /* non-fatal — toggle still takes effect for this session */
+    }
+  }
+
+  await refreshProjectPatStatus();
+}
 
 async function refreshProjectPatStatus() {
   if (!currentProject || !$("#pd-pat-status")) return;
@@ -884,7 +892,22 @@ document.addEventListener("keydown", (e) => {
     $("#repo-url-suggest").hidden = true;
 });
 if ($("#repo-url")) {
-  $("#repo-url").oninput = (e) => renderRepoSuggest(e.target.value);
+  $("#repo-url").oninput = async (e) => {
+    const value = e.target.value.trim();
+    renderRepoSuggest(value);
+    let hostname;
+    try {
+      hostname = new URL(value).hostname;
+    } catch (e) {
+      return;
+    }
+    if (!PD_GITLAB_HOST) await loadSyncStatus();
+    if ($("#repo-url").value.trim() !== value) return;
+    const provider =
+      hostname === PD_GITLAB_HOST ? "gitlab" :
+      hostname === "github.com" ? "github" : null;
+    if (provider && provider !== PD_PROVIDER) await setProjectProvider(provider);
+  };
   // Reopening (focus or click) always re-shows the complete cached list —
   // see renderRepoSuggest()'s comment above for why this is the actual fix.
   $("#repo-url").onfocus = () => renderRepoSuggest("");
@@ -999,6 +1022,7 @@ window.toggleWatch = async (id, w) => {
 async function loadSyncStatus() {
   try {
     const s = await api("/api/sync/status");
+    PD_GITLAB_HOST = s.gitlab_host || null;
     if ($("#sync-status"))
       $("#sync-status").innerHTML =
         `poller every ${s.poll_interval_s}s · ${s.github_authenticated ? "authenticated" : "public-only"} · ingested ${s.ingested}, mapped ${s.mapped}` +
