@@ -15,6 +15,11 @@
 
 ### Fixed
 
+- Generation skips Fusion when neither the project nor the previous feature version
+  has reusable test candidates, and skips generation workers/fallbacks for zero-focus
+  categories. The shared E2E/edge/business call still runs if any of its outputs is
+  requested, avoiding wasted model calls on CPU-only installations (#139).
+
 - The LLM settings card no longer marks the API key and endpoint as required for
   Ollama. Placeholders are now provider-specific and update when you change the
   provider; for Ollama with a saved URL, the endpoint placeholder explains that

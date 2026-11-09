@@ -1358,6 +1358,12 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     version = int(feature.get("version") or 1)
     total = max(1, int(params.get("total") or 16))
     focus = params.get("focus") or {name: _FOCUS_DEFAULT for name in FOCUS_NAMES}
+    # Match _budget_suites: omitted shares retain their default, explicit zero
+    # shares must not spend model time generating cases we will discard later.
+    enabled = {
+        name: max(0.0, float(focus.get(name, _FOCUS_DEFAULT))) > 0
+        for name in FOCUS_NAMES
+    }
 
     chunks = list(store.fchunks.find({"feature_id": feature_id}))
     rag_context = {
@@ -1552,18 +1558,21 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     inherited_reused = inherited_rebuilt = 0
     errors = []
     fusion = {}
-    try:
-        fusion = call_llm_json_with_repair(
-            llm, SYSTEM, build_fusion_pass_prompt(context, project_tests), max_tokens=6000
-        )
-    except Exception as exc:  # noqa: BLE001 -- Fusion is an optimization (cross-feature
-        # reuse detection), not a requirement for generating this feature's own tests.
-        # A failure here -- an oversized prompt the budget above didn't fully prevent, a
-        # transient provider error, anything -- must not take the whole run down; it
-        # degrades to "no inheritance candidates this run" and fresh generation
-        # continues normally, exactly like the E2E/business worker failures below
-        # already degrade instead of crashing the pipeline.
-        errors.append(f"Fusion pass failed: {exc}")
+    if project_tests or previous_cases:
+        try:
+            fusion = call_llm_json_with_repair(
+                llm, SYSTEM, build_fusion_pass_prompt(context, project_tests), max_tokens=6000
+            )
+        except Exception as exc:  # noqa: BLE001 -- Fusion is an optimization (cross-feature
+            # reuse detection), not a requirement for generating this feature's own tests.
+            # A failure here -- an oversized prompt the budget above didn't fully prevent, a
+            # transient provider error, anything -- must not take the whole run down; it
+            # degrades to "no inheritance candidates this run" and fresh generation
+            # continues normally, exactly like the E2E/business worker failures below
+            # already degrade instead of crashing the pipeline.
+            errors.append(f"Fusion pass failed: {exc}")
+    else:
+        log_progress(update_job_fn, "Fusion skipped: no existing test candidates", 30)
     context["summaries"]["alreadyCovered"] = str(fusion.get("already_covered_summary") or "")
     log_progress(
         update_job_fn,
@@ -1639,7 +1648,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     _mark("fusion")
 
     log_progress(update_job_fn, "DAG layer 1: generating API and UI tests", 38)
-    api_chunks = _chunks(api_surface, 8) or [[]]
+    api_chunks = _chunks(api_surface, 8) if enabled["api"] else []
     # UI generation is conditioned on UI evidence actually existing. When ui_components
     # is empty -- Pass 1 grounded no UI element AND _derive_ui_components() found no
     # control in the raw document -- the previous `else [[]]` still queued one UI worker
@@ -1651,7 +1660,13 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     # byte-for-byte the previous behavior (one broad worker plus one per component
     # group), so genuine UI generation is untouched: an evidence-conditioned trigger,
     # not a suppression of the UI category.
-    ui_chunks = [[], *_chunks(ui_components, 25)] if evidence_sufficient["ui"] else []
+    ui_chunks = (
+        [[], *_chunks(ui_components, 25)]
+        if enabled["ui"] and evidence_sufficient["ui"] else []
+    )
+    for category in ("api", "ui"):
+        if not enabled[category]:
+            log_progress(update_job_fn, f"{category.upper()} workers skipped: focus is 0%", 38)
     jobs = []
     # These LLM calls run on ThreadPoolExecutor child threads; the token recorder
     # is thread-local, so bind the parent job's recorder inside each worker or the
@@ -1742,33 +1757,37 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
 
     log_progress(update_job_fn, "DAG layer 2: generating E2E, edge, and business tests", 58)
     e2e_result = {}
-    try:
-        e2e_result = call_llm_json_with_repair(
-            llm,
-            SYSTEM,
-            build_e2e_agent_prompt(
-                context, api_surface[:80], ui_tests[:100], e2e_rag_context, len(api_surface),
-                top_k=_category_top_k("e2e", is_ollama),
-                # edge_cases and business_tests are produced by this SAME call
-                # (build_e2e_agent_prompt's output has all three keys) but neither has
-                # its own worker/LLM call, so each gets its own labeled evidence block
-                # here instead of a dedicated retrieval call: edge_cases needs
-                # API/state-mutation evidence (not journey evidence), business_tests
-                # needs the business-category evidence also used by the
-                # build_business_test_prompt() fallback below.
-                api_rag_context=api_rag_context,
-                api_top_k=_category_top_k("api", is_ollama),
-                business_rag_context=business_rag_context,
-                business_top_k=_category_top_k("business", is_ollama),
-            ),
-            max_tokens=10000,
-            timeout_seconds=resolve_timeout(300),
-        )
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"E2E worker failed: {exc}")
+    # One call produces all three suites, so retain it when ANY output is wanted.
+    if any(enabled[name] for name in ("e2e", "nfr", "functional")):
+        try:
+            e2e_result = call_llm_json_with_repair(
+                llm,
+                SYSTEM,
+                build_e2e_agent_prompt(
+                    context, api_surface[:80], ui_tests[:100], e2e_rag_context, len(api_surface),
+                    top_k=_category_top_k("e2e", is_ollama),
+                    # edge_cases and business_tests are produced by this SAME call
+                    # (build_e2e_agent_prompt's output has all three keys) but neither has
+                    # its own worker/LLM call, so each gets its own labeled evidence block
+                    # here instead of a dedicated retrieval call: edge_cases needs
+                    # API/state-mutation evidence (not journey evidence), business_tests
+                    # needs the business-category evidence also used by the
+                    # build_business_test_prompt() fallback below.
+                    api_rag_context=api_rag_context,
+                    api_top_k=_category_top_k("api", is_ollama),
+                    business_rag_context=business_rag_context,
+                    business_top_k=_category_top_k("business", is_ollama),
+                ),
+                max_tokens=10000,
+                timeout_seconds=resolve_timeout(300),
+            )
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"E2E worker failed: {exc}")
+    else:
+        log_progress(update_job_fn, "E2E/edge/business worker skipped: all focus shares are 0%", 58)
 
     e2e_tests = _as_list(e2e_result.get("e2e_tests"))
-    if len(e2e_tests) < 5 and len(api_surface) > 10 and not params.get("smoke_mode"):
+    if enabled["e2e"] and len(e2e_tests) < 5 and len(api_surface) > 10 and not params.get("smoke_mode"):
         try:
             fallback = call_llm_json_with_repair(
                 llm,
@@ -1804,7 +1823,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         min(10, max(3, round(requirement_count * 0.6)))
         if evidence_sufficient["business"] else 0
     )
-    if len(business_tests) < acceptable_business_min:
+    if enabled["functional"] and len(business_tests) < acceptable_business_min:
         try:
             fallback = call_llm_json_with_repair(
                 llm, SYSTEM,
