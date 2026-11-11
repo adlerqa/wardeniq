@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable
+import re
+from typing import Any
 import xml.etree.ElementTree as ET
 
 
@@ -21,8 +22,14 @@ class FileCoverage:
     branches_covered: int = 0
 
     def record_line(self, line_number: int, hits: int) -> None:
-        hits = max(int(hits), 0)
-        line_number = int(line_number)
+        try:
+            line_number = int(line_number)
+            hits = max(int(hits), 0)
+        except (ValueError, TypeError) as exc:
+            raise CoverageParseError(
+                f"Invalid numeric line values: line={line_number!r}, hits={hits!r}"
+            ) from exc
+
         if line_number not in self.line_hits:
             self.lines_valid += 1
             if hits > 0:
@@ -31,12 +38,29 @@ class FileCoverage:
             self.lines_covered += 1
         self.line_hits[line_number] = hits
 
-    def record_branch(self, line_number: int, hits: int, *, valid: int = 1) -> None:
-        line_number = int(line_number)
-        hits = max(int(hits), 0)
+    def record_branch(
+        self,
+        line_number: int,
+        hits: int = 0,
+        *,
+        valid: int = 1,
+        covered: int | None = None,
+    ) -> None:
+        try:
+            line_number = int(line_number)
+            hits = max(int(hits), 0)
+            valid = max(int(valid), 0)
+            if covered is None:
+                cov = 1 if hits > 0 else 0
+            else:
+                cov = max(int(covered), 0)
+        except (ValueError, TypeError) as exc:
+            raise CoverageParseError(
+                f"Invalid numeric branch values: line={line_number!r}, hits={hits!r}, valid={valid!r}, covered={covered!r}"
+            ) from exc
+
         self.branches_valid += valid
-        if hits > 0:
-            self.branches_covered += valid
+        self.branches_covered += min(cov, valid)
         self.branch_hits[line_number] = max(self.branch_hits.get(line_number, 0), hits)
 
     @property
@@ -122,6 +146,8 @@ def parse(path: str | Path) -> CoverageReport:
 
     try:
         text = report_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise CoverageParseError(f"Coverage report encoding error: {report_path} is not valid UTF-8") from exc
     except OSError as exc:
         raise CoverageParseError(f"Could not read coverage report: {report_path}") from exc
 
@@ -150,6 +176,21 @@ def parse(path: str | Path) -> CoverageReport:
     raise CoverageParseError(f"Unsupported or malformed coverage report: {report_path}")
 
 
+def _parse_condition_coverage(value: str) -> tuple[int, int] | None:
+    match = re.search(r"\((\d+)\s*/\s*(\d+)\)", value)
+    if match:
+        cov = _to_int(match.group(1))
+        val = _to_int(match.group(2))
+        return cov, val
+    pct_match = re.search(r"(\d+(?:\.\d+)?)%", value)
+    if pct_match:
+        pct = float(pct_match.group(1))
+        val = 2
+        cov = int(round(val * (pct / 100.0)))
+        return cov, val
+    return None
+
+
 def _parse_lcov(text: str) -> CoverageReport:
     files: dict[str, FileCoverage] = {}
     current: FileCoverage | None = None
@@ -169,19 +210,30 @@ def _parse_lcov(text: str) -> CoverageReport:
             continue
         if line.startswith("DA:"):
             data = line[3:]
-            parts = data.split(",", 1)
-            if len(parts) != 2:
+            parts = [p.strip() for p in data.split(",")]
+            if len(parts) < 2:
                 raise CoverageParseError(f"Malformed LCOV line: {line}")
-            line_no, hits = parts[0], parts[1]
-            current.record_line(int(line_no), int(hits))
+            try:
+                line_no = _to_int(parts[0])
+                hits = _to_int(parts[1])
+            except CoverageParseError as exc:
+                raise CoverageParseError(f"Malformed numeric value in LCOV line: {line}") from exc
+            current.record_line(line_no, hits)
             continue
         if line.startswith("BRDA:"):
             data = line[5:]
-            parts = data.split(",")
+            parts = [p.strip() for p in data.split(",")]
             if len(parts) < 4:
                 raise CoverageParseError(f"Malformed LCOV branch line: {line}")
-            line_no = int(parts[0])
-            hits = int(parts[3])
+            try:
+                line_no = _to_int(parts[0])
+                hits_str = parts[3]
+                if hits_str == "-":
+                    hits = 0
+                else:
+                    hits = _to_int(hits_str)
+            except CoverageParseError as exc:
+                raise CoverageParseError(f"Malformed numeric value in LCOV branch line: {line}") from exc
             current.record_branch(line_no, hits)
 
     if not files:
@@ -204,23 +256,40 @@ def _parse_coverage_xml(root: ET.Element) -> CoverageReport:
         file_path = _normalise_path(raw_path)
         file_entry = files.setdefault(file_path, FileCoverage(path=file_path))
         for line_node in class_node.findall("./lines/line"):
-            line_no = line_node.get("number")
-            if line_no is None:
+            line_no_raw = line_node.get("number")
+            if line_no_raw is None:
                 continue
+            line_no = _to_int(line_no_raw)
             hits = _to_int(line_node.get("hits"), default=0)
-            file_entry.record_line(int(line_no), hits)
+            file_entry.record_line(line_no, hits)
+
+            cond_cov = line_node.get("condition-coverage")
             conditions = line_node.findall("./conditions/condition")
-            if line_node.get("branch") == "true" or conditions:
-                covered = 0
-                for cond in conditions:
-                    coverage = cond.get("coverage")
-                    if coverage in {None, "0%"}:
-                        continue
-                    covered += 1
-                if covered == 0 and hits > 0:
-                    covered = 1
-                valid = len(conditions) or 1
-                file_entry.record_branch(int(line_no), covered, valid=valid)
+            is_branch = line_node.get("branch") == "true" or conditions or cond_cov is not None
+
+            if is_branch:
+                if cond_cov:
+                    parsed_cond = _parse_condition_coverage(cond_cov)
+                    if parsed_cond is not None:
+                        cov_branches, val_branches = parsed_cond
+                        file_entry.record_branch(line_no, hits=hits, valid=val_branches, covered=cov_branches)
+                    else:
+                        file_entry.record_branch(line_no, hits=hits, valid=1, covered=1 if hits > 0 else 0)
+                elif conditions:
+                    valid_count = len(conditions)
+                    total_pct = 0.0
+                    for cond in conditions:
+                        cov_attr = cond.get("coverage", "0%")
+                        try:
+                            pct_val = float(cov_attr.rstrip("%"))
+                        except (ValueError, TypeError) as exc:
+                            raise CoverageParseError(f"Invalid condition coverage value: {cov_attr!r}") from exc
+                        total_pct += pct_val
+                    cov_branches = int(total_pct / 100.0)
+                    file_entry.record_branch(line_no, hits=hits, valid=valid_count, covered=cov_branches)
+                else:
+                    cov_branches = 1 if hits > 0 else 0
+                    file_entry.record_branch(line_no, hits=hits, valid=1, covered=cov_branches)
 
     if not files:
         for package_node in root.findall(".//package"):
@@ -277,15 +346,17 @@ def _parse_jacoco_xml(root: ET.Element) -> CoverageReport:
                 file_path = _normalise_path(raw_path)
             file_entry = files.setdefault(file_path, FileCoverage(path=file_path))
             for line_node in source.findall("./line"):
-                line_no = line_node.get("nr")
-                if line_no is None:
+                line_no_raw = line_node.get("nr")
+                if line_no_raw is None:
                     continue
+                line_no = _to_int(line_no_raw)
                 hits = _to_int(line_node.get("ci"), default=0)
-                file_entry.record_line(int(line_no), hits)
-                branch_count = _to_int(line_node.get("cb"), default=0) + _to_int(line_node.get("mb"), default=0)
-                line_branch_covered = _to_int(line_node.get("cb"), default=0)
+                file_entry.record_line(line_no, hits)
+                cb = _to_int(line_node.get("cb"), default=0)
+                mb = _to_int(line_node.get("mb"), default=0)
+                branch_count = cb + mb
                 if branch_count > 0:
-                    file_entry.record_branch(int(line_no), line_branch_covered, valid=branch_count)
+                    file_entry.record_branch(line_no, hits=hits, valid=branch_count, covered=cb)
 
     if not files:
         raise CoverageParseError("JaCoCo XML contains no sourcefile entries.")
@@ -303,19 +374,25 @@ def _normalise_path(value: str) -> str:
     clean = value.strip().replace("\\", "/")
     if not clean:
         raise CoverageParseError("Coverage report contains an empty file path.")
+    if len(clean) >= 2 and clean[1] == ":" and clean[0].isalpha():
+        clean = clean[2:]
+        if clean.startswith("/"):
+            clean = clean[1:]
     pure = PurePosixPath(clean)
     if pure.is_absolute():
         segments = list(pure.parts)
         if segments and segments[0] in {"/", "\\"}:
             segments = segments[1:]
-        if segments and len(segments[0]) == 2 and segments[0].endswith(":"):
-            segments = segments[1:]
         clean = "/".join(segments)
-    clean = clean.lstrip("./")
-    return clean.strip("/")
+    while clean.startswith("./"):
+        clean = clean.removeprefix("./")
+    clean = clean.strip("/")
+    if not clean:
+        raise CoverageParseError("Coverage report contains an empty file path.")
+    return clean
 
 
-def _to_int(value: str | None, default: int = 0) -> int:
+def _to_int(value: str | None, default: int | None = 0) -> int | None:
     if value is None or value == "":
         return default
     try:
