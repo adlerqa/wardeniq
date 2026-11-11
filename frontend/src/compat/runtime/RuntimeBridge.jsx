@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import chunk00 from "./controllers/00-core.js?raw";
 import chunk01 from "./controllers/01-dashboard.js?raw";
@@ -57,16 +57,64 @@ function loadRuntime() {
  * intact.
  */
 export default function RuntimeBridge() {
+  const [attempt, setAttempt] = useState(0);
+  const [failed, setFailed] = useState(false);
+  const [pending, setPending] = useState(true);
+  const retryPending = useRef(true);
+
   useEffect(() => {
-    if (window.__WARDENIQ_RUNTIME_READY__) return;
-    loadRuntime().catch((error) => {
-      console.error("Failed to load the WardenIQ compatibility runtime.", error);
-    });
+    let active = true;
+    loadRuntime().then(
+      () => {
+        if (!active) return;
+        retryPending.current = false;
+        setFailed(false);
+        setPending(false);
+      },
+      (error) => {
+        if (!active) return;
+        console.error("Failed to load the WardenIQ compatibility runtime.", error);
+        retryPending.current = false;
+        setFailed(true);
+        setPending(false);
+      },
+    );
 
-    // No teardown: the preserved runtime has a single-page lifecycle and owns
-    // long-lived listeners/timers. React StrictMode may replay this effect in
-    // development, so the module-level window guard prevents double wiring.
-  }, []);
+    // Unsubscribe this effect, but keep the runtime's single-page listeners/timers.
+    // The shared loader and window guard prevent StrictMode from double wiring.
+    return () => {
+      active = false;
+    };
+  }, [attempt]);
 
-  return null;
+  function retry() {
+    if (retryPending.current) return;
+    retryPending.current = true;
+    setPending(true);
+    setAttempt((previous) => previous + 1);
+  }
+
+  if (!failed) return null;
+
+  return (
+    <div
+      role="alert"
+      aria-busy={pending}
+      className="fixed inset-x-4 top-4 z-[10000] mx-auto max-w-lg rounded-xl border border-rose-400/30 bg-slate-900 p-5 text-slate-100 shadow-2xl"
+    >
+      <h2 className="text-lg font-semibold">WardenIQ could not initialize.</h2>
+      <p className="mt-2 text-sm text-slate-300">
+        Retry to finish starting the application. If the problem continues, check
+        the browser console for details.
+      </p>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={retry}
+        className="mt-4 rounded-lg bg-sky-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400 disabled:cursor-wait disabled:opacity-50"
+      >
+        {pending ? "Retrying..." : "Retry"}
+      </button>
+    </div>
+  );
 }

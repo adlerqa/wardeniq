@@ -37,9 +37,14 @@ Key rules:
 All 18 compatibility controllers are bundled eagerly, then combined in filename
 order into one classic script to preserve their shared global scope. The bridge
 shares pending initialization and guards against duplicate injection, including
-React StrictMode effect replays. A failed script insertion is logged and leaves
-initialization available to a later loader call; it is not retried automatically.
-Successful insertion does not guarantee error-free controller execution.
+React StrictMode effect replays. If script creation or insertion fails, the bridge
+logs the error and displays a Retry action above the login screen. Retry is
+disabled while an attempt is pending; success dismisses the error, and another
+failure leaves Retry available. There are no automatic retries.
+
+This recovery handles caught initialization failures only. It cannot recover an
+eager-import or entry-bundle download failure, and successful insertion does not
+guarantee error-free controller execution.
 
 Controllers are not fetched separately or deferred until a screen opens. This
 avoids startup request fan-out and separate-chunk compression overhead rather than

@@ -21,7 +21,7 @@ const controllerSources = Object.fromEntries(
   ]),
 );
 const loaderSource = source
-  .replace(/^import \{ useEffect \} from "react";\s*/m, "")
+  .replace(/^import \{[^}]+\} from "react";\s*/m, "")
   .replace(
     /^import (\w+) from "(\.\/controllers\/[^"]+\?raw)";$/gm,
     (_, binding, path) =>
