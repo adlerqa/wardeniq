@@ -31,3 +31,17 @@ Key rules:
 - Do not add new styles to `src/styles/compat/`.
 - Do not create another global runtime file.
 - `src/compat/runtime/controllers/` preserves existing behavior while screens are progressively converted from imperative DOM rendering to React state/rendering.
+
+## Compatibility runtime loading
+
+All 18 compatibility controllers are bundled eagerly, then combined in filename
+order into one classic script to preserve their shared global scope. The bridge
+shares pending initialization and guards against duplicate injection, including
+React StrictMode effect replays. A failed script insertion is logged and leaves
+initialization available to a later loader call; it is not retried automatically.
+Successful insertion does not guarantee error-free controller execution.
+
+Controllers are not fetched separately or deferred until a screen opens. This
+avoids startup request fan-out and separate-chunk compression overhead rather than
+optimizing the main-chunk size. Production sourcemaps are disabled independently
+of this loading strategy; Vite's large-chunk warning may still appear.
