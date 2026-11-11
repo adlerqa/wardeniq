@@ -64,11 +64,10 @@ tagged release ([#18](https://github.com/adlerqa/wardeniq/issues/18)).
 
 ## Next — Integrations
 
-Two epics. Both need machine authentication first:
-**[#37 — service accounts and API tokens](https://github.com/adlerqa/wardeniq/issues/37)**.
-A CI job or a Jira app can't hold a session cookie. The extension point for this is already
-designed and documented in `app/core/security.py` and currently unused, so it's a
-well-scoped, high-leverage piece of backend work that unblocks everything below.
+Both epics needed machine authentication first, and that has shipped:
+**[#37 — service accounts and API tokens](https://github.com/adlerqa/wardeniq/issues/37)**
+(`app/core/token_auth.py`, `app/api/routes/api_tokens.py`). A CI job or a Jira app can now
+authenticate without a session cookie, so the work below is unblocked.
 
 ### [Jira app](https://github.com/adlerqa/wardeniq/milestone/2) — [#38](https://github.com/adlerqa/wardeniq/issues/38)
 
@@ -99,56 +98,77 @@ must **never fail your build by default**.
 
 ### [Agentic PR review](https://github.com/adlerqa/wardeniq/milestone/5) — [#53](https://github.com/adlerqa/wardeniq/issues/53)
 
-wardenIQ watches the repos it's already connected to and **reviews a pull request against the
-requirements it claims to implement** — triggered by marking the PR ready for review, or by
-commenting `/wardeniq review`. Connect a repo once; no workflow files to edit.
+wardenIQ watches the repos it's already connected to and reviews **every pull request marked
+ready for review, and again whenever new commits land on it** — incrementally, only the new
+commits, and silent when nothing changed ([#247](https://github.com/adlerqa/wardeniq/issues/247)).
+`/wardeniq review` re-runs it on demand. Connect a repo once; no workflow files to edit.
 
-This is deliberately **not** a general code reviewer. CodeRabbit, Greptile and others review code
-against code — bugs, style, patterns — and they're good at it. What none of them can say is
-*"this PR claims to implement FR-2, but FR-2 says the token expires in 30 minutes and this sets
-3600 seconds."* That needs the requirements ingested, embedded, versioned and traceable to the
-sentence, which is the one thing we already have. "Does the code work?" is a crowded market;
-"is this what we asked for?" is empty.
+**The bar is CodeRabbit-level code review, and then better.** A full code reviewer — bugs,
+security, error handling, performance, tests, readability — that is as good as the best tools
+on code-against-code review. On top of that comes what they can't do: review the PR **against
+the requirements it claims to implement**. *"This PR claims to implement FR-2, but FR-2 says the
+token expires in 30 minutes and this sets 3600 seconds."* That needs requirements ingested,
+embedded, versioned and traceable to the sentence, which wardenIQ already has. Requirement
+conformance is what makes us better; matching them on general review is the entry ticket.
 
-Worth being clear that RAG is not the differentiator — every tool in this category does
-retrieval now. What differs is *what* we retrieve over.
+RAG is not the differentiator — every tool in this category does retrieval now. What differs is
+*what* we retrieve over, and that every finding is grounded and cited.
 
-Start at **[#54](https://github.com/adlerqa/wardeniq/issues/54)**, which blocks the rest.
-`map_pr_to_feature` currently resolves PRs to features by keyword only — a Jira epic key or a
-manual tag in the PR title — and deliberately gives up otherwise. So on a team that doesn't tag
-PR titles, no PR ever reaches a requirement, and the entire premise falls over. Then the agent
-runtime ([#55](https://github.com/adlerqa/wardeniq/issues/55)) and PR write-back
+We'll hold ourselves to that bar in public: an open, reproducible benchmark against CodeRabbit
+and Qodo ([#248](https://github.com/adlerqa/wardeniq/issues/248)), reporting general defects and
+requirement conformance separately, including where we lose.
+
+Semantic PR → requirement mapping ([#54](https://github.com/adlerqa/wardeniq/issues/54)) has
+shipped, so PRs reach requirements without tagged titles. Next: the agent runtime
+([#55](https://github.com/adlerqa/wardeniq/issues/55)), PR write-back
 ([#57](https://github.com/adlerqa/wardeniq/issues/57)), the triggers
-([#56](https://github.com/adlerqa/wardeniq/issues/56)), and a latency budget held throughout
-([#58](https://github.com/adlerqa/wardeniq/issues/58)).
+([#56](https://github.com/adlerqa/wardeniq/issues/56), with re-review on new commits from #247),
+and a latency budget held throughout ([#58](https://github.com/adlerqa/wardeniq/issues/58)).
 
-One dependency that isn't technical: **#36 has to be fixed and holding first.** We can't sell
-trustworthy review while generation can still emit its own prompt examples as real output.
+One dependency that isn't technical: **#36 has to stay fixed.** We can't sell trustworthy review
+while generation could emit its own prompt examples as real output.
 
-## Exploring — [Multi-agent](https://github.com/adlerqa/wardeniq/milestones)
+## Direction — [Specialist agents](https://github.com/adlerqa/wardeniq/milestone/6) — [#242](https://github.com/adlerqa/wardeniq/issues/242)
 
-An open, measured experiment, **not a commitment to ship**: would splitting parts of the
-lifecycle across cooperating agents make output more trustworthy, and is the cost worth it?
-It also asks whether wardenIQ should ever speak the open [A2A](https://a2a-protocol.org)
-protocol so other tools can delegate to it. Start at the RFC,
-**[#231](https://github.com/adlerqa/wardeniq/issues/231)**, and tell us what you think, including
-"don't build this". The poll in [#239](https://github.com/adlerqa/wardeniq/discussions/239) is the
-quickest way to weigh in.
+wardenIQ is becoming a **team of specialist QA agents**, each owning one part of delivery and
+handing work to the others through typed, inspectable contracts — organised like a good QA team,
+not one model doing everything in one prompt:
 
-The evidence is mixed. Multi-agent setups can use many times the tokens of a single model and
-often gain little, so measurement comes first:
-[#232](https://github.com/adlerqa/wardeniq/issues/232) adds token, latency, cost and overclaim
-metrics to the eval harness and needs no agent experience. Two in-process spikes follow, an
-independent verifier ([#233](https://github.com/adlerqa/wardeniq/issues/233)) and parallel workers
-for the Mind Map sweep ([#234](https://github.com/adlerqa/wardeniq/issues/234)), plus a hand-off
-schema design ([#235](https://github.com/adlerqa/wardeniq/issues/235)). The milestone ends in a
-published decision, **adopt, adopt in part, or shelve**
-([#236](https://github.com/adlerqa/wardeniq/issues/236)), and only an "adopt" unlocks an optional A2A
-adapter ([#237](https://github.com/adlerqa/wardeniq/issues/237)).
+| Agent | Owns |
+|---|---|
+| E2E scenario validator ([#244](https://github.com/adlerqa/wardeniq/issues/244)) | Are our e2e scenarios still correct, grounded and passing? |
+| Unit-coverage validator ([#245](https://github.com/adlerqa/wardeniq/issues/245)) | Is the code behind each requirement actually unit-tested? |
+| E2E scenario author ([#246](https://github.com/adlerqa/wardeniq/issues/246)) | Writes new scenarios to close the gaps the validators find |
+| PR reviewer ([#247](https://github.com/adlerqa/wardeniq/issues/247)) | Reviews every ready PR, and again on new commits |
 
-It has to respect the principles below: bring-your-own-model, self-hosted first, and every new
-agent ships with its check. It also shares groundwork with the agentic PR review runtime
-([#55](https://github.com/adlerqa/wardeniq/issues/55)), so coordinate with that before starting a spike.
+An orchestrator (not an agent) schedules them on events — a PR becomes ready, new commits, a
+requirement changes, a nightly run — and records every hand-off, budget and approval. The platform
+design is [#243](https://github.com/adlerqa/wardeniq/issues/243), extending the hand-off schema in
+[#235](https://github.com/adlerqa/wardeniq/issues/235). A2A is used for its task and artifact model
+first; running agents as separate services stays opt-in
+([#237](https://github.com/adlerqa/wardeniq/issues/237)).
+
+**Tests we write, we prove.** When the author agent writes an e2e test, it isn't proposed until it
+has run and passed repeatedly — through the team's own CI on a draft PR by default, or in an
+isolated sandbox against a preview URL ([#251](https://github.com/adlerqa/wardeniq/issues/251)).
+
+Measurement still decides *how* we build it. [#232](https://github.com/adlerqa/wardeniq/issues/232)
+adds token, latency, cost and overclaim metrics to the eval harness and needs no agent experience;
+the spikes — an independent verifier ([#233](https://github.com/adlerqa/wardeniq/issues/233)) and
+parallel Mind Map workers ([#234](https://github.com/adlerqa/wardeniq/issues/234)) — and the RFC
+([#231](https://github.com/adlerqa/wardeniq/issues/231)) shape the design, and the decision record
+([#236](https://github.com/adlerqa/wardeniq/issues/236)) settles which parts run as separate agents
+and which stay in-process. Multi-agent setups can burn many times the tokens for little gain, so
+every agent ships with a budget and an eval showing it earns its cost.
+
+Good places to start: [#250](https://github.com/adlerqa/wardeniq/issues/250) (coverage report
+parser, no LLM needed), [#232](https://github.com/adlerqa/wardeniq/issues/232), and the benchmark
+[#248](https://github.com/adlerqa/wardeniq/issues/248). And we want honest product feedback — the
+blunter the better — in [#249](https://github.com/adlerqa/wardeniq/issues/249).
+
+It respects the principles below: bring-your-own-model, self-hosted first, and every agent ships
+with its check. It shares groundwork with the PR review runtime
+([#55](https://github.com/adlerqa/wardeniq/issues/55)), so coordinate there before starting.
 
 ## Later — [Platform](https://github.com/adlerqa/wardeniq/milestone/4)
 
@@ -184,13 +204,17 @@ These are the calls we've already made, so you don't have to re-litigate them in
 - **Bring your own model.** No hard dependency on one provider. Ollama has to keep working.
 - **Don't break the build.** Anything that plugs into someone's pipeline is advisory by
   default and opt-in to gate.
+- **Tests we write, we prove.** Nothing wardenIQ writes is proposed until it has run and passed,
+  and every agent has an owner, a budget and an eval.
 
 ## Not planned
 
 Saying no is part of a roadmap:
 
-- **Running your tests.** wardenIQ decides *what* should be tested and whether it *is*. It's
-  not a test runner and won't compete with Playwright or pytest.
+- **Being your test runner or CI.** wardenIQ decides *what* should be tested and whether it
+  *is*; it won't compete with Playwright, pytest or your pipeline. The one exception is proving
+  the tests wardenIQ itself writes ([#251](https://github.com/adlerqa/wardeniq/issues/251)) —
+  preferably by running them through your CI rather than its own runner.
 - **Being a test-management SaaS.** Test Cycles exist so you don't have to leave for a release
   regression run — not to replace a dedicated tool.
 - **A hosted multi-tenant offering**, for now. The product is self-hosted; that shapes the
