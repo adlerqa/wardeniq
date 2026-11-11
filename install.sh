@@ -78,8 +78,16 @@ rand() {  # rand N → N random alphanumeric chars
   local n="${1:-32}"
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -base64 $((n * 2)) | LC_ALL=C tr -dc 'A-Za-z0-9' | head -c "$n"
+  elif [ -r /dev/urandom ]; then
+    # tr keeps reading from /dev/urandom and dies of SIGPIPE once head has
+    # its bytes - under `set -euo pipefail` that would fail the whole
+    # pipeline and stop the installer with a bare status 141. The `|| true`
+    # keeps the reader's status out of it (same guard as
+    # scripts/enable-mongo-auth.sh).
+    { LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom || true; } | head -c "$n"
   else
-    LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "$n"
+    echo "install.sh: neither openssl nor /dev/urandom is available, cannot generate a random secret" >&2
+    return 1
   fi
 }
 # password_policy_ok "pw" → 0 if acceptable, else 1 (mirrors app/auth.py policy)

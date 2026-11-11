@@ -22,6 +22,14 @@
 
 ### Fixed
 
+- `install.sh` no longer stops with a bare status 141 on a host that has no
+  `openssl`. The random secret is then read from `/dev/urandom`, where the
+  reader dies of SIGPIPE once `head` has its bytes - under `set -euo pipefail`
+  that failed the whole pipeline and stopped the installer without a word.
+  The reader's status is now kept out of the pipeline, the same guard
+  `scripts/enable-mongo-auth.sh` already used, and a host with neither
+  `openssl` nor `/dev/urandom` gets a message instead of a silent failure
+  (#271).
 - The LLM settings card no longer marks the API key and endpoint as required for
   Ollama. Placeholders are now provider-specific and update when you change the
   provider; for Ollama with a saved URL, the endpoint placeholder explains that
