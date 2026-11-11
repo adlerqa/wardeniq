@@ -12,6 +12,13 @@
   CPU-only machines, where the bundled model can take several minutes per call and
   passes used to fail on working installs. Documented in `.env.example` and
   `docs/configuration.md` (Part of #130, #138).
+- **Coverage report parser (groundwork, not wired into the app yet).** New
+  `app/coverage_reports.py` reads lcov, Cobertura, JaCoCo and coverage.py XML reports
+  through `parse(path)` and returns one model with per-file line and branch hits, so the
+  same project gives the same numbers in every format. Unknown or malformed files raise
+  a typed `CoverageParseError` instead of crashing. Sample reports live in
+  `tests/fixtures/coverage/`. It is the first building block for the unit-test coverage
+  validator agent (#250, #245).
 
 ### Fixed
 
