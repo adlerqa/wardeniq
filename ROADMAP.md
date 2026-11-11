@@ -157,9 +157,14 @@ adds token, latency, cost and overclaim metrics to the eval harness and needs no
 the spikes — an independent verifier ([#233](https://github.com/adlerqa/wardeniq/issues/233)) and
 parallel Mind Map workers ([#234](https://github.com/adlerqa/wardeniq/issues/234)) — and the RFC
 ([#231](https://github.com/adlerqa/wardeniq/issues/231)) shape the design, and the decision record
-([#236](https://github.com/adlerqa/wardeniq/issues/236)) settles which parts run as separate agents
-and which stay in-process. Multi-agent setups can burn many times the tokens for little gain, so
-every agent ships with a budget and an eval showing it earns its cost.
+([#236](https://github.com/adlerqa/wardeniq/issues/236)) settles whether each part is adopted,
+adopted in part or shelved, and which parts run as separate agents and which stay in-process.
+Multi-agent setups can burn many times the tokens for little gain, so every agent ships with a
+budget and an eval showing it earns its cost.
+
+This is where we're heading, and it's still open to challenge. Tell us what you think, including
+"don't build this": start at the RFC ([#231](https://github.com/adlerqa/wardeniq/issues/231)). The
+poll in [#239](https://github.com/adlerqa/wardeniq/discussions/239) is the quickest way to weigh in.
 
 Good places to start: [#250](https://github.com/adlerqa/wardeniq/issues/250) (coverage report
 parser, no LLM needed), [#232](https://github.com/adlerqa/wardeniq/issues/232), and the benchmark
