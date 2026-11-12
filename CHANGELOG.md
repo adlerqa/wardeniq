@@ -20,6 +20,14 @@
   `tests/fixtures/coverage/`. It is the first building block for the unit-test coverage
   validator agent (#250, #245).
 
+### Changed
+
+- **Smaller frontend build.** The production frontend build no longer emits a JavaScript
+  sourcemap, so the built output drops by about 1.3 MB (2.9 MB to 1.7 MB on disk). The
+  JavaScript the browser downloads is unchanged (about 198 kB gzipped). If the
+  compatibility runtime cannot be started, the app now shows a "could not initialize"
+  panel with a Retry button instead of staying blank (#265).
+
 ### Fixed
 
 - The LLM settings card no longer marks the API key and endpoint as required for
