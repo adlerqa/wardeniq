@@ -279,6 +279,37 @@ def test_unparseable_url_is_still_a_400_and_makes_no_github_call(env):
     assert FakeGitHub.calls == [] and env == []
 
 
+def test_provider_detection_uses_configured_gitlab_host(monkeypatch):
+    monkeypatch.setattr(repos_prs, "GITLAB_BASE_URL", "https://code.example.com")
+
+    provider = repos_prs._resolve_git_provider(
+        "https://code.example.com/acme/demo", "github")
+
+    assert provider == "gitlab"
+
+
+def test_url_not_matching_github_provider(env, monkeypatch):
+    class FakeGitLab:
+        def __init__(self, token):
+            pass
+
+        def register_mr_webhook(self, full_name, url, secret):
+            return {"id": 5}
+
+    monkeypatch.setattr(repos_prs, "project_gitlab_token", lambda pid: "glpat-fake")
+    monkeypatch.setattr(repos_prs.gitlab_mod, "GitLab", FakeGitLab)
+
+    r = _connect({"url": "https://gitlab.com/acme/ghost-repo", "git_provider": "github"})
+    assert r.status_code == 200
+    assert len(env) == 1 and env[0][1]["git_provider"] == "gitlab"
+
+
+def test_url_not_matching_gitlab_provider(env):
+    r = _connect({"url": "https://github.com/acme/ghost-repo", "git_provider": "gitlab"})
+    assert r.status_code == 200
+    assert len(env) == 1 and env[0][1]["git_provider"] == "github"
+
+
 def test_missing_pat_still_reports_the_existing_message(env, monkeypatch):
     monkeypatch.setattr(repos_prs, "project_github_token", lambda pid: "")
     r = _connect(_gh())

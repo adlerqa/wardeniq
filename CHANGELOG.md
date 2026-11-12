@@ -97,6 +97,11 @@
 
 ### Fixed
 
+- Repository connections now infer GitHub/GitLab from the URL host, and project
+  settings switch the provider and PAT panel when a recognized URL is entered.
+  Detection respects `GITLAB_BASE_URL`, bare paths retain the selected provider,
+  and GitLab URL parsing preserves complete namespace/project paths
+  (provider detection part of #185).
 - **Malformed LLM JSON no longer crashes analysis or leaves orphan feature versions.**
   JSON responses are required to be objects, nullable list fields are normalized at
   the shared generation/coverage boundaries, and version diffs complete before a new

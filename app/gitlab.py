@@ -12,7 +12,7 @@ from core.config import GITLAB_BASE_URL
 # (GITLAB_BASE_URL) rather than a literal "gitlab.com" — so a self-hosted
 # instance's URLs parse the same way gitlab.com's always have.
 _GITLAB_HOST = urllib.parse.urlparse(GITLAB_BASE_URL).netloc or "gitlab.com"
-_URL_RE = re.compile(rf"{re.escape(_GITLAB_HOST)}[:/]+([^?#\s]+?)(?:\.git)?(?:[/?#]|$)")
+_URL_RE = re.compile(rf"{re.escape(_GITLAB_HOST)}[:/]+([^?#\s]+?)(?:\.git)?(?:[?#]|$)")
 
 
 _SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.+-]{1,255}$")
