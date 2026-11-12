@@ -204,6 +204,10 @@ button.ghost.btn-busy::after {
   background: rgba(77, 159, 255, 0.16);
   color: #93c5fd;
 }
+.toastmsg.warn .t-ico {
+  background: rgba(234, 179, 8, 0.16);
+  color: #facc15;
+}
 .toastmsg .t-body {
   min-width: 0;
 }
@@ -221,6 +225,9 @@ button.ghost.btn-busy::after {
 }
 .toastmsg.info .t-title {
   color: #bfdbfe;
+}
+.toastmsg.warn .t-title {
+  color: #fde68a;
 }
 .toastmsg .t-msg {
   font-size: 12.5px;
@@ -261,6 +268,9 @@ button.ghost.btn-busy::after {
 }
 .toastmsg.info .t-timer {
   color: var(--accent2);
+}
+.toastmsg.warn .t-timer {
+  color: #eab308;
 }
 @keyframes toastTimer {
   from {

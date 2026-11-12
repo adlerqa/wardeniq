@@ -27,13 +27,16 @@ function toast(msg, opt) {
     ok: "Success",
     err: "Something went wrong",
     info: "Heads up",
+    warn: "Warning",
   };
-  const icons = { ok: "✓", err: "!", info: "i" };
+  const icons = { ok: "✓", err: "!", info: "i", warn: "⚠" };
   title = title || titles[type];
   // Errors stay longer and scale a little with length so they're actually readable.
   duration =
     duration ||
-    (type === "err" ? Math.min(9000, 5200 + (msg || "").length * 35) : 3800);
+    (type === "err" || type === "warn"
+      ? Math.min(9000, 5200 + (msg || "").length * 35)
+      : 3800);
   const d = document.createElement("div");
   d.className = "toastmsg " + type;
   d.innerHTML =
