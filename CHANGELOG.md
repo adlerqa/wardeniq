@@ -29,7 +29,8 @@
   The reader's status is now kept out of the pipeline, the same guard
   `scripts/enable-mongo-auth.sh` already used, and a host with neither
   `openssl` nor `/dev/urandom` gets a message instead of a silent failure
-  (#271).
+  (#271). The `APP_SECRET` step now stops when the secret cannot be
+  generated, instead of writing an empty one.
 - The LLM settings card no longer marks the API key and endpoint as required for
   Ollama. Placeholders are now provider-specific and update when you change the
   provider; for Ollama with a saved URL, the endpoint placeholder explains that

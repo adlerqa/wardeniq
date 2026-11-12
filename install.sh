@@ -201,7 +201,11 @@ grep -q '^APP_IMAGE=' .env || set_env APP_IMAGE "$APP_IMAGE_REF"
 cur_secret="$(grep '^APP_SECRET=' .env | head -1 | cut -d= -f2- || true)"
 case "${cur_secret}" in
   ""|change-me-in-production|change-me|changeme|mongoT-qa-dev-key-change-me)
-    set_env APP_SECRET "$(rand 48)"
+    # Assign before writing it out: `set -e` does not fire on a failed
+    # command substitution inside an argument, so the installer would carry
+    # on and write an empty APP_SECRET. A plain assignment does stop.
+    secret="$(rand 48)"
+    set_env APP_SECRET "$secret"
     info "generated a strong APP_SECRET"
     ;;
 esac

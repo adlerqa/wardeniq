@@ -78,3 +78,44 @@ def test_rand_reports_a_host_without_any_random_source(tools_without_openssl):
     assert result.returncode != 0
     assert "openssl" in result.stderr
     assert "urandom" in result.stderr
+
+
+def app_secret_step() -> str:
+    """The APP_SECRET step of install.sh, as the shell reads it."""
+    source = (REPO_ROOT / "install.sh").read_text(encoding="utf-8")
+    start = source.index("# APP_SECRET: generate a strong one now")
+    end = source.index("\nesac\n", start) + len("\nesac\n")
+    return source[start:end]
+
+
+def test_app_secret_step_stops_without_a_random_source(tools_without_openssl):
+    """The step must not write an empty APP_SECRET when the secret cannot be made.
+
+    `set -e` does not fire on a failed command substitution inside an
+    argument, so `set_env APP_SECRET "$(rand 48)"` carried on and wrote an
+    empty APP_SECRET. The secret is assigned first, which does stop.
+    """
+    # Point the reader at a path that does not exist: that is what a host
+    # without /dev/urandom looks like to the function.
+    function = rand_function().replace("/dev/urandom", "/nonexistent/urandom")
+
+    script = (
+        "set -euo pipefail\n"
+        f"{function}\n"
+        'set_env() { echo "$1=$2"; }\n'
+        "info() { :; }\n"
+        f"{app_secret_step()}\n"
+    )
+    result = subprocess.run(
+        [shutil.which("bash"), "-c", script],
+        env={"PATH": str(tools_without_openssl), "LC_ALL": "C"},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode != 0, (
+        f"the step returned {result.returncode}: {result.stdout!r} {result.stderr!r}"
+    )
+    # No APP_SECRET was written, and none of them is empty.
+    assert "APP_SECRET=" not in result.stdout
