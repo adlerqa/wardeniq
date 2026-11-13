@@ -22,6 +22,13 @@
 
 ### Changed
 
+- **Clearer notifications.** Toasts now have a warning style for an action that worked
+  but not completely. It is used when a user is created but the invitation email could
+  not be sent (on invite and on resend), and when a project is created but its access
+  token could not be saved or a repository could not be connected. Errors on the user,
+  project and settings screens now carry a specific title, such as "Couldn't invite
+  user" or "Couldn't save SMTP settings", instead of "Something went wrong". Other
+  screens keep the old title for now (#272, #274, #278).
 - **Smaller frontend build.** The production frontend build no longer emits a JavaScript
   sourcemap, so the built output drops by about 1.3 MB (2.9 MB to 1.7 MB on disk). The
   JavaScript the browser downloads is unchanged (about 198 kB gzipped). If the
