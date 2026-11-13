@@ -32,7 +32,7 @@
 
 - Boot no longer bounces the admin back to Configuration on every refresh and deep link
   when the LLM section was never saved but the bundled defaults work: `needsConfig()`
-  now treats a passing `/api/llm/test` health check as configured and redirects only
+  now treats a passing `GET /api/status` health check as configured and redirects only
   when the model is actually unreachable (#169).
 - The LLM settings card no longer marks the API key and endpoint as required for
   Ollama. Placeholders are now provider-specific and update when you change the

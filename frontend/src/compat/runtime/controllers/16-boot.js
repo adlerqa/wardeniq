@@ -19,10 +19,12 @@ async function needsConfig() {
   }
   // Settings were never saved, but the bundled defaults may already work: only
   // send the admin to Configuration when the model is actually unreachable (#169).
-  // A passing health check counts as configured.
+  // A passing health check counts as configured. /api/status carries llm.health,
+  // a cheap config/tags check — /api/llm/test would run a real generation call
+  // and block boot while a CPU-only model loads.
   try {
-    const h = await api("/api/llm/test", { method: "POST" });
-    return !h.ok;
+    const st = await api("/api/status");
+    return !(st.llm && st.llm.health && st.llm.health.ok);
   } catch (e) {
     return true;
   }

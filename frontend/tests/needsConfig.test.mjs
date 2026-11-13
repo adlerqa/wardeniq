@@ -33,10 +33,12 @@ test("unsaved settings with working defaults do not redirect", async () => {
   const calls = [];
   const run = harness(async (p) => {
     calls.push(p);
-    return p === "/api/settings" ? { configured: false } : { ok: true };
+    return p === "/api/settings"
+      ? { configured: false }
+      : { llm: { health: { ok: true } } };
   }, { role: "admin" });
   assert.equal(await run(), false);
-  assert.deepEqual(calls, ["/api/settings", "/api/llm/test"]);
+  assert.deepEqual(calls, ["/api/settings", "/api/status"]);
 });
 
 test("unsaved settings and an unreachable model still redirect", async () => {
@@ -47,7 +49,20 @@ test("unsaved settings and an unreachable model still redirect", async () => {
     throw new Error("LLM unreachable");
   }, { role: "admin" });
   assert.equal(await run(), true);
-  assert.deepEqual(calls, ["/api/settings", "/api/llm/test"]);
+  assert.deepEqual(calls, ["/api/settings", "/api/status"]);
+});
+
+test("a reachable Ollama that does not have the model yet still redirects", async () => {
+  // health() reports ok:false when /api/tags lists no matching model, without
+  // any generation call.
+  const calls = [];
+  const run = harness(async (p) => {
+    calls.push(p);
+    if (p === "/api/settings") return { configured: false };
+    return { llm: { health: { ok: false, provider: "ollama", models: ["other:1b"] } } };
+  }, { role: "admin" });
+  assert.equal(await run(), true);
+  assert.deepEqual(calls, ["/api/settings", "/api/status"]);
 });
 
 test("non-admins and settings fetch failures never redirect", async () => {
