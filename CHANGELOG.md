@@ -20,6 +20,14 @@
   `tests/fixtures/coverage/`. It is the first building block for the unit-test coverage
   validator agent (#250, #245).
 
+### Changed
+
+- **Smaller frontend build.** The production frontend build no longer emits a JavaScript
+  sourcemap, so the built output drops by about 1.3 MB (2.9 MB to 1.7 MB on disk). The
+  JavaScript the browser downloads is unchanged (about 198 kB gzipped). If the
+  compatibility runtime cannot be started, the app now shows a "could not initialize"
+  panel with a Retry button instead of staying blank (#265).
+
 ### Fixed
 
 - `install.sh` no longer stops with a bare status 141 on a host that has no
@@ -35,6 +43,9 @@
   Ollama. Placeholders are now provider-specific and update when you change the
   provider; for Ollama with a saved URL, the endpoint placeholder explains that
   leaving it blank resets to the bundled Ollama instance (#188).
+- The case editor's "shared by N testcases" note counts distinct test cases:
+  a case that uses one step twice no longer counts twice, and the count drops
+  when a case stops using the step (#175).
 - `install.sh` now probes `/dev/tty` by opening it before enabling interactive prompts. Runs without a controlling terminal use the existing non-interactive defaults instead of failing while opening the terminal (#220).
 - Test-case priority is stored in one vocabulary, High/Medium/Low, whichever
   path wrote it (generation, the editor, sheet import); existing cases are

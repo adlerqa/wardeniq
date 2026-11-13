@@ -277,9 +277,14 @@ $("#u-invite").onclick = async () => {
     $("#u-name").value = "";
     const msg = (r && r.message) || "User created.";
     $("#u-msg").innerHTML = esc(msg);
-    if (r && (r.delivery === "refused" || r.delivery === "error"))
-      toast(msg, true);
-    else toast(msg);
+    if (r && (r.delivery === "refused" || r.delivery === "error")) {
+      toast(msg, {
+        type: "warn",
+        title: "User created, but invitation email failed",
+      });
+    } else {
+      toast(msg);
+    }
     loadUsers();
   } catch (e) {
     toast(e.message, true);
@@ -341,9 +346,14 @@ window.resendInvite = async (id, email) => {
     const r = await api(`/api/users/${id}/resend-invite`, { method: "POST" });
     const msg = (r && r.message) || "Invite re-sent.";
     $("#u-msg").innerHTML = esc(msg);
-    if (r && (r.delivery === "refused" || r.delivery === "error"))
-      toast(msg, true);
-    else toast(msg);
+    if (r && (r.delivery === "refused" || r.delivery === "error")) {
+      toast(msg, {
+        type: "warn",
+        title: "Invitation email not sent",
+      });
+    } else {
+      toast(msg);
+    }
     loadUsers();
   } catch (e) {
     toast(e.message, true);
