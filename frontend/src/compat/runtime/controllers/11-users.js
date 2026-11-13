@@ -199,7 +199,10 @@ window.manageAccess = async (id) => {
     toast("Project access updated");
     loadUsers();
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't update project access",
+    });
   }
 };
 // ---- project-access picker (invite form) ----
@@ -287,7 +290,10 @@ $("#u-invite").onclick = async () => {
     }
     loadUsers();
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't invite user",
+    });
   }
 };
 window.setUserRole = async (id, role) => {
@@ -313,7 +319,10 @@ window.setUserRole = async (id, role) => {
     toast(`Role changed to ${role}.`);
     loadUsers();
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't change user role",
+    });
     loadUsers();
   }
 };
@@ -327,7 +336,10 @@ window.toggleUser = async (id, active) => {
     toast(active ? "Enabled" : "Disabled");
     loadUsers();
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't update user status",
+    });
   }
 };
 window.delUser = async (id, email) => {
@@ -338,7 +350,10 @@ window.delUser = async (id, email) => {
     toast("User deleted");
     loadUsers();
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't delete user",
+    });
   }
 };
 window.resendInvite = async (id, email) => {
@@ -356,7 +371,10 @@ window.resendInvite = async (id, email) => {
     }
     loadUsers();
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't resend invitation",
+    });
   }
 };
 window.cancelInvite = async (id, email) => {
@@ -374,7 +392,10 @@ window.cancelInvite = async (id, email) => {
     toast("Invite cancelled");
     loadUsers();
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't cancel invitation",
+    });
   }
 };
 async function loadAudit() {

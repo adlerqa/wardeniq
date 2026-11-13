@@ -11,7 +11,7 @@
 
 // ---- toast + prompt helpers (replace browser popups) ----
 // toast(message, isErr)  — backward compatible.
-// toast(message, {type:'ok'|'err'|'info', title, duration})  — richer form.
+// toast(message, {type:'ok'|'err'|'info'|'warn', title, duration})
 function toast(msg, opt) {
   let type = "ok",
     title,
@@ -31,7 +31,7 @@ function toast(msg, opt) {
   };
   const icons = { ok: "✓", err: "!", info: "i", warn: "⚠" };
   title = title || titles[type];
-  // Errors stay longer and scale a little with length so they're actually readable.
+  // Errors and warnings stay longer and scale with message length.
   duration =
     duration ||
     (type === "err" || type === "warn"
