@@ -85,21 +85,35 @@ class StepsTestCasesMixin(_Base):
         return counts
 
     def list_steps(self, limit=200, skip=0):
-        # Fetch the page first, then compute usage counts in ONE aggregation
-        # against cases.step_ids (indexed). Previously this was N count_documents
-        # calls, one per step, which was the main cause of the step-library
-        # loader appearing to hang on non-trivial datasets.
-        steps = list(
-            self.steps.find({}, {"embedding": 0})
-            .sort("usage_count", -1)
-            .skip(skip)
-            .limit(limit)
-        )
-        counts = self._distinct_case_counts([str(s["_id"]) for s in steps])
+        # The order has to be the count the list SHOWS, which is the number of
+        # distinct cases using the step. The stored usage_count cannot order
+        # the library: it is incremented on every reuse and never decremented
+        # (not when a case stops using the step, not when the case is
+        # deleted), so a step that was reused a lot in the past sorts above a
+        # step that is used by more cases today (issue #270).
+        #
+        # ONE aggregation does the counting, the ordering and the paging: a
+        # $lookup brings the cases of each step in, so a step counts once per
+        # case even when that case references the same step twice in its own
+        # step_ids. The count matches what resolve_steps reports with
+        # live_usage=True, which is the count the step editor shows (issue
+        # #175). Steps with the same count are ordered by their id, so the
+        # order is stable.
+        #
+        # The embedding is dropped from the result: the library list never
+        # needs the vector.
+        steps = list(self.steps.aggregate([
+            {"$lookup": {"from": self.cases.name, "localField": "_id",
+                         "foreignField": "step_ids", "as": "cases"}},
+            {"$addFields": {"used_in_cases": {"$size": "$cases"}}},
+            {"$sort": {"used_in_cases": -1, "_id": 1}},
+            {"$skip": skip},
+            {"$limit": limit},
+            {"$project": {"embedding": 0, "cases": 0}},
+        ]))
         out = []
         for s in steps:
             s["id"] = str(s.pop("_id"))
-            s["used_in_cases"] = counts.get(s["id"], 0)
             out.append(s)
         return out
 
