@@ -769,7 +769,7 @@ class GenerationPipelineTests(unittest.TestCase):
             {
                 "feature_id": "feature-1",
                 "total": 4,
-                "focus": {"functional": 0, "e2e": 0, "api": 100, "nfr": 0},
+                "focus": {"functional": 20, "e2e": 20, "api": 20, "nfr": 20, "ui": 20},
                 "smoke_mode": True,
             },
         )
@@ -892,7 +892,7 @@ class GenerationPipelineTests(unittest.TestCase):
             {
                 "feature_id": "feature-1",
                 "total": 4,
-                "focus": {"functional": 0, "e2e": 0, "api": 100, "nfr": 0},
+                "focus": {"functional": 20, "e2e": 20, "api": 20, "nfr": 20, "ui": 20},
                 "smoke_mode": True,
             },
         )
@@ -915,7 +915,7 @@ class GenerationPipelineTests(unittest.TestCase):
             {
                 "feature_id": "feature-1",
                 "total": 4,
-                "focus": {"functional": 0, "e2e": 0, "api": 100, "nfr": 0},
+                "focus": {"functional": 20, "e2e": 20, "api": 20, "nfr": 20, "ui": 20},
                 "smoke_mode": True,
             },
         )
@@ -991,7 +991,7 @@ class GenerationPipelineTests(unittest.TestCase):
             {
                 "feature_id": "feature-1",
                 "total": 4,
-                "focus": {"functional": 0, "e2e": 0, "api": 100, "nfr": 0},
+                "focus": {"functional": 20, "e2e": 20, "api": 20, "nfr": 20, "ui": 20},
                 "smoke_mode": True,
             },
         )
@@ -1039,7 +1039,7 @@ class GenerationPipelineTests(unittest.TestCase):
             {
                 "feature_id": "feature-1",
                 "total": 4,
-                "focus": {"functional": 0, "e2e": 0, "api": 100, "nfr": 0},
+                "focus": {"functional": 20, "e2e": 20, "api": 20, "nfr": 20, "ui": 20},
                 "smoke_mode": True,
             },
         )
@@ -1099,17 +1099,17 @@ class GenerationPipelineTests(unittest.TestCase):
             {
                 "feature_id": "feature-1",
                 "total": 4,
-                "focus": {"functional": 0, "e2e": 0, "api": 100, "nfr": 0},
+                "focus": {"functional": 20, "e2e": 20, "api": 20, "nfr": 20, "ui": 20},
                 "smoke_mode": True,
             },
         )
-        # 1 Pass-1 extraction + 1 fusion + 3 API workers (happy/negative/chaos) +
+        # 1 Pass-1 extraction + 0 fusion (empty project) + 3 API workers (happy/negative/chaos) +
         # 1 UI worker + 1 combined E2E/edge/business call + 1 business fallback
         # (FakeLLM's primary call always returns empty business_tests, so the fallback
-        # always fires for this fixture) = 8. No Pass-2 CRUD-inference call (Pass 0
+        # always fires for this fixture) = 7. No Pass-2 CRUD-inference call (Pass 0
         # already found a verbatim endpoint) and no repair call (smoke_mode=True skips
         # it) for this fixture.
-        self.assertEqual(8, len(llm.calls))
+        self.assertEqual(7, len(llm.calls))
         for call in llm.calls:
             self.assertNotIn("retrieval query", call["user"].lower())
             self.assertNotIn("search query", call["user"].lower())

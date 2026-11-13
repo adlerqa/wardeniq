@@ -648,6 +648,10 @@ class FusionInheritancePathTests(unittest.TestCase):
     could reach the store unchecked."""
 
     class _InheritStore(ScenarioStore):
+        def list_test_cases(self, **kwargs):
+            # Fusion only runs with actual candidates, not a model-invented reference.
+            return {"items": [{"id": "old-case-1", "title": "A shipment handover is recorded"}]}
+
         def resolve_case_reference(self, reference_key=None, title=None, project_id=None):
             return {
                 "id": "old-case-1",
