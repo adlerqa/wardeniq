@@ -22,6 +22,13 @@
 
 ### Changed
 
+- **Clearer notifications.** Toasts now have a warning style for an action that worked
+  but not completely. It is used when a user is created but the invitation email could
+  not be sent (on invite and on resend), and when a project is created but its access
+  token could not be saved or a repository could not be connected. Errors on the user,
+  project and settings screens now carry a specific title, such as "Couldn't invite
+  user" or "Couldn't save SMTP settings", instead of "Something went wrong". Other
+  screens keep the old title for now (#272, #274, #278).
 - **Smaller frontend build.** The production frontend build no longer emits a JavaScript
   sourcemap, so the built output drops by about 1.3 MB (2.9 MB to 1.7 MB on disk). The
   JavaScript the browser downloads is unchanged (about 198 kB gzipped). If the
@@ -30,6 +37,15 @@
 
 ### Fixed
 
+- `install.sh` no longer stops with a bare status 141 on a host that has no
+  `openssl`. The random secret is then read from `/dev/urandom`, where the
+  reader dies of SIGPIPE once `head` has its bytes - under `set -euo pipefail`
+  that failed the whole pipeline and stopped the installer without a word.
+  The reader's status is now kept out of the pipeline, the same guard
+  `scripts/enable-mongo-auth.sh` already used, and a host with neither
+  `openssl` nor `/dev/urandom` gets a message instead of a silent failure
+  (#271). The `APP_SECRET` step now stops when the secret cannot be
+  generated, instead of writing an empty one.
 - Boot no longer bounces the admin back to Configuration on every refresh and deep link
   when the LLM section was never saved but the bundled defaults work: `needsConfig()`
   now treats a passing `GET /api/status` health check as configured and redirects only
