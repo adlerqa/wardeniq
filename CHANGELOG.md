@@ -15,6 +15,11 @@
 
 ### Fixed
 
+- Repository connections now infer GitHub/GitLab from HTTPS and scp-style SSH
+  URL hosts, and project settings switch the provider and PAT panel accordingly.
+  Detection respects `GITLAB_BASE_URL` and accepts `www.github.com`; bare paths
+  retain the selected provider. GitLab URL parsing preserves nested namespaces
+  and removes browser UI paths after `/-/` (provider detection part of #185).
 - The LLM settings card no longer marks the API key and endpoint as required for
   Ollama. Placeholders are now provider-specific and update when you change the
   provider; for Ollama with a saved URL, the endpoint placeholder explains that
@@ -79,11 +84,6 @@
 
 ### Fixed
 
-- Repository connections now infer GitHub/GitLab from the URL host, and project
-  settings switch the provider and PAT panel when a recognized URL is entered.
-  Detection respects `GITLAB_BASE_URL`, bare paths retain the selected provider,
-  and GitLab URL parsing preserves complete namespace/project paths
-  (provider detection part of #185).
 - **Malformed LLM JSON no longer crashes analysis or leaves orphan feature versions.**
   JSON responses are required to be objects, nullable list fields are normalized at
   the shared generation/coverage boundaries, and version diffs complete before a new

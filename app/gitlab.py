@@ -38,7 +38,8 @@ def parse_repo_url(url: str):
     url = (url or "").strip().rstrip("/")
     m = _URL_RE.search(url)
     if m:
-        return validate_project_path(m.group(1), min_segments=1)
+        project_path = m.group(1).split("/-/", 1)[0]
+        return validate_project_path(project_path, min_segments=1)
     if "/" in url and " " not in url:
         return validate_project_path(url.removesuffix(".git"), min_segments=1)
     raise ValueError(f"could not parse GitLab project path: {url!r}")

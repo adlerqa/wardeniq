@@ -897,7 +897,12 @@ if ($("#repo-url")) {
     renderRepoSuggest(value);
     let hostname;
     try {
-      hostname = new URL(value).hostname;
+      // Convert scp-style SSH addresses so URL can extract their host too.
+      const ssh = !value.includes("://") && value.match(/^git@([^/:\s]+):/);
+      const source = ssh
+        ? `ssh://git@${ssh[1]}/${value.slice(ssh[0].length)}`
+        : value;
+      hostname = new URL(source).hostname.toLowerCase();
     } catch (e) {
       return;
     }
@@ -905,7 +910,7 @@ if ($("#repo-url")) {
     if ($("#repo-url").value.trim() !== value) return;
     const provider =
       hostname === PD_GITLAB_HOST ? "gitlab" :
-      hostname === "github.com" ? "github" : null;
+      hostname.replace(/^www\./, "") === "github.com" ? "github" : null;
     if (provider && provider !== PD_PROVIDER) await setProjectProvider(provider);
   };
   // Reopening (focus or click) always re-shows the complete cached list —

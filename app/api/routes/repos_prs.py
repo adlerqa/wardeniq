@@ -21,6 +21,7 @@ instead of another router). These three routes will move together with
 `project_prs` (GET /api/projects/{pid}/prs, simple PR listing with no coverage
 dependency) DOES move here, since it has no such coupling.
 """
+import re
 import threading
 
 from fastapi import APIRouter, HTTPException, Request
@@ -197,15 +198,21 @@ def _require_github_repo(client, owner: str, name: str) -> None:
         raise _ext_error("GitHub", e)
 
 def _resolve_git_provider(source: str, fallback: str) -> str:
-    split_result = urlsplit(source)
+    source = source.strip()
+    # Convert scp-style SSH syntax only for host detection; keep the input for parsing.
+    if "://" not in source:
+        source = re.sub(r"^git@([^/:\s]+):", r"ssh://git@\1/", source, count=1)
+    host = urlsplit(source).hostname
     gitlab_host = urlsplit(GITLAB_BASE_URL).hostname
-    if split_result.hostname is None:
+    if host is None:
         return fallback
-    elif split_result.hostname == gitlab_host:
+    elif host == gitlab_host:
         return "gitlab"
-    elif split_result.hostname == "github.com":
+    elif host.removeprefix("www.") == "github.com":
         return "github"
-    raise ValueError("Unsupported provider", str(split_result.hostname))
+    raise ValueError(
+        f"Unsupported repository host '{host}'. "
+        f"Supported hosts are github.com and {gitlab_host}.")
 
 @router.post("/api/projects/{pid}/repos")
 def add_repo(pid: str, body: RepoIn, request: Request):
@@ -220,7 +227,9 @@ def add_repo(pid: str, body: RepoIn, request: Request):
     # Resolve owner/name
     if provider == "gitlab":
         try:
-            full = gitlab_mod.parse_repo_url(path) if "://" in path or path.endswith(".git") else path
+            full = gitlab_mod.parse_repo_url(path) if (
+                "://" in path or path.endswith(".git") or path.startswith("git@")
+            ) else path
             full = gitlab_mod.validate_project_path(full)
         except ValueError as e:
             raise HTTPException(400, str(e))

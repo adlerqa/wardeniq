@@ -128,6 +128,25 @@ class TestSelfHostedViaEnv:
         assert client.api == "https://another-host.example/api/v4"
 
 
+class TestProjectUrlPaths:
+    @pytest.mark.parametrize("base_url", [None, "https://gitlab.example.com"])
+    @pytest.mark.parametrize("suffix", ["", "/-/merge_requests/5", "/-/tree/main?ref_type=heads"])
+    def test_preserves_nested_namespace_without_ui_path(
+            self, reload_with_gitlab_base_url, base_url, suffix):
+        gitlab_mod, _ = reload_with_gitlab_base_url(base_url)
+        host = base_url or "https://gitlab.com"
+        project_path = "my-group/subgroup/my-project"
+        assert gitlab_mod.parse_repo_url(f"{host}/{project_path}{suffix}") == project_path
+
+    @pytest.mark.parametrize("source", [
+        "git@gitlab.com:my-group/subgroup/my-project.git",
+        "my-group/subgroup/my-project",
+    ])
+    def test_preserves_nested_ssh_and_bare_paths(self, reload_with_gitlab_base_url, source):
+        gitlab_mod, _ = reload_with_gitlab_base_url(None)
+        assert gitlab_mod.parse_repo_url(source) == "my-group/subgroup/my-project"
+
+
 class TestBlobAndCommitUrls:
     """build_blob_url / build_commit_url must use the configured GitLab host."""
 
