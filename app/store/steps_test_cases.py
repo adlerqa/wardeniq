@@ -85,36 +85,53 @@ class StepsTestCasesMixin(_Base):
         return counts
 
     def list_steps(self, limit=200, skip=0):
-        # The order has to be the count the list SHOWS, which is the number of
-        # distinct cases using the step. The stored usage_count cannot order
+        # The order has to be the count the list SHOWS, which is the number
+        # of distinct cases using the step. The stored usage_count cannot order
         # the library: it is incremented on every reuse and never decremented
         # (not when a case stops using the step, not when the case is
         # deleted), so a step that was reused a lot in the past sorts above a
         # step that is used by more cases today (issue #270).
         #
-        # ONE aggregation does the counting, the ordering and the paging: a
-        # $lookup brings the cases of each step in, so a step counts once per
-        # case even when that case references the same step twice in its own
-        # step_ids. The count matches what resolve_steps reports with
-        # live_usage=True, which is the count the step editor shows (issue
-        # #175). Steps with the same count are ordered by their id, so the
-        # order is stable.
-        #
-        # The embedding is dropped from the result: the library list never
-        # needs the vector.
-        steps = list(self.steps.aggregate([
-            {"$lookup": {"from": self.cases.name, "localField": "_id",
-                         "foreignField": "step_ids", "as": "cases"}},
-            {"$addFields": {"used_in_cases": {"$size": "$cases"}}},
-            {"$sort": {"used_in_cases": -1, "_id": 1}},
-            {"$skip": skip},
-            {"$limit": limit},
-            {"$project": {"embedding": 0, "cases": 0}},
-        ]))
+        # ONE aggregation over the cases groups them by step_ids with
+        # $addToSet on the case's own _id, so a case that references the same
+        # step more than once in its own step_ids still counts once - the
+        # same count resolve_steps reports with live_usage=True, which is the
+        # count the step editor shows (issue #175). The step ids in
+        # cases.step_ids are strings (the API writes str(inserted_id)), while
+        # the steps collection's _id is an ObjectId - comparing the two in a
+        # $lookup or a $match never matches, which is why this counts in
+        # Python instead of $lookup-ing the steps into the cases pipeline.
+        # Only the ids of the whole library are fetched to compute the order,
+        # and the embedding vectors only for the page being returned. Steps
+        # used by no case go last, in id order, and steps with the same count
+        # keep a stable order (id ascending).
+        counts = {}
+        for row in self.cases.aggregate([
+            {"$unwind": "$step_ids"},
+            {"$group": {"_id": "$step_ids", "cases": {"$addToSet": "$_id"}}},
+        ]):
+            counts[str(row["_id"])] = len(row["cases"])
+
+        rows = [(s["_id"], counts.get(str(s["_id"]), 0))
+                for s in self.steps.find({}, {"_id": 1})]
+        # str(ObjectId) is hex of the raw bytes, so it orders the same as the
+        # ObjectId itself - stable and type-safe across MongoDB and mongomock.
+        rows.sort(key=lambda r: (-r[1], str(r[0])))
+
+        page_ids = [sid for sid, _ in rows[skip:skip + limit]]
+        page = {}
+        if page_ids:
+            for d in self.steps.find({"_id": {"$in": page_ids}}, {"embedding": 0}):
+                page[str(d["_id"])] = d
+
         out = []
-        for s in steps:
-            s["id"] = str(s.pop("_id"))
-            out.append(s)
+        for sid, count in rows[skip:skip + limit]:
+            d = page.get(str(sid))
+            if d is None:
+                continue
+            d["id"] = str(d.pop("_id"))
+            d["used_in_cases"] = count
+            out.append(d)
         return out
 
     def resolve_steps(self, step_ids, live_usage=False):
