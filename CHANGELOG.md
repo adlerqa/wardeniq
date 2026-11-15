@@ -12,6 +12,28 @@
   CPU-only machines, where the bundled model can take several minutes per call and
   passes used to fail on working installs. Documented in `.env.example` and
   `docs/configuration.md` (Part of #130, #138).
+- **Coverage report parser (groundwork, not wired into the app yet).** New
+  `app/coverage_reports.py` reads lcov, Cobertura, JaCoCo and coverage.py XML reports
+  through `parse(path)` and returns one model with per-file line and branch hits, so the
+  same project gives the same numbers in every format. Unknown or malformed files raise
+  a typed `CoverageParseError` instead of crashing. Sample reports live in
+  `tests/fixtures/coverage/`. It is the first building block for the unit-test coverage
+  validator agent (#250, #245).
+
+### Changed
+
+- **Clearer notifications.** Toasts now have a warning style for an action that worked
+  but not completely. It is used when a user is created but the invitation email could
+  not be sent (on invite and on resend), and when a project is created but its access
+  token could not be saved or a repository could not be connected. Errors on the user,
+  project and settings screens now carry a specific title, such as "Couldn't invite
+  user" or "Couldn't save SMTP settings", instead of "Something went wrong". Other
+  screens keep the old title for now (#272, #274, #278).
+- **Smaller frontend build.** The production frontend build no longer emits a JavaScript
+  sourcemap, so the built output drops by about 1.3 MB (2.9 MB to 1.7 MB on disk). The
+  JavaScript the browser downloads is unchanged (about 198 kB gzipped). If the
+  compatibility runtime cannot be started, the app now shows a "could not initialize"
+  panel with a Retry button instead of staying blank (#265).
 
 ### Fixed
 
@@ -20,10 +42,22 @@
   Detection respects `GITLAB_BASE_URL` and accepts `www.github.com`; bare paths
   retain the selected provider. GitLab URL parsing preserves nested namespaces
   and removes browser UI paths after `/-/` (provider detection part of #185).
+- `install.sh` no longer stops with a bare status 141 on a host that has no
+  `openssl`. The random secret is then read from `/dev/urandom`, where the
+  reader dies of SIGPIPE once `head` has its bytes - under `set -euo pipefail`
+  that failed the whole pipeline and stopped the installer without a word.
+  The reader's status is now kept out of the pipeline, the same guard
+  `scripts/enable-mongo-auth.sh` already used, and a host with neither
+  `openssl` nor `/dev/urandom` gets a message instead of a silent failure
+  (#271). The `APP_SECRET` step now stops when the secret cannot be
+  generated, instead of writing an empty one.
 - The LLM settings card no longer marks the API key and endpoint as required for
   Ollama. Placeholders are now provider-specific and update when you change the
   provider; for Ollama with a saved URL, the endpoint placeholder explains that
   leaving it blank resets to the bundled Ollama instance (#188).
+- The case editor's "shared by N testcases" note counts distinct test cases:
+  a case that uses one step twice no longer counts twice, and the count drops
+  when a case stops using the step (#175).
 - `install.sh` now probes `/dev/tty` by opening it before enabling interactive prompts. Runs without a controlling terminal use the existing non-interactive defaults instead of failing while opening the terminal (#220).
 - Test-case priority is stored in one vocabulary, High/Medium/Low, whichever
   path wrote it (generation, the editor, sheet import); existing cases are
