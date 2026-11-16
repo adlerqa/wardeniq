@@ -8,6 +8,7 @@
  * setup flags) → "active" (steps[index] is shown) → "idle".
  */
 
+import { readFlag, writeFlag } from "./storage.js";
 import { TOUR_SEEN_KEY } from "./tourSteps.js";
 
 const IDLE = Object.freeze({ status: "idle", chapter: null, steps: [], index: 0 });
@@ -59,20 +60,13 @@ export function endTour() {
   setState(IDLE);
 }
 
+/** Has the signed-in user answered the welcome prompt (or taken the tour)? */
 export function hasSeenTour() {
-  try {
-    return localStorage.getItem(TOUR_SEEN_KEY) === "1";
-  } catch {
-    return true; // storage unavailable: never nag
-  }
+  return readFlag(TOUR_SEEN_KEY, true); // storage unavailable: never nag
 }
 
 export function markTourSeen() {
-  try {
-    localStorage.setItem(TOUR_SEEN_KEY, "1");
-  } catch {
-    /* storage unavailable */
-  }
+  writeFlag(TOUR_SEEN_KEY, true);
 }
 
 /** Test helper: reset to idle. */

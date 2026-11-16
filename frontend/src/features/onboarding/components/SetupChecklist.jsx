@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-import { SHOW_CHECKLIST_EVENT, goTo, loadEffectiveSetup, readRole } from "../appBridge.js";
+import { SHOW_CHECKLIST_EVENT, goTo, isSignedIn, loadEffectiveSetup, readRole } from "../appBridge.js";
 import {
   SAMPLE_PRD_URL,
   SETUP_DISMISS_KEY,
@@ -9,32 +9,15 @@ import {
   checklistState,
   setupProgress,
 } from "../setupSteps.js";
+import { readFlag, writeFlag } from "../storage.js";
 import { CHECKLIST_TO_CHAPTER } from "../tourSteps.js";
-import {
-  getTourState,
-  hasSeenTour,
-  markTourSeen,
-  requestTour,
-  subscribeTour,
-} from "../tourStore.js";
-import WelcomeDialog from "./WelcomeDialog.jsx";
+import { getTourState, requestTour, subscribeTour } from "../tourStore.js";
 
-function readDismissed() {
-  try {
-    return localStorage.getItem(SETUP_DISMISS_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
+const readDismissed = () => readFlag(SETUP_DISMISS_KEY);
+const writeDismissed = (value) => writeFlag(SETUP_DISMISS_KEY, value);
 
-function writeDismissed(value) {
-  try {
-    if (value) localStorage.setItem(SETUP_DISMISS_KEY, "1");
-    else localStorage.removeItem(SETUP_DISMISS_KEY);
-  } catch {
-    /* storage unavailable: the choice just isn't remembered */
-  }
-}
+const RETRY_MS = 2000; // the first read can race the sign-in; retry a few times
+const MAX_RETRIES = 5;
 
 function StepMarker({ step, index }) {
   if (step.done) {
@@ -76,7 +59,12 @@ function statusText(step) {
  * boot gate, #279) and re-reads them each time the Dashboard view is shown.
  * Each unfinished step has a "Show me" button that starts the guided tour at
  * that step. Hidden once every required step is done; can be dismissed and
- * restored. Also hosts the one-time welcome prompt.
+ * restored. (The welcome prompt after sign-in lives in WelcomeHost.jsx.)
+ *
+ * Reliability: #view-dashboard is the one view that is not hidden at load, so
+ * after sign-in navigateTo("dashboard") changes nothing a MutationObserver on
+ * the view could see. The card therefore also reloads when #usermenu is
+ * un-hidden by applyRole() (sign-in), and retries a failed first read.
  */
 export default function SetupChecklist() {
   const rootRef = useRef(null);
@@ -84,49 +72,58 @@ export default function SetupChecklist() {
   const [setup, setSetup] = useState(null);
   const [dismissed, setDismissed] = useState(readDismissed);
   const [role, setRole] = useState(readRole);
-  const [welcome, setWelcome] = useState(false);
+  const retryRef = useRef({ timer: null, count: 0 });
 
-  const load = useCallback(async () => {
-    const s = await loadEffectiveSetup();
-    if (s) setSetup(s);
-    setRole(readRole());
-    setDismissed(readDismissed());
+  const dashboardVisible = useCallback(() => {
+    const view = rootRef.current && rootRef.current.closest(".view");
+    return Boolean(view && !view.hidden && isSignedIn());
   }, []);
 
-  // Reload whenever the Dashboard view becomes visible (navigateTo() toggles
-  // the `hidden` attribute on each `.view`), track role changes on <body>, and
-  // react to "Show setup checklist" from the help button.
+  const load = useCallback(async () => {
+    const r = retryRef.current;
+    clearTimeout(r.timer);
+    if (!dashboardVisible()) return;
+    const s = await loadEffectiveSetup();
+    setRole(readRole());
+    setDismissed(readDismissed());
+    if (s) {
+      r.count = 0;
+      setSetup(s);
+    } else if (r.count < MAX_RETRIES) {
+      r.count += 1;
+      r.timer = setTimeout(load, RETRY_MS);
+    }
+  }, [dashboardVisible]);
+
+  // Reload when the Dashboard view becomes visible (navigateTo() toggles the
+  // `hidden` attribute on each `.view`), when the user signs in (#usermenu is
+  // un-hidden), on role changes, and on "Show setup checklist" from the help
+  // button.
   useEffect(() => {
     const view = rootRef.current && rootRef.current.closest(".view");
-    if (view && !view.hidden) load();
-    const viewObserver = new MutationObserver(() => {
-      if (view && !view.hidden) load();
-    });
-    if (view) viewObserver.observe(view, { attributes: true, attributeFilter: ["hidden"] });
+    load();
+    const observer = new MutationObserver(load);
+    if (view) observer.observe(view, { attributes: true, attributeFilter: ["hidden"] });
+    const menu = document.getElementById("usermenu");
+    if (menu) observer.observe(menu, { attributes: true, attributeFilter: ["hidden"] });
     const roleObserver = new MutationObserver(() => setRole(readRole()));
     roleObserver.observe(document.body, { attributes: true, attributeFilter: ["class"] });
     window.addEventListener(SHOW_CHECKLIST_EVENT, load);
+    const retry = retryRef.current;
     return () => {
-      viewObserver.disconnect();
+      observer.disconnect();
       roleObserver.disconnect();
       window.removeEventListener(SHOW_CHECKLIST_EVENT, load);
+      clearTimeout(retry.timer);
     };
   }, [load]);
 
   // Refresh when a tour ends, so steps finished during it tick off.
   useEffect(() => {
-    if (tour.status === "idle") {
-      const view = rootRef.current && rootRef.current.closest(".view");
-      if (view && !view.hidden) load();
-    }
+    if (tour.status === "idle") load();
   }, [tour.status, load]);
 
   const state = checklistState(setup, dismissed);
-
-  // Offer the tour once, while setup is incomplete.
-  useEffect(() => {
-    if (state !== "hidden" && tour.status === "idle" && !hasSeenTour()) setWelcome(true);
-  }, [state, tour.status]);
 
   const dismiss = () => {
     writeDismissed(true);
@@ -136,19 +133,6 @@ export default function SetupChecklist() {
     writeDismissed(false);
     setDismissed(false);
   };
-  const startTour = useCallback(() => {
-    setWelcome(false);
-    requestTour(null);
-  }, []);
-  const skipWelcome = useCallback(() => {
-    setWelcome(false);
-    markTourSeen();
-  }, []);
-
-  const welcomeDialog = welcome ? (
-    <WelcomeDialog role={role} setup={setup} onStart={startTour} onDismiss={skipWelcome} />
-  ) : null;
-
   if (state === "hidden") return <div ref={rootRef} hidden />;
 
   if (state === "collapsed") {
@@ -157,7 +141,6 @@ export default function SetupChecklist() {
         <button type="button" className="ghost" onClick={restore}>
           Show setup checklist
         </button>
-        {welcomeDialog}
       </div>
     );
   }
@@ -266,7 +249,6 @@ export default function SetupChecklist() {
           );
         })}
       </ol>
-      {welcomeDialog}
     </section>
   );
 }

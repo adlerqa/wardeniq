@@ -210,3 +210,17 @@ test("tour store: request → begin → next/back → end", () => {
   assert.ok(notified > 0);
   unsub();
 });
+
+test("onboarding flags are scoped per user, and safe without storage or DOM", async () => {
+  const { scopedKey, readFlag, writeFlag, currentUser } = await import(
+    "../src/features/onboarding/storage.js"
+  );
+  assert.equal(scopedKey("wq_tour_seen", "Admin"), "wq_tour_seen:admin");
+  assert.equal(scopedKey("wq_tour_seen", " jo@example.com "), "wq_tour_seen:jo@example.com");
+  assert.equal(scopedKey("wq_tour_seen", ""), "wq_tour_seen");
+  assert.equal(scopedKey("wq_tour_seen", null), "wq_tour_seen");
+  // No document / localStorage here (plain node): never throws, uses the fallback.
+  assert.equal(currentUser(), "");
+  assert.equal(readFlag("x", true), true);
+  assert.doesNotThrow(() => writeFlag("x", true));
+});

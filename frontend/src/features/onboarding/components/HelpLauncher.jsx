@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { SHOW_CHECKLIST_EVENT, goTo, isSignedIn } from "../appBridge.js";
 import { SETUP_DISMISS_KEY } from "../setupSteps.js";
+import { writeFlag } from "../storage.js";
 import { getTourState, requestTour, subscribeTour } from "../tourStore.js";
 
 /**
@@ -56,11 +57,7 @@ export default function HelpLauncher() {
   };
   const showChecklist = () => {
     setOpen(false);
-    try {
-      localStorage.removeItem(SETUP_DISMISS_KEY);
-    } catch {
-      /* storage unavailable */
-    }
+    writeFlag(SETUP_DISMISS_KEY, false);
     goTo("dashboard");
     window.dispatchEvent(new Event(SHOW_CHECKLIST_EVENT));
   };
