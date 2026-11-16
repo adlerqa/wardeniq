@@ -1648,7 +1648,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     _mark("fusion")
 
     log_progress(update_job_fn, "DAG layer 1: generating API and UI tests", 38)
-    api_chunks = _chunks(api_surface, 8) if enabled["api"] else []
+    api_chunks = (_chunks(api_surface, 8) or [[]]) if enabled["api"] else []
     # UI generation is conditioned on UI evidence actually existing. When ui_components
     # is empty -- Pass 1 grounded no UI element AND _derive_ui_components() found no
     # control in the raw document -- the previous `else [[]]` still queued one UI worker

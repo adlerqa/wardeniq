@@ -489,6 +489,10 @@ if ($("#cfg-embed-save"))
     } catch (e) {
       $("#cfg-embed-status").innerHTML =
         `<span class="err">${esc(e.message)}</span>`;
+      toast(e.message, {
+        type: "err",
+        title: "Couldn't switch embedding model",
+      });
       btn.disabled = false;
     }
   };
@@ -688,7 +692,10 @@ $("#cfg-llm-save").onclick = async () => {
       }
     }
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't save LLM settings",
+    });
   }
 };
 $("#cfg-jira-save").onclick = async () => {
@@ -725,7 +732,10 @@ $("#cfg-jira-save").onclick = async () => {
       successMessage: "Jira settings saved",
     });
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't save Jira settings",
+    });
   }
 };
 $("#cfg-figma-save").onclick = async () => {
@@ -743,7 +753,10 @@ $("#cfg-figma-save").onclick = async () => {
       successMessage: "Figma token saved",
     });
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't save Figma token",
+    });
   }
 };
 $("#cfg-poll-save").onclick = async () => {
@@ -762,7 +775,10 @@ $("#cfg-poll-save").onclick = async () => {
     });
     if (typeof loadSyncStatus === "function") loadSyncStatus();
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't save poll interval",
+    });
   }
 };
 $("#cfg-smtp-save").onclick = async () => {
@@ -785,7 +801,10 @@ $("#cfg-smtp-save").onclick = async () => {
       successMessage: b.smtp_host ? "SMTP settings saved" : "Settings saved",
     });
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't save SMTP settings",
+    });
   }
 };
 $("#cfg-smtp-test").onclick = async () => {
@@ -848,7 +867,10 @@ if ($("#cfg-s3-save")) {
           : "Settings saved",
       });
     } catch (e) {
-      toast(e.message, true);
+      toast(e.message, {
+        type: "err",
+        title: "Couldn't save AWS S3 settings",
+      });
     }
   };
 }

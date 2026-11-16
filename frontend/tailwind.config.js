@@ -8,7 +8,7 @@ export default {
   content: [
     "./index.html",
     "./src/**/*.{jsx,tsx}",
-    "!./src/compat/**",
+    "!./src/compat/runtime/controllers/**",
   ],
   // corePlugins.preflight = false — Tailwind's opinionated CSS reset resets
   // margins, list styles, form controls, headings, and more. The legacy stylesheet
