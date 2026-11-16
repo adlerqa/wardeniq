@@ -37,6 +37,22 @@
 
 ### Fixed
 
+- The step library is now ordered by the number of test cases it shows for a
+  step, not by the stored reuse counter. The counter is incremented on every
+  reuse of a step and never decremented - not when a case stops using the
+  step, not when the case is deleted - so a step that was reused a lot in the
+  past used to sit above a step that is used by more cases today, and a page
+  of N could leave out a step with a higher real count. The list and its
+  paging follow the distinct-case count now, with the step id as the
+  tie-break, so the order agrees with the count on screen and with the
+  "shared by N testcases" note of the step editor (#270). The counting is
+  one aggregation over the cases that groups them by step_ids with
+  `$addToSet` on the case's own id, then the ordering and the paging happen
+  in Python - the step ids in `cases.step_ids` are strings while the steps
+  collection's `_id` is an ObjectId, so a `$lookup` between the two never
+  matches on a real database; mongomock matches across the types, which is
+  why this now has a dbintegration test that runs against a real MongoDB
+  with string step ids (`tests/test_step_library_ordering_db.py`).
 - `install.sh` no longer stops with a bare status 141 on a host that has no
   `openssl`. The random secret is then read from `/dev/urandom`, where the
   reader dies of SIGPIPE once `head` has its bytes - under `set -euo pipefail`
