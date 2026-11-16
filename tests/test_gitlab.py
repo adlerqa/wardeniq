@@ -89,18 +89,12 @@ class TestDefaultHostUnchanged:
         assert gitlab_mod.GitLab(token="x").api == "https://gitlab.com/api/v4"
 
     def test_default_parses_https_url(self, reload_with_gitlab_base_url):
-        # NOTE: _URL_RE's non-greedy capture group stops at the first "/", so a
-        # namespace/project URL currently resolves to just the namespace segment.
-        # That is a PRE-EXISTING behavior of this regex (reproduced identically for
-        # plain gitlab.com before #14's changes) and is unrelated to host
-        # configurability — not something this issue asks us to fix. Asserted here
-        # only so this test documents the real current output, not a guessed one.
         gitlab_mod, _ = reload_with_gitlab_base_url(None)
-        assert gitlab_mod.parse_repo_url("https://gitlab.com/my-group/my-project") == "my-group"
+        assert gitlab_mod.parse_repo_url("https://gitlab.com/my-group/my-project") == "my-group/my-project"
 
     def test_default_parses_ssh_url(self, reload_with_gitlab_base_url):
         gitlab_mod, _ = reload_with_gitlab_base_url(None)
-        assert gitlab_mod.parse_repo_url("git@gitlab.com:my-group/my-project.git") == "my-group"
+        assert gitlab_mod.parse_repo_url("git@gitlab.com:my-group/my-project.git") == "my-group/my-project"
 
     def test_default_parses_bare_namespace_path(self, reload_with_gitlab_base_url):
         gitlab_mod, _ = reload_with_gitlab_base_url(None)
@@ -115,19 +109,14 @@ class TestSelfHostedViaEnv:
         assert gitlab_mod.GitLab(token="x").api == "https://gitlab.example.com/api/v4"
 
     def test_parses_self_hosted_https_url(self, reload_with_gitlab_base_url):
-        # See the note on test_default_parses_https_url: the capture stops at the
-        # first "/" regardless of host — pre-existing, unrelated to #14. What this
-        # test actually verifies is that the CONFIGURED host is what's matched at
-        # all (an unconfigured gitlab.example.com URL wouldn't match _URL_RE
-        # before this issue's change).
         gitlab_mod, _ = reload_with_gitlab_base_url("https://gitlab.example.com")
         assert gitlab_mod.parse_repo_url(
-            "https://gitlab.example.com/my-group/my-project") == "my-group"
+            "https://gitlab.example.com/my-group/my-project") == "my-group/my-project"
 
     def test_parses_self_hosted_ssh_url(self, reload_with_gitlab_base_url):
         gitlab_mod, _ = reload_with_gitlab_base_url("https://gitlab.example.com")
         assert gitlab_mod.parse_repo_url(
-            "git@gitlab.example.com:my-group/my-project.git") == "my-group"
+            "git@gitlab.example.com:my-group/my-project.git") == "my-group/my-project"
 
     def test_configured_host_survives_a_trailing_slash_in_env(self, reload_with_gitlab_base_url):
         gitlab_mod, _ = reload_with_gitlab_base_url("https://gitlab.example.com/")
@@ -137,6 +126,25 @@ class TestSelfHostedViaEnv:
         gitlab_mod, _ = reload_with_gitlab_base_url("https://gitlab.example.com")
         client = gitlab_mod.GitLab(token="x", api_base="https://another-host.example/api/v4")
         assert client.api == "https://another-host.example/api/v4"
+
+
+class TestProjectUrlPaths:
+    @pytest.mark.parametrize("base_url", [None, "https://gitlab.example.com"])
+    @pytest.mark.parametrize("suffix", ["", "/-/merge_requests/5", "/-/tree/main?ref_type=heads"])
+    def test_preserves_nested_namespace_without_ui_path(
+            self, reload_with_gitlab_base_url, base_url, suffix):
+        gitlab_mod, _ = reload_with_gitlab_base_url(base_url)
+        host = base_url or "https://gitlab.com"
+        project_path = "my-group/subgroup/my-project"
+        assert gitlab_mod.parse_repo_url(f"{host}/{project_path}{suffix}") == project_path
+
+    @pytest.mark.parametrize("source", [
+        "git@gitlab.com:my-group/subgroup/my-project.git",
+        "my-group/subgroup/my-project",
+    ])
+    def test_preserves_nested_ssh_and_bare_paths(self, reload_with_gitlab_base_url, source):
+        gitlab_mod, _ = reload_with_gitlab_base_url(None)
+        assert gitlab_mod.parse_repo_url(source) == "my-group/subgroup/my-project"
 
 
 class TestBlobAndCommitUrls:

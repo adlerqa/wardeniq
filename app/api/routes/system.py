@@ -14,12 +14,14 @@ main.py (status; then dashboard/tags/RetrieveIn/retrieve; then sync_status,
 needed: store, BOOT, current_llm/current_poll_interval, and the core.config
 constants were already centralized in earlier phases.
 """
+from urllib.parse import urlsplit
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from core import state
 from core.bootstrap import BOOT
-from core.config import CASE_AUTO, GITHUB_TOKEN, STEP_AUTO, SUGGEST, VERSION
+from core.config import CASE_AUTO, GITHUB_TOKEN, GITLAB_BASE_URL, STEP_AUTO, SUGGEST, VERSION
 from core.deps import current_llm, current_poll_interval
 from core.security import _allowed_project_ids, _case_project_ids, _current_user
 from core.state import SYNC, store
@@ -87,7 +89,8 @@ def retrieve(req: RetrieveIn, request: Request):
 @router.get("/api/sync/status")
 def sync_status():
     return {**SYNC, "poll_interval_s": current_poll_interval(),
-            "github_authenticated": bool(GITHUB_TOKEN)}
+            "github_authenticated": bool(GITHUB_TOKEN),
+            "gitlab_host": urlsplit(GITLAB_BASE_URL).hostname}
 
 
 def _trunc(pipeline):

@@ -37,6 +37,11 @@
 
 ### Fixed
 
+- Repository connections now infer GitHub/GitLab from HTTPS and scp-style SSH
+  URL hosts, and project settings switch the provider and PAT panel accordingly.
+  Detection respects `GITLAB_BASE_URL` and accepts `www.github.com`; bare paths
+  retain the selected provider. GitLab URL parsing preserves nested namespaces
+  and removes browser UI paths after `/-/` (provider detection part of #185).
 - The step library is now ordered by the number of test cases it shows for a
   step, not by the stored reuse counter. The counter is incremented on every
   reuse of a step and never decremented - not when a case stops using the
