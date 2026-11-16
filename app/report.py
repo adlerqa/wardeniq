@@ -517,13 +517,26 @@ def _case_card(case: dict, styles: dict):
     return flow
 
 
+def _feature_coverage_cards(cov: dict, prs: list) -> list:
+    """(label, value) pairs for the Feature Report's coverage cards.
+
+    `cov` is store.feature_coverage_report(), whose keys are `pr_count` and `coverage_pct`
+    (confirmed coverage only; partial PR hits are not counted). The cards used to read
+    `prs_count` / `code_pct`, keys that report never returns, so Code coverage printed 0%
+    on every export. `automation_pct` is the figure the feature page shows (the test-repo
+    scan); the export route supplies it, and `dev_test_pct` (developer tests found in PRs)
+    is the fallback when it is absent.
+    """
+    return [
+        ("Pull requests", str(cov.get("pr_count", len(prs) if prs else 0))),
+        ("Code coverage", f"{cov.get('coverage_pct', 0)}%"),
+        ("Automation Test Coverage", f"{cov.get('automation_pct', cov.get('dev_test_pct', 0))}%"),
+    ]
+
+
 def _feature_report_story(feature: dict, cov: dict, cases: list, prs: list, styles: dict):
     summary = _clean_summary(feature.get("summary") or feature.get("source") or "No summary available.")
-    coverage = [
-        ("Pull requests", str(cov.get("prs_count", len(prs) if prs else 0))),
-        ("Code coverage", f"{cov.get('code_pct', 0)}%"),
-        ("Automation Test Coverage", f"{cov.get('automation_pct', 0)}%"),
-    ]
+    coverage = _feature_coverage_cards(cov, prs)
     coverage_cards = Table(
         [[_metric_cell(label, value, styles) for label, value in coverage]],
         colWidths=[58 * mm, 58 * mm, 58 * mm],

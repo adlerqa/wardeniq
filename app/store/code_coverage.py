@@ -251,7 +251,11 @@ class CodeCoverageMixin(_Base):
     def feature_coverage_report(self, fid):
         """Aggregate coverage for a feature across all mapped PRs."""
         all_cases = self.feature_test_case_ids(fid)
-        covered_ids, dev_tested_ids, pr_rows = set(), set(), []
+        # Only a "covered" verdict counts toward the headline. A "partial" entry means the PR
+        # touched code relevant to the case but the implementation was not confirmed, so it is
+        # reported separately and never lifts the percentage (issue #249: one unrelated PR
+        # made every case "covered" and the dashboard read 100%).
+        covered_ids, partial_ids, dev_tested_ids, pr_rows = set(), set(), set(), []
         # Excluded PRs are ignored in coverage (still visible in Gap Analysis,
         # flagged) — a QA lead can drop outdated/junk PRs from the calculation.
         prs = [p for p in self.list_prs(feature_id=fid) if not p.get("excluded")]
@@ -263,7 +267,12 @@ class CodeCoverageMixin(_Base):
             if cov:
                 for c in cov.get("covered", []):
                     tcid = c.get("test_case_id")
-                    covered_ids.add(tcid); cset.append(tcid)
+                    cset.append(tcid)
+                    # Entries stored before `status` existed were all full coverage.
+                    if c.get("status", "covered") == "covered":
+                        covered_ids.add(tcid)
+                    else:
+                        partial_ids.add(tcid)
                     if c.get("by_dev_test"):
                         dev_tested_ids.add(tcid)
                     case = self.cases.find_one({"_id": ObjectId(tcid)}, {"title": 1}) if tcid else None
@@ -281,10 +290,14 @@ class CodeCoverageMixin(_Base):
                             "notice": (cov or {}).get("notice", ""),
                             "dev_tests": len((cov or {}).get("dev_test_files", []))})
         total = len(all_cases)
+        # A case another PR fully covers is covered, not partial.
+        partial_only = (partial_ids - covered_ids) & set(all_cases)
         return {
             "feature_id": fid, "total_test_cases": total,
             "covered": len(covered_ids & set(all_cases)),
+            "partial": len(partial_only),
             "uncovered": total - len(covered_ids & set(all_cases)),
+            "partial_pct": round(100 * len(partial_only) / total, 1) if total else 0,
             "dev_tested": len(dev_tested_ids & set(all_cases)),
             "pr_count": len(prs), "repos_touched": len(repos_seen),
             "prs": pr_rows, "evidence": evidence,
