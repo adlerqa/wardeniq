@@ -4,6 +4,16 @@
 
 ### Added
 
+- **Guided first run: setup checklist and guided tour.** New users get a "Get started"
+  checklist on the Dashboard (set up the AI model, create a project, connect a repository
+  (optional), add a feature and generate test cases) whose steps tick off from real data
+  via a new `setup` block on `GET /api/dashboard` (project-scoped, booleans only). Like the
+  boot gate (#279), a working built-in LLM counts as set up. A one-time welcome prompt
+  offers a guided tour that highlights the real controls screen by screen and waits for
+  each action (project created, generation finished); every checklist step has a *Show me*
+  button that starts the tour there, and a *?* button restarts it any time. Role-aware
+  (editors skip the AI-model part, viewers get a read-only tour), keyboard and
+  screen-reader accessible, no new dependencies (Closes #254).
 - **Configurable LLM timeout.** New `LLM_TIMEOUT_SECONDS` setting replaces the timeout of
   every LLM call (test generation and every other model call) on every provider,
   including AWS Bedrock. Unset, the previous built-in values still apply (180 to 300 s

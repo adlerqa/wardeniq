@@ -9,10 +9,13 @@
  */
 
 import "../styles/Dashboard.css";
+import SetupChecklist from "../../onboarding/components/SetupChecklist.jsx";
 
 export default function DashboardPage() {
   return (
     <section id="view-dashboard" className="view">
+      {/* React-owned; sits above #dash-root, which the compat controller fills. */}
+      <SetupChecklist />
       <div className="dash" id="dash-root"></div>
     </section>
   );

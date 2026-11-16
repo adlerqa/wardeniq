@@ -10,6 +10,8 @@ import JobLogModal from "./modals/JobLogModal.jsx";
 import ToastHost from "./modals/ToastHost.jsx";
 import ImportSheetModal from "./modals/ImportSheetModal.jsx";
 import ImportLibraryModal from "./modals/ImportLibraryModal.jsx";
+import GuidedTour from "../../features/onboarding/components/GuidedTour.jsx";
+import HelpLauncher from "../../features/onboarding/components/HelpLauncher.jsx";
 
 export default function AppOverlays() {
   return (
@@ -26,6 +28,8 @@ export default function AppOverlays() {
       <ToastHost />
       <ImportSheetModal />
       <ImportLibraryModal />
+      <HelpLauncher />
+      <GuidedTour />
     </>
   );
 }

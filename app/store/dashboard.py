@@ -100,6 +100,29 @@ class DashboardMixin(_Base):
             groups |= g
         return fids, groups
 
+    def setup_status(self, counts):
+        """First-run checklist flags for the Dashboard's "Get started" card (#254).
+
+        Every flag is derived from real data, never from UI clicks: `counts` is the
+        (already project-scoped) `counts` block that dashboard() builds, and
+        `llm_configured` is the same `settings.configured` flag the first-run gate in
+        16-boot.js reads. Only booleans are exposed, so it is safe for every role
+        (GET /api/settings itself stays admin-only). Whether setup is complete is
+        decided in the frontend (features/onboarding/setupSteps.js), because it also
+        treats a passing LLM health check as configured, like the boot gate (#279).
+        """
+        try:
+            llm_configured = bool((self.get_settings() or {}).get("configured"))
+        except Exception:  # noqa: BLE001 - a settings read failure must not break the dashboard
+            llm_configured = False
+        return {
+            "llm_configured": llm_configured,
+            "has_project": (counts.get("projects") or 0) > 0,
+            "has_repo": (counts.get("repos") or 0) > 0,
+            "has_feature": (counts.get("features") or 0) > 0,
+            "has_test_cases": (counts.get("test_cases") or 0) > 0,
+        }
+
     def dashboard(self, project_ids=None):
         """Global rollup; with `project_ids` (a user limited to some projects) every
         count and the per-project list only reflect those projects."""
@@ -146,17 +169,19 @@ class DashboardMixin(_Base):
             n_steps = len(step_ids)
         else:
             n_steps = self.steps.count_documents({})
+        counts = {
+            "projects": self.projects.count_documents(pq),
+            "features": len(groups),
+            "feature_versions": self.features.count_documents(by_pid),
+            "test_cases": total_cases,
+            "test_steps": n_steps,
+            "documents": docs,
+            "repos": self.repos.count_documents(by_pid),
+            "pull_requests": self.prs.count_documents(by_pid),
+        }
         return {
-            "counts": {
-                "projects": self.projects.count_documents(pq),
-                "features": len(groups),
-                "feature_versions": self.features.count_documents(by_pid),
-                "test_cases": total_cases,
-                "test_steps": n_steps,
-                "documents": docs,
-                "repos": self.repos.count_documents(by_pid),
-                "pull_requests": self.prs.count_documents(by_pid),
-            },
+            "counts": counts,
+            "setup": self.setup_status(counts),
             "coverage": {
                 "code_pct": round(100 * cov_active / total_cases, 1) if total_cases else 0,
                 "automation_pct": round(100 * aut_active / total_cases, 1) if total_cases else 0,
