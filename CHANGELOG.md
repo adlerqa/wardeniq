@@ -44,6 +44,15 @@
   and the rest were never written, and the only message was "log collection failed".
   The script now keeps going and keeps what each command printed, and its web request
   still falls back to "app unreachable" (#286).
+- The log collectors write cleaner, more useful files. On Windows PowerShell 5.1,
+  `collect-logs.ps1` wrapped the first stderr line of each container log in a
+  "NativeCommandError / CategoryInfo" block; each log is now just the text the container
+  printed. `app_status.json` was filled from `/api/status`, which needs a login, so it
+  said "app unreachable" (or held a 401) for a running app. Both `collect-logs.ps1` and
+  `collect-logs.sh` now read the public `/api/auth/boot-status`, which shows the startup
+  stage (for example "indexing" when mongot is not up), and the PowerShell script records
+  "app answered with HTTP <code>" for an HTTP error instead of "app unreachable"
+  (reported by connabyss on #286).
 - The bundled stack no longer fails to start on a Linux host whose user is not uid 1000.
   `run.sh` and `install.sh` keep the mongot password file (`config/pwfile`, and
   `config/pwfile-percona` for the Percona stack) at mode 400, owned by whoever ran
