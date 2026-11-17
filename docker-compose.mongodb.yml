@@ -74,6 +74,13 @@ services:
       mongod2: { condition: service_healthy }
       mongod3: { condition: service_healthy }
     command: bash /setup-replica-set.sh
+    # Run as root: this one-shot container must READ config/pwfile, which run.sh and
+    # install.sh keep at mode 400 owned by whoever ran them. The image's default user
+    # (uid 1000) can't read a file owned by any other uid (root, a second user, most CI
+    # runners), so setup died with "Permission denied" and mongot never started (#285).
+    # mongot already reads the same file as root. Nothing is written to disk here; it
+    # only runs mongosh against the other nodes and exits.
+    user: "0:0"
     environment:
       # Optional MongoDB authentication (default OFF). When enabled (via
       # scripts/enable-mongo-auth.sh), the setup ALSO provisions a root + app user

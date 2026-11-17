@@ -44,6 +44,16 @@
   and the rest were never written, and the only message was "log collection failed".
   The script now keeps going and keeps what each command printed, and its web request
   still falls back to "app unreachable" (#286).
+- The bundled stack no longer fails to start on a Linux host whose user is not uid 1000.
+  `run.sh` and `install.sh` keep the mongot password file (`config/pwfile`, and
+  `config/pwfile-percona` for the Percona stack) at mode 400, owned by whoever ran
+  them. The one-shot setup container ran as the image's default user (uid 1000, and
+  uid 1001 for Percona), could not read a file owned by another uid, and stopped with
+  `/run/secrets/mongot-pw: Permission denied`. mongot then never started and boot sat
+  at "indexing" with a message that pointed at the admin password. The setup
+  containers now run as root, as mongot already does, so the secret stays private on
+  the host and no `chown` workaround is needed. Docker Desktop was not affected, which
+  is why it only showed up on native Linux (#285).
 - The headline code coverage no longer counts a "partial" PR hit as covered. A PR
   that touches code relevant to a test case, without the model confirming the
   implementation, is stored as `partial`, but the feature report and the dashboard
