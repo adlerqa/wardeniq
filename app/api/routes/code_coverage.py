@@ -65,6 +65,8 @@ def feature_coverage(fid: str):
         "total_cases": total,
         "code_pct": code_pct,
         "covered_cases": covered,
+        "partial_cases": rep.get("partial", 0) or 0,
+        "partial_pct": rep.get("partial_pct", 0),
         "automation_pct": snap.get("coverage_pct", 0),
         "automated_cases": snap.get("covered_count", 0),
         "ready_threshold": threshold,

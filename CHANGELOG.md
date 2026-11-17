@@ -42,6 +42,42 @@
   categories. The shared E2E/edge/business call still runs if any of its outputs is
   requested, avoiding wasted model calls on CPU-only installations (#139).
 
+- On Windows, `run.ps1` no longer loses most of the collected logs. It calls
+  `collect-logs.ps1` with `$ErrorActionPreference = "Stop"`, which the script inherited,
+  so the first container whose `docker logs` reported an error (mongot prints a Java
+  warning to stderr) ended the whole collection. `warden-ollama.log`, `warden-app.log`
+  and the rest were never written, and the only message was "log collection failed".
+  The script now keeps going and keeps what each command printed, and its web request
+  still falls back to "app unreachable" (#286).
+- The bundled stack no longer fails to start on a Linux host whose user is not uid 1000.
+  `run.sh` and `install.sh` keep the mongot password file (`config/pwfile`, and
+  `config/pwfile-percona` for the Percona stack) at mode 400, owned by whoever ran
+  them. The one-shot setup container ran as the image's default user (uid 1000, and
+  uid 1001 for Percona), could not read a file owned by another uid, and stopped with
+  `/run/secrets/mongot-pw: Permission denied`. mongot then never started and boot sat
+  at "indexing" with a message that pointed at the admin password. The setup
+  containers now run as root, as mongot already does, so the secret stays private on
+  the host and no `chown` workaround is needed. Docker Desktop was not affected, which
+  is why it only showed up on native Linux (#285).
+- The headline code coverage no longer counts a "partial" PR hit as covered. A PR
+  that touches code relevant to a test case, without the model confirming the
+  implementation, is stored as `partial`, but the feature report and the dashboard
+  added every entry to the covered set whatever its status, so linking one unrelated
+  PR could read as 100% coverage and "ready for manual QA". Only a confirmed
+  `covered` verdict counts now. Partial hits are reported separately (`partial` and
+  `partial_pct` on the feature coverage report, `partial_cases` in the coverage
+  summary and the dashboard, and a `partial_count` next to each PR's `covered_count`,
+  which now counts confirmed hits only) and shown on the feature page as "N partial (not
+  counted)". A case that one PR confirms and another only touches still counts as
+  covered once. Coverage entries saved before the status existed still count as
+  covered. The percentage is computed when the page loads, so features that were
+  reading too high show the lower number straight away, with no re-run (#287).
+- The feature PDF report now prints the real coverage numbers. Its "Code coverage" and
+  "Automation Test Coverage" cards read keys the coverage report never returns
+  (`code_pct`, `automation_pct`), so both showed 0% on every export. They now show the
+  confirmed code coverage and the same automation figure as the feature page (the
+  test-repo scan), and the PR count comes from the report instead of a fallback
+  (#287).
 - The step library is now ordered by the number of test cases it shows for a
   step, not by the stored reuse counter. The counter is incremented on every
   reuse of a step and never decremented - not when a case stops using the
