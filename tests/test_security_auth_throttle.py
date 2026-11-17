@@ -15,6 +15,7 @@ import main  # noqa: E402
 import store.base as store_base  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from store import Store  # noqa: E402
+import core.audit as audit
 
 from core import client_ip as client_ip_mod  # noqa: E402
 from core import throttle  # noqa: E402
@@ -29,6 +30,7 @@ def st(monkeypatch):
     monkeypatch.setattr(store_base, "MongoClient", mongomock.MongoClient)
     s = Store("mongodb://localhost/?", f"wardeniq_throttle_{time.time_ns()}", 8)
     monkeypatch.setattr(routes, "store", s)
+    monkeypatch.setattr(audit, "store", s)
     monkeypatch.setattr(routes, "_smtp_cfg", lambda: None)
     monkeypatch.setattr(throttle, "AUTH_MAX_FAILURES_PER_ACCOUNT", 3)
     monkeypatch.setattr(throttle, "AUTH_MAX_FAILURES_PER_IP", 5)
