@@ -5,7 +5,7 @@ async function initMindmap() {
   loadMindmap();
 }
 $("#mm-proj").onchange = () => {
-  currentProject = $("#mm-proj").value;
+  setCurrentProject($("#mm-proj").value);
   loadMindmapRepos();
   loadMindmap();
 };
@@ -1018,7 +1018,7 @@ async function initDevelop() {
 }
 if ($("#dev-proj")) {
   $("#dev-proj").onchange = () => {
-    currentProject = $("#dev-proj").value;
+    setCurrentProject($("#dev-proj").value);
     loadDevFR();
   };
 }

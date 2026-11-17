@@ -48,8 +48,9 @@ async function loadProjects() {
       $("#dev-proj").value = currentProject;
     }
     if ($("#tc-proj")) {
-      $("#tc-proj").innerHTML = `<option value="">All projects</option>` + opts;
+      $("#tc-proj").innerHTML = opts || `<option value="">No project selected</option>`;
     }
+    if (typeof syncSidebarProject === "function") syncSidebarProject(r.projects);
 
     // Project selection cards: click enters the project's feature list; management lives in the menu.
     if ($("#project-cards-container")) {
@@ -134,14 +135,14 @@ function showProjectDetail() {
   updateBackbar();
 }
 window.openProjectFeatures = async (pid) => {
-  currentProject = pid;
+  setCurrentProject(pid);
   currentFeature = null;
   navigateTo("features");
   await loadFeatures();
   showFeatureList();
 };
 window.openProjectSettings = async (pid) => {
-  currentProject = pid;
+  setCurrentProject(pid);
   showProjectDetail();
   await loadProjects();
   renderBreadcrumbs();
@@ -204,7 +205,7 @@ if ($("#features-back-project"))
 
 if ($("#f-project"))
   $("#f-project").onchange = async (e) => {
-    currentProject = e.target.value;
+    setCurrentProject(e.target.value);
     loadFeatures();
     renderBreadcrumbs();
     await loadFeatureTicketOptions();
@@ -612,7 +613,7 @@ if ($("#proj-create-save"))
 
     $("#proj-create-status").innerHTML =
       `<span class="spin-inline"></span>Opening project…`;
-    currentProject = createdId;
+    setCurrentProject(createdId);
     showProjectList();
     try {
       await loadProjects();
@@ -692,7 +693,7 @@ if ($("#proj-del-btn"))
       danger: true,
       onConfirm: async () => {
         const r = await api(`/api/projects/${projectId}`, { method: "DELETE" });
-        currentProject = null;
+        setCurrentProject(null);
         showProjectList();
         loadProjects();
         refreshStatus();
@@ -704,7 +705,7 @@ if ($("#proj-del-btn"))
   };
 window.deleteProjectFromCard = async (pid) => {
   const name = projectCardName(pid);
-  currentProject = pid;
+  setCurrentProject(pid);
   openCaseConfirmation({
     title: "Delete project",
     copy: "This removes this project, its features, repositories, and project-only test-case links. Test cases linked to another project remain available.",
@@ -713,7 +714,7 @@ window.deleteProjectFromCard = async (pid) => {
     danger: true,
     onConfirm: async () => {
       const r = await api(`/api/projects/${pid}`, { method: "DELETE" });
-      currentProject = null;
+      setCurrentProject(null);
       showProjectList();
       loadProjects();
       refreshStatus();
@@ -973,7 +974,7 @@ async function loadRepos() {
 }
 
 window.gotoAnalyze = async (rid, pid) => {
-  currentProject = pid;
+  setCurrentProject(pid);
   document
     .querySelectorAll("nav button")
     .forEach((x) => x.classList.toggle("active", x.dataset.view === "cycles"));

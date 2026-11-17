@@ -39,7 +39,7 @@ async function initCycles() {
   _syncAnalyzeButtonState();
 }
 $("#cyc-proj").onchange = () => {
-  currentProject = $("#cyc-proj").value;
+  setCurrentProject($("#cyc-proj").value);
   loadCycleRepos();
   loadUnmappedPRs();
   loadLatestAnalysis();
@@ -59,7 +59,7 @@ async function initTestCycles() {
 }
 if ($("#tcy-proj"))
   $("#tcy-proj").onchange = () => {
-    currentProject = $("#tcy-proj").value;
+    setCurrentProject($("#tcy-proj").value);
     loadCycles();
     loadCycleTemplates();
   };

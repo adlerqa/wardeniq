@@ -23,6 +23,7 @@ async function fillFeatFilter() {
   } catch (e) {}
 }
 $("#tc-proj").onchange = async () => {
+  setCurrentProject($("#tc-proj").value);
   $("#tc-feat").value = "";
   await fillFeatFilter();
   tcPage = 0;
@@ -63,7 +64,7 @@ $("#tc-apply").onclick = () => {
   loadCases();
 };
 $("#tc-reset").onclick = async () => {
-  $("#tc-proj").value = "";
+  $("#tc-proj").value = currentProject || "";
   $("#tc-type").value = "";
   $("#tc-tag").value = "";
   $("#tc-status").value = "active";
