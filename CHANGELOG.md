@@ -37,6 +37,13 @@
 
 ### Fixed
 
+- On Windows, `run.ps1` no longer loses most of the collected logs. It calls
+  `collect-logs.ps1` with `$ErrorActionPreference = "Stop"`, which the script inherited,
+  so the first container whose `docker logs` reported an error (mongot prints a Java
+  warning to stderr) ended the whole collection. `warden-ollama.log`, `warden-app.log`
+  and the rest were never written, and the only message was "log collection failed".
+  The script now keeps going and keeps what each command printed, and its web request
+  still falls back to "app unreachable" (#286).
 - The bundled stack no longer fails to start on a Linux host whose user is not uid 1000.
   `run.sh` and `install.sh` keep the mongot password file (`config/pwfile`, and
   `config/pwfile-percona` for the Percona stack) at mode 400, owned by whoever ran

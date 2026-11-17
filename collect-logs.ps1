@@ -8,6 +8,17 @@
       .\collect-logs.ps1
 #>
 
+# run.ps1 sets $ErrorActionPreference = "Stop" and calls this script with `&`, so the
+# script inherits it. Under "Stop", the first native command that reports an error ends
+# the whole collection: in Windows PowerShell 5.1 any stderr output from `docker logs`
+# redirected with `*>` (mongot prints a Java warning) becomes a terminating error, and
+# in PowerShell 7 a non-zero exit code can too. The remaining containers' logs, usually
+# warden-ollama and warden-app, were then never written (#286). Collection is
+# best-effort, so keep going and keep whatever each command printed. Run on its own
+# the script already used "Continue"; install.ps1's RunNative relaxes the preference
+# for the same reason.
+$ErrorActionPreference = "Continue"
+
 Set-Location -Path $PSScriptRoot
 
 New-Item -ItemType Directory -Force -Path "logs" | Out-Null
@@ -33,7 +44,8 @@ foreach ($c in $containers) {
 docker compose ps *> "logs\_status.txt"
 
 try {
-    $resp = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:8001/api/status" -TimeoutSec 5
+    # -ErrorAction Stop so the catch below still runs now that the script default is Continue.
+    $resp = Invoke-WebRequest -UseBasicParsing -Uri "http://localhost:8001/api/status" -TimeoutSec 5 -ErrorAction Stop
     $resp.Content | Out-File -FilePath "logs\app_status.json" -Encoding utf8
 } catch {
     "app unreachable" | Out-File -FilePath "logs\app_status.json" -Encoding utf8
