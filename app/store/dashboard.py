@@ -79,17 +79,29 @@ class DashboardMixin(_Base):
         see get_automation_coverage() in store/code_coverage.py) showed the
         real, non-zero count.
         """
-        covered, dev = set(), set()
+        covered, _partial, dev = self._coverage_sets()
+        return covered, dev
+
+    def _coverage_sets(self):
+        """(covered, partial_only, dev). Only a "covered" PR verdict counts as covered;
+        a "partial" one (PR touched relevant code, implementation not confirmed) is kept
+        apart and never lifts the headline % (issue #249). Entries stored before `status`
+        existed were all full coverage."""
+        covered, partial, dev = set(), set(), set()
         for c in self.coverage.find({}):
             for x in c.get("covered", []):
-                covered.add(x.get("test_case_id"))
+                tcid = x.get("test_case_id")
+                if x.get("status", "covered") == "covered":
+                    covered.add(tcid)
+                else:
+                    partial.add(tcid)
                 if x.get("by_dev_test"):
-                    dev.add(x.get("test_case_id"))
+                    dev.add(tcid)
         for doc in self.automation_coverage.find({}, {"items": 1}):
             for item in doc.get("items", []):
                 if item.get("status") == "covered" and item.get("generated_id"):
                     dev.add(item["generated_id"])
-        return covered, dev
+        return covered, partial - covered, dev
 
     def _active_for_projects(self, project_ids):
         """active_feature_ids() restricted to a set of projects."""
@@ -105,7 +117,7 @@ class DashboardMixin(_Base):
         count and the per-project list only reflect those projects."""
         scoped = project_ids is not None
         pids = sorted(project_ids or [])
-        covered, dev = self._covered_and_dev_sets()
+        covered, partial, dev = self._coverage_sets()
         if scoped:
             active_fids, groups = self._active_for_projects(pids)
         else:
@@ -118,6 +130,7 @@ class DashboardMixin(_Base):
                 if c.get("type") in by_type:
                     by_type[c["type"]] += 1
         cov_active, aut_active = len(covered & active), len(dev & active)
+        partial_active = len(partial & active)
         docs = 0
         for f in self.features.find({"_id": {"$in": [ObjectId(i) for i in active_fids]}},
                                     {"sources": 1, "source": 1}):
@@ -161,6 +174,7 @@ class DashboardMixin(_Base):
                 "code_pct": round(100 * cov_active / total_cases, 1) if total_cases else 0,
                 "automation_pct": round(100 * aut_active / total_cases, 1) if total_cases else 0,
                 "covered_cases": cov_active, "automated_cases": aut_active,
+                "partial_cases": partial_active,
             },
             "by_type": by_type,
             "projects": projects,

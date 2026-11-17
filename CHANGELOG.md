@@ -37,6 +37,25 @@
 
 ### Fixed
 
+- The headline code coverage no longer counts a "partial" PR hit as covered. A PR
+  that touches code relevant to a test case, without the model confirming the
+  implementation, is stored as `partial`, but the feature report and the dashboard
+  added every entry to the covered set whatever its status, so linking one unrelated
+  PR could read as 100% coverage and "ready for manual QA". Only a confirmed
+  `covered` verdict counts now. Partial hits are reported separately (`partial` and
+  `partial_pct` on the feature coverage report, `partial_cases` in the coverage
+  summary and the dashboard, and a `partial_count` next to each PR's `covered_count`,
+  which now counts confirmed hits only) and shown on the feature page as "N partial (not
+  counted)". A case that one PR confirms and another only touches still counts as
+  covered once. Coverage entries saved before the status existed still count as
+  covered. The percentage is computed when the page loads, so features that were
+  reading too high show the lower number straight away, with no re-run (#287).
+- The feature PDF report now prints the real coverage numbers. Its "Code coverage" and
+  "Automation Test Coverage" cards read keys the coverage report never returns
+  (`code_pct`, `automation_pct`), so both showed 0% on every export. They now show the
+  confirmed code coverage and the same automation figure as the feature page (the
+  test-repo scan), and the PR count comes from the report instead of a fallback
+  (#287).
 - The step library is now ordered by the number of test cases it shows for a
   step, not by the stored reuse counter. The counter is incremented on every
   reuse of a step and never decremented - not when a case stops using the
