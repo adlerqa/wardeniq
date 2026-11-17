@@ -18,7 +18,9 @@ if [ ! -s config/pwfile ] || [ "$(cat config/pwfile 2>/dev/null)" = "mongotPassw
   echo "==> generated a random mongot (search) password → config/pwfile"
 fi
 
-# mongot requires its password file to be readable by owner only.
+# Keep the password file private on the host: owner-only. mongot copies it to its own
+# 0400 path, and the setup container runs as root so it can still read it whoever owns
+# it (#285), so this mode never has to be loosened.
 chmod 400 config/pwfile 2>/dev/null || true
 chmod +x config/setup-replica-set.sh collect-logs.sh 2>/dev/null || true
 

@@ -61,6 +61,10 @@ services:
     depends_on:
       mongod-percona: { condition: service_healthy }
     command: bash /setup-replica-set-percona.sh
+    # Run as root so the one-shot setup can read config/pwfile-percona (mode 400, owned
+    # by whoever ran run.sh). The Percona image's default user is uid 1001, which can't
+    # read a file owned by any other uid (#285).
+    user: "0:0"
     volumes:
       - ./config/setup-replica-set-percona.sh:/setup-replica-set-percona.sh:ro
       - ./config/pwfile-percona:/run/secrets/mongot-pw:ro
