@@ -44,7 +44,8 @@
   PR could read as 100% coverage and "ready for manual QA". Only a confirmed
   `covered` verdict counts now. Partial hits are reported separately (`partial` and
   `partial_pct` on the feature coverage report, `partial_cases` in the coverage
-  summary and the dashboard) and shown on the feature page as "N partial (not
+  summary and the dashboard, and a `partial_count` next to each PR's `covered_count`,
+  which now counts confirmed hits only) and shown on the feature page as "N partial (not
   counted)". A case that one PR confirms and another only touches still counts as
   covered once. Coverage entries saved before the status existed still count as
   covered. The percentage is computed when the page loads, so features that were

@@ -263,16 +263,17 @@ class CodeCoverageMixin(_Base):
         evidence = []   # per covered (case, PR) with link + rationale
         for pr in prs:
             cov = self.coverage.find_one({"pr_id": pr["id"]})
-            cset = []
+            pr_covered = pr_partial = 0   # this PR's own counts; must match the headline rule
             if cov:
                 for c in cov.get("covered", []):
                     tcid = c.get("test_case_id")
-                    cset.append(tcid)
                     # Entries stored before `status` existed were all full coverage.
                     if c.get("status", "covered") == "covered":
                         covered_ids.add(tcid)
+                        pr_covered += 1
                     else:
                         partial_ids.add(tcid)
+                        pr_partial += 1
                     if c.get("by_dev_test"):
                         dev_tested_ids.add(tcid)
                     case = self.cases.find_one({"_id": ObjectId(tcid)}, {"title": 1}) if tcid else None
@@ -286,7 +287,8 @@ class CodeCoverageMixin(_Base):
             repos_seen[pr.get("repo_id")] = repos_seen.get(pr.get("repo_id"), 0) + 1
             pr_rows.append({"number": pr.get("number"), "title": pr.get("title"),
                             "repo": pr.get("repo_full_name"), "state": pr.get("state"),
-                            "url": pr.get("url"), "covered_count": len(cset),
+                            "url": pr.get("url"), "covered_count": pr_covered,
+                            "partial_count": pr_partial,
                             "notice": (cov or {}).get("notice", ""),
                             "dev_tests": len((cov or {}).get("dev_test_files", []))})
         total = len(all_cases)

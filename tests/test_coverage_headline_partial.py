@@ -120,6 +120,19 @@ class TestFeatureCoverageReport:
         assert rep["dev_tested"] == 1
         assert rep["covered"] == 0
 
+    def test_per_pr_row_counts_match_the_headline_rule(self):
+        # A PR row must not say "3 covered" while the headline says 0% (reported on #287).
+        s = _report_store([C1, C2, C3], [
+            [_entry(C1, "partial", 0.35), _entry(C2, "partial", 0.35),
+             _entry(C3, "partial", 0.35)],
+            [_entry(C1, "covered", 0.9), _entry(C2, "partial", 0.35)],
+        ])
+        rep = s.feature_coverage_report("f1")
+        rows = {r["number"]: r for r in rep["prs"]}
+        assert (rows[0]["covered_count"], rows[0]["partial_count"]) == (0, 3)
+        assert (rows[1]["covered_count"], rows[1]["partial_count"]) == (1, 1)
+        assert rep["covered"] == 1                     # headline agrees with the rows
+
 
 class TestDashboardRollup:
     def _store(self, coverage_docs):
