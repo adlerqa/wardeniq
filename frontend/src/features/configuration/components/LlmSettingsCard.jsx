@@ -71,7 +71,7 @@ export default function LlmSettingsCard() {
           API key / secret
           <span className="fi" tabIndex="0" data-tip="Ollama: usually blank (only for a secured/remote Ollama behind a token). Hosted providers: your API key. AWS Bedrock: leave blank to use the machine's IAM role (recommended for air-gapped), or enter accessKeyId:secretAccessKey.">i</span>
         </label>
-        <input type="password" id="cfg-llm-key" placeholder="Optional — only for secured Ollama endpoints" />
+        <input type="password" id="cfg-llm-key" autoComplete="off" placeholder="Optional — only for secured Ollama endpoints" />
       </div>
       <div className="cfg-status muted" id="cfg-llm-status"></div>
       <div className="cfg-actions">

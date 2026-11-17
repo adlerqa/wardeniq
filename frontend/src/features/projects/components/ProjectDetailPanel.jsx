@@ -44,7 +44,7 @@ export default function ProjectDetailPanel() {
                 Project PAT
                 <span className="muted" style={{ fontWeight: "400" }}>(saved encrypted; leave blank to keep current)</span>
               </label>
-              <input id="pd-pat" type="password" placeholder="ghp_..." />
+              <input id="pd-pat" type="password" autoComplete="off" placeholder="ghp_..." />
             </div>
             <div style={{ flex: "0 0 auto", alignSelf: "flex-end", display: "flex", gap: "8px", paddingBottom: "0" }}>
               <button className="ghost" id="pd-pat-save" type="button">Save PAT</button>

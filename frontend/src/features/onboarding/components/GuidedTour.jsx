@@ -275,11 +275,10 @@ export default function GuidedTour() {
       >
         <div className="mb-1 flex items-center justify-between gap-2">
           <span className="text-xs text-muted">
-            Part {progress.part} of {progress.parts} · {progress.title}
-            {progress.steps > 1 ? ` · ${progress.step}/${progress.steps}` : ""}
+            {progress.title} · {tour.index + 1}/{tour.steps.length}
           </span>
           <button type="button" className="ghost" onClick={endTour} aria-label="Close the tour">
-            Skip tour
+            Exit
           </button>
         </div>
         <h2 id="wq-tour-title" ref={titleRef} tabIndex={-1} className="m-0 text-base font-semibold text-text outline-none">

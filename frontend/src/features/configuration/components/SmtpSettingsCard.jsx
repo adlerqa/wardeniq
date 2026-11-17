@@ -58,7 +58,7 @@ export default function SmtpSettingsCard() {
             Password
             <span className="fi" tabIndex="0" data-tip="The SMTP password or app password. Gmail needs a 16-character App Password (2-Step Verification on). Stored encrypted; leave blank to keep the current one.">i</span>
           </label>
-          <input type="password" id="cfg-smtp-pass" placeholder="API token is required" />
+          <input type="password" id="cfg-smtp-pass" autoComplete="off" placeholder="API token is required" />
         </div>
       </div>
       <div className="cfg-row">

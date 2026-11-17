@@ -121,13 +121,16 @@ setInterval(() => {
 // ---- disable browser autofill / autocomplete / suggestions on every field ----
 // Applies to inputs/textareas/selects that exist now AND any added later (modals,
 // tables, config forms are rendered dynamically), so nothing slips through.
+// Do not use "new-password" here: that value is an instruction to password
+// managers that a generated-password flow is appropriate, which can surface a
+// native password suggestion popup. This app intentionally never asks the
+// browser to fill or generate credentials.
 function hardenField(el) {
   if (!el || el.dataset.wqNoauto) return;
   const tag = el.tagName;
   if (tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") return;
   const type = (el.getAttribute("type") || "").toLowerCase();
-  // "new-password" is the most reliable way to stop the password-manager dropdown.
-  el.setAttribute("autocomplete", type === "password" ? "new-password" : "off");
+  el.setAttribute("autocomplete", "off");
   el.setAttribute("autocorrect", "off");
   el.setAttribute("autocapitalize", "off");
   el.setAttribute("spellcheck", "false");

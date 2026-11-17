@@ -33,7 +33,7 @@ export default function AtlassianSettingsCard() {
           API token
           <span className="fi" tabIndex="0" data-tip="An Atlassian API token (not your password). Create one at id.atlassian.com → Security → API tokens. Stored encrypted; leave blank to keep the current one.">i</span>
         </label>
-        <input type="password" id="cfg-jira-token" placeholder="API token is required" />
+        <input type="password" id="cfg-jira-token" autoComplete="off" placeholder="API token is required" />
       </div>
       <div className="cfg-status muted" id="cfg-jira-status"></div>
       <div className="cfg-actions">

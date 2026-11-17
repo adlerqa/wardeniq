@@ -38,7 +38,7 @@ function EyeIcon({ visible }) {
   );
 }
 
-function PasswordField({ id, label, autoComplete, placeholder = "••••••••" }) {
+function PasswordField({ id, label, autoComplete = "off", placeholder = "••••••••" }) {
   const [showPassword, setShowPassword] = useState(false);
 
   return (
@@ -235,19 +235,19 @@ export default function PasswordModal() {
           <PasswordField
             id="pwd-current"
             label="Current password"
-            autoComplete="current-password"
+            autoComplete="off"
           />
 
           <PasswordField
             id="pwd-new"
             label="New password"
-            autoComplete="new-password"
+            autoComplete="off"
           />
 
           <PasswordField
             id="pwd-confirm"
             label="Confirm new password"
-            autoComplete="new-password"
+            autoComplete="off"
           />
 
           {/* Requirement */}

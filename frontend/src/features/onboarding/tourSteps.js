@@ -33,7 +33,7 @@
  * compat empty-state buttons are used as targets; nothing is added to compat/.
  */
 
-import { SAMPLE_PRD_URL, isSetupComplete, normaliseRole } from "./setupSteps.js";
+import { SAMPLE_PRD_URL, normaliseRole } from "./setupSteps.js";
 
 /** localStorage key: the welcome prompt was answered (started, skipped or finished). */
 export const TOUR_SEEN_KEY = "wq_tour_seen";
@@ -42,7 +42,6 @@ const isEditorOrAdmin = (env) => env.role === "admin" || env.role === "editor";
 
 /** Chapters in tour order, with their title, who gets them and when. */
 export const CHAPTERS = [
-  { id: "welcome", title: "Welcome", applies: () => true },
   { id: "llm", title: "AI model", applies: (env) => env.role === "admin" && !env.setup.llm_configured },
   { id: "project", title: "Create a project", applies: (env) => isEditorOrAdmin(env) && !env.setup.has_project },
   { id: "generate", title: "Generate test cases", applies: (env) => isEditorOrAdmin(env) && !env.setup.has_test_cases },
@@ -62,49 +61,14 @@ export const CHECKLIST_TO_CHAPTER = {
 };
 
 export const STEPS = [
-  // ---- welcome ----
-  {
-    id: "welcome-intro",
-    chapter: "welcome",
-    title: "Welcome to wardenIQ",
-    body: (env) =>
-      env.role === "viewer" || isSetupComplete(env.setup)
-        ? "wardenIQ turns requirement documents into a reusable test suite and maps code changes to the tests they affect. This short tour shows you where everything is. Press Esc to leave at any time."
-        : "wardenIQ turns requirement documents into a reusable test suite and maps code changes to the tests they affect. This short tour walks you through setup on the real screens. Press Esc to leave at any time.",
-  },
-  {
-    id: "welcome-checklist",
-    chapter: "welcome",
-    view: "dashboard",
-    targets: ["#setup-checklist"],
-    skip: (env) => isSetupComplete(env.setup),
-    title: "Your setup checklist",
-    body: "This card tracks your progress from real data, so steps tick off as you complete them. Each step has a Show me button that replays its part of this tour.",
-  },
-
   // ---- llm (admins, only while no working model) ----
   {
-    id: "llm-provider",
+    id: "llm-setup",
     chapter: "llm",
     view: "config",
     targets: ["#cfg-llm-provider"],
-    title: "Choose an AI provider",
-    body: "wardenIQ uses an LLM to write test cases. Ollama (built-in) runs inside this Docker stack: free, private and no API key. Hosted providers such as OpenAI, Anthropic or Gemini need an API key.",
-  },
-  {
-    id: "llm-model",
-    chapter: "llm",
-    targets: ["#cfg-llm-model-select", "#cfg-llm-model"],
-    title: "Pick a model",
-    body: "On the built-in Ollama, qwen2.5:3b is the fast default and qwen2.5:7b gives better results but is slower and needs more memory. You can change this later.",
-  },
-  {
-    id: "llm-save",
-    chapter: "llm",
-    targets: ["#cfg-llm-save"],
-    advanceOnClick: true,
-    title: "Save the AI settings",
-    body: "Click Save. wardenIQ stores the settings and uses them for every generation and analysis.",
+    title: "Set up your AI model",
+    body: "Choose Ollama or a hosted provider, enter a key if needed, and save. This powers test generation and analysis.",
   },
 
   // ---- project ----
@@ -114,25 +78,16 @@ export const STEPS = [
     view: "projects",
     targets: ["#project-cards-container .empty-state .go", "#proj-new-btn"],
     waitFor: (env) => env.visible("#proj-create-card"),
-    title: "Create your first project",
-    body: "A project holds your features, repositories and test cases. Click the highlighted button to start.",
-  },
-  {
-    id: "project-name",
-    chapter: "project",
-    targets: ["#new-proj-name"],
-    placement: "side",
-    skip: (env) => !env.visible("#proj-create-card") && env.setup.has_project,
-    title: "Name the project",
-    body: "Only the name is required. Jira, Confluence and repositories further down are optional and can be added later.",
+    title: "Start your first project",
+    body: "Click New project. Only the project name is required; the other options can wait.",
   },
   {
     id: "project-save",
     chapter: "project",
     targets: ["#proj-create-save"],
     waitFor: (env) => env.view === "features",
-    title: "Create the project",
-    body: "Click Create project. wardenIQ opens the new project straight away.",
+    title: "Save the project",
+    body: "Enter a name and click Create project. wardenIQ opens the project when it is ready.",
   },
 
   // ---- generate ----
@@ -144,7 +99,7 @@ export const STEPS = [
     targets: ["[data-project-card]"],
     waitFor: (env) => env.view === "features",
     title: "Open your project",
-    body: "Click your project to see its features.",
+    body: "Open the project card to manage its features.",
   },
   {
     id: "generate-new-feature",
@@ -153,7 +108,7 @@ export const STEPS = [
     targets: ["#feat-list .empty-state .go", "#feature-new-btn"],
     waitFor: (env) => env.visible("#feature-create-page"),
     title: "Add a feature",
-    body: "A feature is one piece of functionality, described by your requirement documents. Click the highlighted button.",
+    body: "Click New feature. Give it a short name and add the requirements.",
   },
   {
     id: "generate-open-feature",
@@ -161,11 +116,11 @@ export const STEPS = [
     when: (setup) => setup.has_feature,
     targets: ["[data-feature-card]"],
     waitFor: (env) => env.visible("#detail-card"),
-    title: "Open your feature",
+    title: "Open the feature",
     body: (env) =>
       env.setup.generating
-        ? "Generation is already running for this feature. Click it to follow its progress."
-        : "This feature has no test cases yet. Click it to open its workspace.",
+        ? "Generation is already running. Open the feature to follow its progress."
+        : "Open the feature to start or review generation.",
   },
   {
     id: "generate-regenerate",
@@ -175,17 +130,8 @@ export const STEPS = [
     // new-version button (+) is the visible way to run generation again.
     targets: ["#d-regen", "#d-newver"],
     advanceOnClick: true,
-    title: "Run generation again",
-    body: "Click + to add a new version: upload the requirement documents again (or paste the text) and wardenIQ generates the test suite for it.",
-  },
-  {
-    id: "generate-name",
-    chapter: "generate",
-    when: (setup) => !setup.has_feature,
-    targets: ["#f-name"],
-    placement: "side",
-    title: "Name the feature",
-    body: "Use a short name such as Login or Checkout.",
+    title: "Start a new version",
+    body: "Click +, add the updated requirements, and generate a new test suite.",
   },
   {
     id: "generate-docs",
@@ -195,17 +141,8 @@ export const STEPS = [
     group: true,
     placement: "side",
     title: "Add your requirements",
-    body: "Upload one or more documents (PRD, HLD, LLD as PDF, DOCX or Markdown), or paste text in the box below. No document handy? Download the sample PRD and upload it.",
+    body: "Upload a document or paste the requirements. The default test mix is ready to use.",
     link: { href: SAMPLE_PRD_URL, label: "Open the sample PRD" },
-  },
-  {
-    id: "generate-mix",
-    chapter: "generate",
-    when: (setup) => !setup.has_feature,
-    placement: "side",
-    targets: ["#focus-ctrl"],
-    title: "Tune the test type mix (optional)",
-    body: "These sliders set how much emphasis each category gets, not a fixed number of cases. The defaults are a good start.",
   },
   {
     id: "generate-go",
@@ -214,7 +151,7 @@ export const STEPS = [
     targets: ["#f-go"],
     advanceOnClick: true,
     title: "Generate test cases",
-    body: "Click Generate test cases. wardenIQ reads your documents and writes a normalised, reusable test suite.",
+    body: "Click Generate test cases. wardenIQ creates a reusable test suite.",
   },
   {
     id: "generate-wait",
@@ -223,9 +160,9 @@ export const STEPS = [
     group: true,
     pollSetup: true,
     waitFor: (env) => env.setup.has_test_cases,
-    nextLabel: "Continue while it runs",
+    nextLabel: "Continue",
     title: "Generation is running",
-    body: "This runs in the background and can take a few minutes, longer on a CPU-only machine with the built-in model. You can carry on; the tour moves on by itself when the first test cases are ready.",
+    body: "Generation runs in the background. The tour continues when cases are ready.",
   },
 
   // ---- results ----
@@ -239,8 +176,8 @@ export const STEPS = [
     title: "Review your test cases",
     body: (env) =>
       env.setup.has_test_cases
-        ? "Each feature card shows its version and number of test cases. Open it to review, edit and export the cases. Re-uploading documents later creates a new version and keeps, retires or adds cases."
-        : "Generation is still running, so the card shows 0 test cases for now. When it finishes, the count updates and the checklist ticks off. Open the card to review, edit and export the cases.",
+        ? "Open the feature to review, edit, or export the generated cases."
+        : "The case count will update when generation finishes. Open the feature to review the results.",
   },
 
   // ---- repo (optional) ----
@@ -251,52 +188,16 @@ export const STEPS = [
     targets: ["[data-project-card] .entity-menu-btn", "[data-project-card]"],
     skip: (env) => !env.setup.has_project,
     title: "Connect a repository (optional)",
-    body: "To map code changes to your tests, open the project's ⋯ menu and choose Settings & repositories, then add a GitHub or GitLab repository with a personal access token. This powers Code Analysis and Mind Map. You can skip it for now.",
+    body: "Connect a GitHub or GitLab repository later to use Code Analysis and Mind Map. You can skip this step.",
   },
 
   // ---- explore ----
   {
-    id: "explore-projects",
+    id: "explore-workspace",
     chapter: "explore",
     targets: ['nav button[data-view="projects"]'],
-    skip: (env) => env.role !== "viewer",
-    title: "Projects & Repos",
-    body: "Browse projects, their features and the repositories connected to them.",
-  },
-  {
-    id: "explore-cases",
-    chapter: "explore",
-    targets: ['nav button[data-view="cases"]'],
-    title: "Test Cases",
-    body: "Every test case across your features, with filters, bulk actions and exports.",
-  },
-  {
-    id: "explore-analysis",
-    chapter: "explore",
-    targets: ['nav button[data-view="cycles"]'],
-    title: "Code Analysis",
-    body: "Maps pull requests to the test cases they impact or cover. Needs a connected repository.",
-  },
-  {
-    id: "explore-mindmap",
-    chapter: "explore",
-    targets: ['nav button[data-view="mindmap"]'],
-    title: "Mind Map",
-    body: "Sweeps your production code and shows which requirements are covered, partly covered or uncovered.",
-  },
-  {
-    id: "explore-cycles",
-    chapter: "explore",
-    targets: ['nav button[data-view="testcycles"]'],
-    title: "Test Cycles",
-    body: "Plan test runs and record results.",
-  },
-  {
-    id: "explore-help",
-    chapter: "explore",
-    targets: ["#wq-help-launcher"],
-    title: "Need this again?",
-    body: "Use this ? button any time to restart the tour or bring back the setup checklist.",
+    title: "Your workspace",
+    body: "Use the sidebar to revisit projects, test cases, and coverage. Connect a repository to unlock code insights.",
     nextLabel: "Finish",
   },
 ];
@@ -307,14 +208,16 @@ export const STEPS = [
  * - Without `startChapter`: every chapter that applies to this user and setup.
  * - With `startChapter` (a checklist "Show me"): that chapter even if its
  *   condition says it is done, followed by the later chapters that apply,
- *   without the welcome chapter.
+ *   without earlier chapters.
  */
 export function buildTour({ role, setup, startChapter = null }) {
   const env = { role: normaliseRole(role), setup: setup || {} };
   const startIdx = startChapter ? CHAPTERS.findIndex((c) => c.id === startChapter) : 0;
   if (startIdx < 0) return [];
   const chapters = CHAPTERS.slice(startIdx)
-    .filter((c, i) => (startChapter && i === 0) || c.applies(env))
+    // Repository setup is useful but optional, so keep it out of the main
+    // linear tour. It remains available from the checklist's Show me action.
+    .filter((c, i) => (startChapter && i === 0) || (c.id !== "repo" && c.applies(env)))
     .filter((c) => !(startChapter && c.id === "welcome"))
     .map((c) => c.id);
   return STEPS.filter(

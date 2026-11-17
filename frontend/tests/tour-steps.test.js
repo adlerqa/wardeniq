@@ -42,7 +42,7 @@ test("every step has an id, chapter, title and body, and ids are unique", () => 
 
 test("admin on a fresh install gets every chapter in order", () => {
   const steps = buildTour({ role: "admin", setup: FRESH });
-  assert.deepEqual(chapters(steps), ["welcome", "llm", "project", "generate", "results", "repo", "explore"]);
+  assert.deepEqual(chapters(steps), ["llm", "project", "generate", "results", "explore"]);
 });
 
 test("a working LLM skips the AI-model chapter", () => {
@@ -52,25 +52,25 @@ test("a working LLM skips the AI-model chapter", () => {
 
 test("editors never get the AI-model chapter (Configuration is admin-only)", () => {
   const steps = buildTour({ role: "editor", setup: FRESH });
-  assert.deepEqual(chapters(steps), ["welcome", "project", "generate", "results", "repo", "explore"]);
+  assert.deepEqual(chapters(steps), ["project", "generate", "results", "explore"]);
 });
 
-test("viewers get a read-only tour: welcome and explore, including Projects", () => {
+test("viewers get a short read-only tour with workspace orientation", () => {
   const steps = buildTour({ role: "viewer", setup: FRESH });
-  assert.deepEqual(chapters(steps), ["welcome", "explore"]);
-  assert.ok(steps.some((s) => s.id === "explore-projects"));
+  assert.deepEqual(chapters(steps), ["explore"]);
+  assert.ok(steps.some((s) => s.id === "explore-workspace"));
   assert.ok(!steps.some((s) => s.advanceOnClick || (s.waitFor && s.chapter !== "explore")));
 });
 
-test("finished steps drop out: with everything done only welcome, results and explore remain", () => {
+test("finished steps drop out: only results and workspace orientation remain", () => {
   const done = { llm_configured: true, has_project: true, has_repo: true, has_feature: true, has_test_cases: true };
-  assert.deepEqual(chapters(buildTour({ role: "admin", setup: done })), ["welcome", "results", "explore"]);
+  assert.deepEqual(chapters(buildTour({ role: "admin", setup: done })), ["results", "explore"]);
 });
 
-test("Show me starts at that chapter, skips welcome, and continues with later chapters", () => {
+test("Show me starts at that chapter and continues with later chapters", () => {
   const steps = buildTour({ role: "admin", setup: { ...FRESH, llm_configured: true }, startChapter: "project" });
   assert.equal(steps[0].id, "project-new");
-  assert.deepEqual(chapters(steps), ["project", "generate", "results", "repo", "explore"]);
+  assert.deepEqual(chapters(steps), ["project", "generate", "results", "explore"]);
 });
 
 test("Show me on the optional repo step works even though later chapters are fine", () => {
@@ -90,10 +90,9 @@ test("generate chapter: new-feature path vs existing-feature path", () => {
     buildTour({ role: "editor", setup, startChapter: "generate" })
       .filter((s) => s.chapter === "generate")
       .map((s) => s.id);
-  // No feature yet: open the project, create a feature, fill the form, generate, wait.
+  // No feature yet: open the project, create a feature, add requirements, generate, wait.
   assert.deepEqual(ids(FRESH), [
-    "generate-open-project", "generate-new-feature", "generate-name",
-    "generate-docs", "generate-mix", "generate-go", "generate-wait",
+    "generate-open-project", "generate-new-feature", "generate-docs", "generate-go", "generate-wait",
   ]);
   // A feature without cases: open it and regenerate instead.
   assert.deepEqual(ids({ ...FRESH, has_project: true, has_feature: true }), [
@@ -123,9 +122,9 @@ test("grouped highlight for the requirements and waiting steps", () => {
 test("progress is by part (chapter) and step within it", () => {
   const steps = buildTour({ role: "admin", setup: { ...FRESH, llm_configured: true } });
   const first = tourProgress(steps, 0);
-  assert.deepEqual(first, { part: 1, parts: 6, title: "Welcome", step: 1, steps: 2 });
-  const i = steps.findIndex((s) => s.id === "project-name");
-  assert.deepEqual(tourProgress(steps, i), { part: 2, parts: 6, title: "Create a project", step: 2, steps: 3 });
+  assert.deepEqual(first, { part: 1, parts: 4, title: "Create a project", step: 1, steps: 2 });
+  const i = steps.findIndex((s) => s.id === "project-save");
+  assert.deepEqual(tourProgress(steps, i), { part: 1, parts: 4, title: "Create a project", step: 2, steps: 2 });
   assert.equal(tourProgress(steps, 999), null);
 });
 
@@ -138,13 +137,10 @@ test("project chapter waits for the real actions", () => {
   assert.equal(byId["project-save"].waitFor(env("features")), true);
 });
 
-test("welcome text adapts to the role", () => {
-  const intro = STEPS.find((s) => s.id === "welcome-intro");
-  assert.match(resolveText(intro.body, { role: "viewer", setup: FRESH }), /where everything is/);
-  assert.match(resolveText(intro.body, { role: "admin", setup: FRESH }), /walks you through setup/);
-  const done = { llm_configured: true, has_project: true, has_test_cases: true };
-  assert.match(resolveText(intro.body, { role: "admin", setup: done }), /where everything is/);
-  assert.equal(resolveText("plain", {}), "plain");
+test("tour copy is concise and resolvable", () => {
+  const setup = STEPS.find((s) => s.id === "llm-setup");
+  assert.match(resolveText(setup.body, { role: "admin", setup: FRESH }), /Choose Ollama or a hosted provider/);
+  assert.ok(resolveText("plain", {}));
 });
 
 test("keyboard: Esc always closes; arrows navigate but never while typing or on action steps", () => {
@@ -156,7 +152,7 @@ test("keyboard: Esc always closes; arrows navigate but never while typing or on 
   assert.equal(keyAction("ArrowRight", { actionStep: true }), null);
   assert.equal(keyAction("Enter"), null);
   assert.equal(isActionStep(STEPS.find((s) => s.id === "project-new")), true);
-  assert.equal(isActionStep(STEPS.find((s) => s.id === "welcome-intro")), false);
+  assert.equal(isActionStep(STEPS.find((s) => s.id === "llm-setup")), false);
 });
 
 test("popup placement: below, above, side, centred, always inside the viewport", () => {

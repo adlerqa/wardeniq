@@ -39,7 +39,7 @@ export default function S3SettingsCard() {
             AWS Secret Access Key
             <span className="fi" tabIndex="0" data-tip="Stored encrypted. Leave blank to keep current secret key or use IAM role.">i</span>
           </label>
-          <input type="password" id="cfg-s3-secret" placeholder="Secret Access Key (optional)" />
+          <input type="password" id="cfg-s3-secret" autoComplete="off" placeholder="Secret Access Key (optional)" />
         </div>
       </div>
       <div className="cfg-row">

@@ -68,7 +68,7 @@ export default function EmbeddingSettingsCard() {
           API key / secret
           <span className="fi" tabIndex="0" data-tip="Hosted providers: your API key. AWS Bedrock: leave blank to use the machine's IAM role, or enter accessKeyId:secretAccessKey. Ollama: leave blank.">i</span>
         </label>
-        <input type="password" id="cfg-embed-key" placeholder="API token is required" />
+        <input type="password" id="cfg-embed-key" autoComplete="off" placeholder="API token is required" />
       </div>
       <div className="cfg-field">
         <label>

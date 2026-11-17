@@ -78,7 +78,7 @@ export default function ProjectListPanel() {
               <button type="button" data-provider="gitlab" className="cp-prov">GitLab</button>
             </div>
             <div className="sub" style={{ margin: "0 0 8px" }}>Provide a fine-grained PAT scoped to PR + contents read. wardenIQ stores it encrypted at rest, registers webhooks on the repos you pick below, and uses it to read PR diffs for coverage analysis.</div>
-            <input type="password" id="new-proj-pat" placeholder="ghp_..." />
+          <input type="password" id="new-proj-pat" autoComplete="off" placeholder="ghp_..." />
             <div style={{ marginTop: "8px" }}>
               <button className="ghost" type="button" id="new-proj-load-repos">Load my repositories</button>
               <span className="muted" id="new-proj-pat-status" style={{ fontSize: "11px", marginLeft: "8px" }}></span>

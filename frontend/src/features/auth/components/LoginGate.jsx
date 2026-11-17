@@ -85,7 +85,7 @@ function AuthHeading({ title, description }) {
 function PasswordInput({
   id,
   placeholder = "••••••••",
-  autoComplete,
+  autoComplete = "off",
   className,
 }) {
   const [showPassword, setShowPassword] = useState(false);
@@ -234,7 +234,7 @@ export default function LoginGate() {
               id="login-email"
               type="email"
               placeholder="you@company.com"
-              autoComplete="email"
+              autoComplete="off"
               className={inputClass}
             />
 
@@ -350,7 +350,7 @@ export default function LoginGate() {
                 id="login-username"
                 type="text"
                 placeholder="admin"
-                autoComplete="username"
+                autoComplete="off"
                 className={inputClass}
               />
             </div>
@@ -373,7 +373,7 @@ export default function LoginGate() {
               <PasswordInput
                 id="login-pw"
                 placeholder="••••••••"
-                autoComplete="current-password"
+                autoComplete="off"
                 className={inputClass}
               />
             </div>
@@ -429,7 +429,7 @@ export default function LoginGate() {
               <PasswordInput
                 id="reset-master-new-pw"
                 placeholder="••••••••"
-                autoComplete="new-password"
+                autoComplete="off"
                 className={inputClass}
               />
             </div>
@@ -528,7 +528,7 @@ export default function LoginGate() {
               <PasswordInput
                 id="reset-new-pw"
                 placeholder="••••••••"
-                autoComplete="new-password"
+                autoComplete="off"
                 className={inputClass}
               />
             </div>
