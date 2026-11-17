@@ -37,6 +37,18 @@
 
 ### Fixed
 
+- A MongoDB outage no longer looks like being signed out. `Store.get_user` swallowed
+  every error, so an unreachable database became "no such user" and every authenticated
+  call answered 401, which the UI reads as a sign-out and answers with a login screen
+  that cannot work while the database is down. Only a malformed user id is now "no such
+  user". When the database cannot be reached while checking a session or an API token,
+  the gateway, `/api/auth/me` and the other session lookups answer 503 with "The
+  database is unavailable ... You are not signed out; try again shortly." and a
+  `Retry-After` header. The UI shows that message and keeps the session, and the same
+  cookie works again once the database is back. A missing, tampered or revoked session
+  is still a 401. Each request still waits for the MongoDB driver's server-selection
+  timeout (30 s by default; set `serverSelectionTimeoutMS` in `MONGO_URI` to shorten it)
+  (#282).
 - On Windows, `run.ps1` no longer loses most of the collected logs. It calls
   `collect-logs.ps1` with `$ErrorActionPreference = "Stop"`, which the script inherited,
   so the first container whose `docker logs` reported an error (mongot prints a Java

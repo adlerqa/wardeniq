@@ -22,6 +22,7 @@ import auth
 import email_send
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
+from pymongo.errors import PyMongoError
 
 from api.schemas import OtpRequestIn
 from core import throttle
@@ -34,7 +35,7 @@ from core.config import (
 )
 from core.deps import _smtp_cfg, _user_public
 from core.logging_setup import get_logger
-from core.security import _current_user
+from core.security import DATABASE_UNAVAILABLE_DETAIL, _current_user
 from core.state import store
 
 log = get_logger("auth")
@@ -529,11 +530,22 @@ def reset_password_master(body: ResetPasswordMasterIn, request: Request = None):
     return {"reset": True, "message": "Password reset successfully using App Master Secret. You can now sign in."}
 
 
+def _stored_user(uid):
+    """store.get_user for a session. A database outage is a 503, not "not authenticated":
+    the session is not known to be bad, and the UI keeps it on a 503 (#282)."""
+    try:
+        return store.get_user(uid) if uid else None
+    except PyMongoError as e:
+        log.warning("auth: database unavailable while loading the session user (%s)",
+                    type(e).__name__)
+        raise HTTPException(503, DATABASE_UNAVAILABLE_DETAIL, headers={"Retry-After": "5"})
+
+
 @router.get("/api/auth/me")
 def auth_me(request: Request):
     sess = auth.verify_session(request.cookies.get(auth.SESSION_COOKIE))
     uid, tok_sv = sess if sess else (None, None)
-    user = store.get_user(uid) if uid else None
+    user = _stored_user(uid)
     if not user or not user.get("active"):
         raise HTTPException(401, "not authenticated")
     if int(user.get("session_version", 0)) != int(tok_sv):
@@ -566,7 +578,7 @@ def _session_user(request: Request):
     request.state.user). Enforces the same session_version check as the gateway."""
     sess = auth.verify_session(request.cookies.get(auth.SESSION_COOKIE))
     uid, tok_sv = sess if sess else (None, None)
-    user = store.get_user(uid) if uid else None
+    user = _stored_user(uid)
     if not user or not user.get("active"):
         raise HTTPException(401, "not authenticated")
     if int(user.get("session_version", 0)) != int(tok_sv):
