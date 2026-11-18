@@ -543,11 +543,13 @@ nav button.active {
 
 .user-id {
   min-width: 0;
+  flex: 0 1 auto !important;
 }
 
 .user-email,
 #user-email {
   display: block;
+  min-width: 0;
   max-width: 155px;
   overflow: hidden;
   color: #e7edf4;
