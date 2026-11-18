@@ -110,15 +110,20 @@ def test_healthy_boot_has_no_warning_or_database_query(client, monkeypatch):
 
 
 @pytest.mark.parametrize("ready", [False, True])
-def test_empty_users_password_failure_is_actionable(client, monkeypatch, ready):
+def test_empty_users_password_failure_is_generic(client, monkeypatch, ready):
     bootstrap.BOOT.update(ready=ready)
     monkeypatch.setattr(routes, "_smtp_cfg", lambda: None)
     monkeypatch.setattr(routes.store, "get_user_by_email", lambda email: None)
-    response = client.post("/api/auth/login-password", json={"username": "admin", "password": "wrong"})
-    assert response.status_code == 503
-    assert "No user accounts exist" in response.json()["detail"]
-    assert "scripts/reset-admin-password.sh" in response.json()["detail"]
-    assert "Invalid username or password" not in response.text
+
+    response = client.post(
+        "/api/auth/login-password",
+        json={"username": "admin", "password": "wrong"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Invalid username or password"
+    assert "No user accounts exist" not in response.text
+    assert "reset-admin-password.sh" not in response.text
     assert "private-user" not in response.text
 
 
