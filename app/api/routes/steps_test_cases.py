@@ -64,20 +64,14 @@ def list_test_cases(request: Request, project_id: str | None = None,
     if lineage and lineage not in {"created", "inherited"}:
         raise HTTPException(422, "invalid lineage filter")
     user = _current_user(request)
+    allowed = _allowed_project_ids(user)
     if project_id is not None:
         _require_project(request, project_id)
-    res = store.list_test_cases(
+        allowed = None  # explicit, already-authorised project filter
+    return store.list_test_cases(
         project_id, feature_id, type, tag, q, status, execution_status, lineage,
-        step_id, limit, skip
+        step_id, limit, skip, project_ids=allowed,
     )
-    # Restrict to cases in the user's allowed projects (case may span projects; keep
-    # it if it touches any allowed one).
-    allowed = _allowed_project_ids(user)
-    if allowed is not None and isinstance(res, dict) and isinstance(res.get("cases"), list):
-        res["cases"] = [c for c in res["cases"]
-                        if any((f.get("project_id") in allowed)
-                               for f in (c.get("features") or []))]
-    return res
 
 
 @router.get("/api/test-cases/{cid}")

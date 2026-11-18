@@ -181,6 +181,20 @@ def test_dashboard_and_tags_are_scoped(fake_store):
     assert fake_store.all_tags.call_args.kwargs["project_ids"] == {MINE}
 
 
+def test_test_cases_list_is_scoped_to_the_users_projects(fake_store):
+    fake_store.list_test_cases.return_value = {"total": 0, "items": []}
+    assert client.get("/api/test-cases", cookies=_cookie()).status_code == 200
+    assert fake_store.list_test_cases.call_args.kwargs["project_ids"] == {MINE}
+
+
+def test_test_cases_explicit_project_id_is_not_double_scoped(fake_store):
+    fake_store.list_test_cases.return_value = {"total": 0, "items": []}
+    assert client.get(f"/api/test-cases?project_id={MINE}", cookies=_cookie()).status_code == 200
+    # The explicit filter is already authorised by _require_project; passing the
+    # user's scope too would wrongly drop cases shared with other projects.
+    assert fake_store.list_test_cases.call_args.kwargs["project_ids"] is None
+
+
 def test_retrieve_hides_other_projects_cases(fake_store):
     fake_store.search_cases.return_value = ([{"id": "c-other"}, {"id": "c-mine"}], [])
     fake_store.get_case = MagicMock(side_effect=lambda cid: {
