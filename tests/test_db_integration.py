@@ -98,6 +98,39 @@ def test_ensure_indexes_creates_core_collections(store):
     assert any("email" in n for n in idx_names)
 
 
+def test_ensure_indexes_creates_hot_query_indexes(store):
+    expected = {
+        "associations": [
+            [("test_case_id", 1)],
+        ],
+        "feature_chunks": [
+            [("feature_id", 1)],
+        ],
+        "features": [
+            [("project_id", 1)],
+            [("group_id", 1)],
+        ],
+        "code_chunks": [
+            [("repo_id", 1)],
+        ],
+        "jobs": [
+            [("project_id", 1), ("type", 1)],
+        ],
+    }
+
+    for collection_name, expected_indexes in expected.items():
+        collection = store.db[collection_name]
+        actual_indexes = [
+            list(index["key"].items())
+            for index in collection.list_indexes()
+        ]
+
+        for expected_index in expected_indexes:
+            assert expected_index in actual_indexes, (
+                f"Missing index on {collection_name}: {expected_index}"
+            )
+
+
 # --------------------------------------------------------------- projects
 def test_project_crud_round_trip(store):
     pid = store.create_project("Acme Checkout", description="payments flow")
