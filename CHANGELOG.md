@@ -124,7 +124,7 @@
   Features list. It used to come back empty for them (#221).
 - OpenAPI YAML extraction now reports every method of a path, not just the first
   one, when an operation has nested keys such as `summary:` or `responses:` (#221).
-
+- Fix nested objects in test case expected responses displaying as `[object Object]`; render them as formatted, escaped JSON.
 ## v0.3.0 — 2026-11-04
 
 ### Security
