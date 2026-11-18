@@ -125,6 +125,16 @@
 - OpenAPI YAML extraction now reports every method of a path, not just the first
   one, when an operation has nested keys such as `summary:` or `responses:` (#221).
 - Fix nested objects in test case expected responses displaying as `[object Object]`; render them as formatted, escaped JSON.
+- A wrong password on a fresh install, before the admin account exists, now says
+  "Invalid username or password" like everywhere else. It used to answer 503 with
+  "No user accounts exist. Run scripts/reset-admin-password.sh", which sent people to
+  a recovery they did not need: the default admin login still creates the admin. The
+  recovery hint is still part of the public boot status that the sign-in page shows
+  while the app is starting. These failed attempts now count toward the sign-in
+  limit like any other: by default ten wrong tries lock the account for 15 minutes
+  (`AUTH_MAX_FAILURES_PER_ACCOUNT`, `AUTH_LOCKOUT_SECONDS`), which includes `admin` on a
+  fresh install (#172).
+
 ## v0.3.0 — 2026-11-04
 
 ### Security
