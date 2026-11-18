@@ -4,11 +4,6 @@ async function initMindmap() {
   await loadMindmapRepos();
   loadMindmap();
 }
-$("#mm-proj").onchange = () => {
-  setCurrentProject($("#mm-proj").value);
-  loadMindmapRepos();
-  loadMindmap();
-};
 $("#mm-refresh").onclick = () => loadMindmap();
 function repoBranchRows(repos, cls) {
   return (
@@ -156,12 +151,12 @@ async function openGitRepoPicker(pid, reload) {
 }
 if ($("#cyc-add-git"))
   $("#cyc-add-git").onclick = () =>
-    openGitRepoPicker($("#cyc-proj").value || currentProject, loadCycleRepos);
+    openGitRepoPicker(currentProject, loadCycleRepos);
 if ($("#mm-add-git"))
   $("#mm-add-git").onclick = () =>
-    openGitRepoPicker($("#mm-proj").value || currentProject, loadMindmapRepos);
+    openGitRepoPicker(currentProject, loadMindmapRepos);
 async function loadMindmapRepos() {
-  const pid = $("#mm-proj").value || currentProject;
+  const pid = currentProject;
   if (!pid) return;
   try {
     const r = await api(`/api/projects/${pid}/repos?repo_type=app`); // app repos only (test repos excluded)
@@ -177,7 +172,7 @@ $("#mm-analyze").onclick = async () => {
     toast("Select at least one repo", true);
     return;
   }
-  const pid = $("#mm-proj").value || currentProject;
+  const pid = currentProject;
   const branches = collectBranches("mm-repo");
   $("#mm-status").textContent =
     `Starting implementation coverage review for ${ids.length} repo${ids.length === 1 ? "" : "s"}…`;
@@ -301,7 +296,7 @@ function analysisEmptyReasonHtml(lastAnalysis) {
   </div>`;
 }
 async function loadMindmap() {
-  const pid = $("#mm-proj").value || currentProject;
+  const pid = currentProject;
   // Guard: if we're called with no project (selector cleared while an Analyze
   // job was in flight, or nav returned before a project is picked), CLEAR the
   // loader first — otherwise the "Downloading repository code…" loader set by

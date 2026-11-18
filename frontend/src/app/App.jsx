@@ -4,6 +4,7 @@ import ApplicationFrame from "../layouts/ApplicationFrame.jsx";
 import AppOverlays from "../components/overlays/AppOverlays.jsx";
 import RuntimeBridge from "../compat/runtime/RuntimeBridge.jsx";
 import AppErrorBoundary from "../components/feedback/AppErrorBoundary.jsx";
+import SelectDropdownLayer from "../components/forms/SelectDropdownLayer.jsx";
 
 /**
  * Root composition only. Business screens live under features/, permanent
@@ -18,6 +19,7 @@ export default function App() {
       <ApplicationFrame />
       <AppOverlays />
       <RuntimeBridge />
+      <SelectDropdownLayer />
     </AppErrorBoundary>
   );
 }

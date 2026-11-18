@@ -13,7 +13,7 @@ async function initCases() {
 }
 async function fillFeatFilter() {
   try {
-    const pf = $("#tc-proj").value;
+    const pf = currentProject || "";
     const r = await api("/api/features" + (pf ? `?project_id=${pf}` : ""));
     $("#tc-feat").innerHTML =
       `<option value="">All features</option>` +
@@ -22,13 +22,6 @@ async function fillFeatFilter() {
         .join("");
   } catch (e) {}
 }
-$("#tc-proj").onchange = async () => {
-  setCurrentProject($("#tc-proj").value);
-  $("#tc-feat").value = "";
-  await fillFeatFilter();
-  tcPage = 0;
-  loadCases();
-};
 $("#tc-feat").onchange = () => {
   tcPage = 0;
   loadCases();
@@ -64,7 +57,6 @@ $("#tc-apply").onclick = () => {
   loadCases();
 };
 $("#tc-reset").onclick = async () => {
-  $("#tc-proj").value = currentProject || "";
   $("#tc-type").value = "";
   $("#tc-tag").value = "";
   $("#tc-status").value = "active";
@@ -79,7 +71,7 @@ $("#tc-reset").onclick = async () => {
 async function loadCases() {
   const qp = new URLSearchParams();
   const m = {
-    project_id: $("#tc-proj").value,
+    project_id: currentProject || "",
     feature_id: $("#tc-feat").value,
     type: $("#tc-type").value,
     tag: $("#tc-tag").value,
@@ -104,9 +96,6 @@ async function loadCases() {
       : `<span class="muted">No test cases match the selected filters.</span>`;
     updateCaseSelection();
     const activeFilters = [
-      $("#tc-proj").selectedOptions[0]?.textContent !== "All projects"
-        ? $("#tc-proj").selectedOptions[0]?.textContent
-        : null,
       $("#tc-feat").value
         ? $("#tc-feat").selectedOptions[0]?.textContent
         : null,

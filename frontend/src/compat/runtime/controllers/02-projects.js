@@ -31,24 +31,9 @@ async function loadProjects() {
       $("#f-project").innerHTML = opts;
       $("#f-project").value = currentProject;
     }
-    if ($("#cyc-proj")) {
-      $("#cyc-proj").innerHTML = opts;
-      $("#cyc-proj").value = currentProject;
-    }
-    if ($("#tcy-proj")) {
-      $("#tcy-proj").innerHTML = opts;
-      $("#tcy-proj").value = currentProject;
-    }
-    if ($("#mm-proj")) {
-      $("#mm-proj").innerHTML = opts;
-      $("#mm-proj").value = currentProject;
-    }
     if ($("#dev-proj")) {
       $("#dev-proj").innerHTML = opts;
       $("#dev-proj").value = currentProject;
-    }
-    if ($("#tc-proj")) {
-      $("#tc-proj").innerHTML = opts || `<option value="">No project selected</option>`;
     }
     if (typeof syncSidebarProject === "function") syncSidebarProject(r.projects);
 
@@ -983,7 +968,6 @@ window.gotoAnalyze = async (rid, pid) => {
     .forEach((s) => (s.hidden = s.id !== "view-cycles"));
   $("#view-title").textContent = TITLES.cycles;
   await loadProjects();
-  if ($("#cyc-proj")) $("#cyc-proj").value = pid;
   await loadCycleRepos();
   document.querySelectorAll(".cyc-repo-chk").forEach((c) => {
     c.checked = c.value === rid;

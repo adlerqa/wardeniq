@@ -908,10 +908,9 @@ function syncSidebarProject(projects) {
       : `<option value="">No project selected</option>`;
     select.value = currentProject || "";
   }
-  document.querySelectorAll("#f-project, #cyc-proj, #tcy-proj, #mm-proj, #dev-proj").forEach((el) => {
+  document.querySelectorAll("#f-project, #dev-proj").forEach((el) => {
     el.value = currentProject || "";
   });
-  if ($("#tc-proj")) $("#tc-proj").value = currentProject || "";
   const active = list.find((p) => p.id === currentProject);
   const name = active ? active.name : "No project selected";
   const initials = active

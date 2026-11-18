@@ -13,10 +13,6 @@ export default function CreateTestCyclePanel() {
         </button>
       </div>
       <div className="row" style={{ marginTop: "12px", alignItems: "flex-end", gap: "10px", flexWrap: "wrap" }}>
-        <div style={{ flex: "0 0 240px" }}>
-          <label>Project</label>
-          <select id="tcy-proj" style={{ height: "38px" }}></select>
-        </div>
         <div style={{ flex: "1", minWidth: "200px" }}>
           <label>Cycle name</label>
           <input id="tcy-name" placeholder="e.g. Sprint 12 regression" />
