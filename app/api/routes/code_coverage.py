@@ -26,6 +26,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 import automation as auto_cov
+import coverage as cov
 
 from core.deps import _ext_error, _implementation_repo_docs, _is_app_repo, _oid, gh_client
 from core.logging_setup import get_logger
@@ -94,6 +95,40 @@ def _decorate_coverage_run(r: dict) -> dict:
     return r
 
 
+def _with_confirmed_counts(r: dict) -> dict:
+    """Re-derive a finished run's counts from its stored entries (#291).
+
+    Runs saved before #291 counted "partial" matches as covered in `tests_covered` and
+    `gaps_found`. The entries and their status are still stored in `result.covered`, so
+    the numbers are corrected as the run is served and no data migration is needed.
+    Runs without a `covered` list (no cases, unmatched PR) are left as stored.
+    """
+    result = r.get("result") or {}
+    if r.get("status") == "done" and isinstance(result.get("covered"), list):
+        r.update(cov.coverage_counts(result["covered"], r.get("tests_total") or 0))
+    return r
+
+
+def _confirmed_comparison(comparison: dict, covered: list) -> dict:
+    """Re-derive a run's comparison from confirmed verdicts only (#291).
+
+    Runs saved before #291 listed partial matches in newly_covered / no_longer_covered.
+    When the earlier run is still stored, the comparison is recomputed against it with
+    the current rule. When it is gone, a lost match cannot be re-checked, but a gain that
+    this run only matched partially can still be dropped.
+    """
+    if not comparison:
+        return comparison
+    prev_id = comparison.get("prev_run_id")
+    prev = store.get_code_coverage_run(prev_id) if prev_id else None
+    if prev:
+        return {**comparison, **cov.diff_runs(prev, covered)}
+    confirmed = {c.get("test_case_id") for c in covered if cov.is_confirmed(c)}
+    return {**comparison,
+            "newly_covered": [i for i in (comparison.get("newly_covered") or [])
+                              if i in confirmed]}
+
+
 def _hydrate_case_titles(ids: list) -> dict:
     """Bulk-resolve {case_id: {title,type,display_id}} for a list of ids."""
     from bson import ObjectId as _OID
@@ -120,6 +155,7 @@ def list_feature_code_coverage_runs(fid: str, limit: int = 50):
     feat_updated = (feature or {}).get("updated_at", 0)
     excluded_keys = store.excluded_pr_run_keys(fid)
     for r in runs:
+        _with_confirmed_counts(r)
         run_done = r.get("completed_at") or r.get("created_at") or 0
         r["needs_rerun"] = bool(feat_updated and feat_updated > run_done)
         r["excluded"] = (r.get("repo_id"), str(r.get("pr_number"))) in excluded_keys
@@ -129,6 +165,7 @@ def list_feature_code_coverage_runs(fid: str, limit: int = 50):
 @router.get("/api/code-coverage/runs/{rid}")
 def get_code_coverage_run_detail(rid: str, request: Request):
     r = _require_code_coverage_run_project(request, rid)
+    _with_confirmed_counts(r)
     result = r.get("result") or {}
     covered = result.get("covered") or []
 
@@ -140,7 +177,7 @@ def get_code_coverage_run_detail(rid: str, request: Request):
                               for c in covered]
 
     # Hydrate comparison id → title pairs so the UI can render with context.
-    comparison = result.get("comparison") or {}
+    comparison = _confirmed_comparison(result.get("comparison") or {}, covered)
     if comparison:
         diff_ids = list(comparison.get("newly_covered") or []) + \
                    list(comparison.get("no_longer_covered") or [])
