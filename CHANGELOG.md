@@ -37,6 +37,11 @@
 
 ### Fixed
 
+- Generation skips Fusion when neither the project nor the previous feature version
+  has reusable test candidates, and skips generation workers/fallbacks for zero-focus
+  categories. The shared E2E/edge/business call still runs if any of its outputs is
+  requested, avoiding wasted model calls on CPU-only installations (#139).
+
 - On Windows, `run.ps1` no longer loses most of the collected logs. It calls
   `collect-logs.ps1` with `$ErrorActionPreference = "Stop"`, which the script inherited,
   so the first container whose `docker logs` reported an error (mongot prints a Java
