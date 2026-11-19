@@ -15,36 +15,33 @@ import os
 import uuid
 
 import pytest
+from bson import ObjectId
+from pymongo import MongoClient
+from store import Store
 
 pytestmark = pytest.mark.dbintegration
 
 MONGO_TEST_URI = os.getenv("MONGO_TEST_URI", "mongodb://localhost:27017")
 
 
-def _server_reachable() -> bool:
-    from pymongo import MongoClient
+@pytest.fixture(scope="module", autouse=True)
+def _require_mongo():
+    """Skip this module's tests when no MongoDB is reachable.
 
+    This runs when the module's tests are about to run, not at import time, so a run that
+    deselects the dbintegration marker neither waits out the 1.5 s server selection timeout
+    nor opens a MongoClient, and the client used for the check is always closed.
+    """
     client = None
     try:
         client = MongoClient(MONGO_TEST_URI, serverSelectionTimeoutMS=1500)
         client.admin.command("ping")
-        return True
     except Exception:  # noqa: BLE001
-        return False
+        pytest.skip(f"no MongoDB reachable at {MONGO_TEST_URI!r} (set MONGO_TEST_URI to run "
+                    "db-integration tests)")
     finally:
         if client is not None:
             client.close()
-
-
-if not _server_reachable():
-    pytest.skip(
-        f"no MongoDB reachable at {MONGO_TEST_URI!r} (set MONGO_TEST_URI to run "
-        "db-integration tests)",
-        allow_module_level=True,
-    )
-
-from bson import ObjectId  # noqa: E402
-from store import Store  # noqa: E402
 
 
 @pytest.fixture()
