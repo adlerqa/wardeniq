@@ -81,6 +81,18 @@
   covered once. Coverage entries saved before the status existed still count as
   covered. The percentage is computed when the page loads, so features that were
   reading too high show the lower number straight away, with no re-run (#287).
+- The Gap Analysis run screens no longer count a "partial" PR hit as covered either.
+  The run card's `tests_covered` / `gaps_found`, the run detail's "Tests covered" and
+  Covered/Missing lists, and the comparison with the previous run (`newly_covered` /
+  `no_longer_covered`, the up and down arrows) all treated a partial entry like a
+  confirmed one, so an unrelated PR matched loosely read "3/3, 100%" and a loose match
+  that disappeared was reported as lost coverage. Only a confirmed `covered` verdict
+  counts now. Partial hits are shown separately: the card says "N partial, not counted"
+  (new `tests_partial` field), and the detail view lists a partial case under Missing
+  with a "Partial match, not confirmed" note and the model's rationale. Partial cases
+  remain gaps until confirmed. Runs saved before this fix are corrected when they are
+  served, from their stored entries, so no re-run or migration is needed; an entry
+  saved before the status existed counts as covered (#291).
 - The feature PDF report now prints the real coverage numbers. Its "Code coverage" and
   "Automation Test Coverage" cards read keys the coverage report never returns
   (`code_pct`, `automation_pct`), so both showed 0% on every export. They now show the

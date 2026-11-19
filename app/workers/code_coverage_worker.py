@@ -299,8 +299,10 @@ def ingest_pr(repo: dict, pr: dict, feature_id_override: str | None = None):
         if cases:
             try:
                 result = _pr_coverage(pr_id, doc, files, fid)
-                tests_covered = len([c for c in result.get("covered", [])
-                                     if c.get("status") in ("covered", "partial")])
+                # Only a confirmed "covered" verdict counts. A "partial" entry (code in
+                # scope, implementation not confirmed) is kept in result.covered but is
+                # reported separately and stays a gap (#291).
+                counts = cov.coverage_counts(result.get("covered", []), len(cases))
 
                 # Cross-version comparison vs the previous done run on this feature.
                 prev = store.previous_done_run_for_feature(fid, exclude_id=run_id)
@@ -313,8 +315,9 @@ def ingest_pr(repo: dict, pr: dict, feature_id_override: str | None = None):
                     status="done",
                     completed_at=time.time(),
                     tests_total=len(cases),
-                    tests_covered=tests_covered,
-                    gaps_found=max(0, len(cases) - tests_covered),
+                    tests_covered=counts["tests_covered"],
+                    tests_partial=counts["tests_partial"],
+                    gaps_found=counts["gaps_found"],
                     result={"covered": result.get("covered", []),
                             "dev_test_files": result.get("dev_test_files", []),
                             "confidence": result.get("confidence", 0.0),
