@@ -1845,7 +1845,10 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                 build_business_test_prompt(
                     context, business_rag_context, top_k=_category_top_k("business", is_ollama)
                 ),
-                max_tokens=6000,
+                # 8000, not 6000: on a local model its real replies were 5,208, 5,597 and 5,788
+                # tokens (87-96% of 6000), so a slightly longer one would have been cut off now
+                # that Ollama honours the limit. 8000 still fits the 240 s timeout at GPU speed.
+                max_tokens=8000,
                 timeout_seconds=resolve_timeout(240),
             )
             business_tests.extend(_as_list(fallback.get("business_tests")))

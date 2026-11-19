@@ -244,6 +244,34 @@ class TestCallWithRepair:
 
 
 # ------------------------------------------------------------------ the limits the pipeline asks for
+class TestBusinessFallbackLimit:
+    """The business-tests fallback wrote 5,208, 5,597 and 5,788 tokens in three real runs
+    (87-96% of its old 6000 limit). Enforced on Ollama, a limit that close cuts replies off."""
+
+    LARGEST_OBSERVED = 5788
+
+    @staticmethod
+    def _limit():
+        import re
+        src = open(os.path.join(APP_DIR, "testgen", "service.py")).read()
+        call = src[src.index("build_business_test_prompt(\n                    context, business_rag_context"):]
+        return int(re.search(r"max_tokens=(\d+)", call).group(1))
+
+    def test_the_limit_is_8000(self):
+        assert self._limit() == 8000
+
+    def test_it_leaves_at_least_a_third_headroom_over_the_largest_real_reply(self):
+        assert self._limit() >= self.LARGEST_OBSERVED * 4 / 3
+
+    def test_it_still_fits_the_240_second_timeout_at_the_gpu_speed_measured(self):
+        # about 41 tokens/s was measured on the Apple GPU; a CPU needs LLM_TIMEOUT_SECONDS raised
+        assert self._limit() / 41 < 240
+
+    def test_the_other_6000_call_is_untouched(self):
+        src = open(os.path.join(APP_DIR, "testgen", "service.py")).read()
+        assert "build_fusion_pass_prompt(context, project_tests), max_tokens=6000" in src
+
+
 class TestPipelineLimitsAreExplicit:
     def test_the_designed_limits_are_literal_values_in_the_pipeline(self):
         src = open(os.path.join(APP_DIR, "testgen", "service.py")).read()

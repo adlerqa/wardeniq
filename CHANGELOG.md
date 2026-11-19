@@ -48,8 +48,9 @@
   for those callers. OpenAI-compatible providers are unchanged. A reply cut off at its limit is
   logged and is usually salvaged by the existing JSON repair, which keeps the entries completed
   before the cut; if the model has to repair it, that call gets a quarter more room so the
-  repair is not cut off at the same place. The Mind Map reviewer's limit is
-  `MINDMAP_REVIEW_MAX_TOKENS` (default 2000) and can be raised (#249).
+  repair is not cut off at the same place. The limit of the business-tests fallback rises from
+  6,000 to 8,000 tokens, because its real replies reached 87% to 96% of the old limit. The Mind
+  Map reviewer's limit is `MINDMAP_REVIEW_MAX_TOKENS` (default 2000) and can be raised (#249).
 - Generation skips Fusion when neither the project nor the previous feature version
   has reusable test candidates, and skips generation workers/fallbacks for zero-focus
   categories. The shared E2E/edge/business call still runs if any of its outputs is
