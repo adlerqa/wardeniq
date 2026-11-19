@@ -1337,7 +1337,9 @@ class TestOutputCap:
         assert base.options == [None]
         assert llm.calls[0]["output_cap_tokens"] is None
 
-    @pytest.mark.parametrize("requested", [None, 0, -5, "6500", 1.5])
+    # None is not in this list: a call that chose no limit is the ordinary case now, and the
+    # benchmark treats it as the old default of 4000 (see TestRunnerDecidesTheCapInEveryMode).
+    @pytest.mark.parametrize("requested", [0, -5, "6500", 1.5])
     def test_pipeline_mode_sends_no_cap_when_the_call_has_no_usable_limit(self, monkeypatch, requested):
         base = _CapturingBase(monkeypatch)
         _recording()._raw_chat("s", "u", 8192, 0.1, requested)
@@ -1522,8 +1524,15 @@ class TestRunnerDecidesTheCapInEveryMode:
         for mode in ("pipeline", 2000, "none"):
             assert self._run(monkeypatch, mode)[1]["max_tokens_requested"] == 6500
 
-    def test_a_call_that_chose_no_limit_gets_no_cap_in_pipeline_mode(self, monkeypatch):
+    def test_a_call_that_chose_no_limit_is_treated_as_the_old_default_of_4000(self, monkeypatch):
+        # chat_json used to default to 4000; the benchmark keeps recording and capping at that
+        # value for such a call, so its results stay comparable with earlier runs.
         options, call = self._run(monkeypatch, "pipeline", max_tokens=None)
+        assert options["num_predict"] == 4000 and call["output_cap_tokens"] == 4000
+        assert call["max_tokens_requested"] == 4000
+
+    def test_none_mode_still_sends_no_cap_for_a_call_that_chose_no_limit(self, monkeypatch):
+        options, call = self._run(monkeypatch, "none", max_tokens=None)
         assert "num_predict" not in options and call["output_cap_tokens"] is None
 
 

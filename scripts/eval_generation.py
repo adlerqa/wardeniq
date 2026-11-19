@@ -286,6 +286,12 @@ class RecordingLLM(llm_module.LLM):
     def _raw_chat(self, system, user, num_ctx=8192, temperature=0.2, max_tokens=4000,
                   timeout_seconds=None):
         effective = self.call_timeout if self.call_timeout else timeout_seconds
+        # A call that chose no limit now reaches the app's client as None. The benchmark has
+        # always treated such a call as asking for the old default (chat_json used to default to
+        # 4000), so it still records that limit and "pipeline" mode still caps it there. Keeping
+        # that makes results comparable with earlier runs; only the app's own client changed.
+        if max_tokens is None:
+            max_tokens = llm_module.DEFAULT_MAX_TOKENS
         cap = effective_output_cap(self.output_cap, max_tokens)
         _RESPONSE_META.value = None
         _REQUEST_OPTIONS.value = {"num_predict": cap} if cap else None
