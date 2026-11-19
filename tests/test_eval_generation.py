@@ -1434,12 +1434,19 @@ class _FakeHttpx:
 
 
 class TestProductionClientIsUntouched:
-    def test_the_apps_client_sends_no_output_cap_and_no_seed(self, monkeypatch):
+    def test_the_apps_client_sends_the_callers_own_cap_and_no_seed(self, monkeypatch):
+        # The app honours a limit its caller chose (#249); the benchmark's seed is never in it.
         fake = _FakeHttpx()
         monkeypatch.setattr(runner.llm_module, "httpx", fake)
         runner.llm_module.LLM(provider="ollama", model="m")._raw_chat("s", "u", 8192, 0.1, 6500)
         options = fake.bodies[0]["options"]
-        assert "num_predict" not in options and "seed" not in options
+        assert options["num_predict"] == 6500 and "seed" not in options
+
+    def test_the_apps_client_sends_no_cap_when_its_caller_chose_none(self, monkeypatch):
+        fake = _FakeHttpx()
+        monkeypatch.setattr(runner.llm_module, "httpx", fake)
+        runner.llm_module.LLM(provider="ollama", model="m")._raw_chat("s", "u", 8192, 0.1, None)
+        assert "num_predict" not in fake.bodies[0]["options"]
 
     def test_the_benchmark_client_sends_the_cap_and_the_seed_only_while_it_runs(self, monkeypatch):
         fake = _FakeHttpx()
@@ -1450,14 +1457,16 @@ class TestProductionClientIsUntouched:
         runner.llm_module.LLM(provider="ollama", model="m")._raw_chat("s", "u", 8192, 0.1, 6500)
         bench, plain_during, plain_after = (b["options"] for b in fake.bodies)
         assert bench["num_predict"] == 6500 and bench["seed"] == 7
-        # A plain client inside the shim gets no cap (none was set for its call) ...
-        assert "num_predict" not in plain_during
-        # ... and nothing remains after the shim is removed.
-        assert "num_predict" not in plain_after and "seed" not in plain_after
+        # A plain client inside the shim keeps its own cap (the shim adds none of its own) ...
+        assert plain_during["num_predict"] == 6500
+        # ... and no seed or other benchmark option remains after the shim is removed.
+        assert plain_after["num_predict"] == 6500 and "seed" not in plain_after
 
-    def test_no_output_limit_was_added_to_the_production_llm_module(self):
+    def test_the_production_llm_module_has_no_benchmark_seed_and_limits_only_by_the_callers_value(self):
         source = (ROOT / "app" / "llm.py").read_text(encoding="utf-8")
-        assert "num_predict" not in source
+        assert "seed" not in source
+        # num_predict comes from the caller's max_tokens and from nothing else.
+        assert 'options["num_predict"] = int(max_tokens)' in source
 
     def test_the_shim_never_overrides_an_explicit_value_or_touches_other_endpoints(self):
         class Fake:
@@ -1482,6 +1491,40 @@ class TestProductionClientIsUntouched:
             runner._REQUEST_OPTIONS.value = None
         assert fake.calls[0][1]["options"]["num_predict"] == 99
         assert fake.calls[1][1] == {"prompt": "x"}
+
+
+class TestRunnerDecidesTheCapInEveryMode:
+    """The app's own client now sends a call's max_tokens as num_predict. The runner subclasses
+    it, so unless it keeps that value out, "none" would still send a cap and a fixed N would lose
+    to the call's own limit while the result recorded something else."""
+
+    def _run(self, monkeypatch, output_cap, max_tokens=6500):
+        fake = _FakeHttpx()
+        monkeypatch.setattr(runner.llm_module, "httpx", fake)
+        llm = _recording(output_cap=output_cap)
+        with runner.seeded_ollama(7):
+            llm._raw_chat("s", "u", 8192, 0.1, max_tokens)
+        return fake.bodies[0]["options"], llm.calls[0]
+
+    def test_pipeline_mode_sends_the_calls_own_limit(self, monkeypatch):
+        options, call = self._run(monkeypatch, "pipeline")
+        assert options["num_predict"] == 6500 and call["output_cap_tokens"] == 6500
+
+    def test_a_fixed_cap_wins_over_the_calls_own_limit(self, monkeypatch):
+        options, call = self._run(monkeypatch, 2000)
+        assert options["num_predict"] == 2000 and call["output_cap_tokens"] == 2000
+
+    def test_none_mode_really_sends_no_cap(self, monkeypatch):
+        options, call = self._run(monkeypatch, "none")
+        assert "num_predict" not in options and call["output_cap_tokens"] is None
+
+    def test_the_calls_own_limit_is_still_recorded_in_every_mode(self, monkeypatch):
+        for mode in ("pipeline", 2000, "none"):
+            assert self._run(monkeypatch, mode)[1]["max_tokens_requested"] == 6500
+
+    def test_a_call_that_chose_no_limit_gets_no_cap_in_pipeline_mode(self, monkeypatch):
+        options, call = self._run(monkeypatch, "pipeline", max_tokens=None)
+        assert "num_predict" not in options and call["output_cap_tokens"] is None
 
 
 class TestLengthLimited:
@@ -1700,11 +1743,12 @@ class TestOverRealHttp:
         assert call["outcome"] == "length_limited" and call["done_reason"] == "length"
         assert call["completion_tokens"] == 6500 and call["tokens_per_second"] == 3250.0
 
-    def test_the_apps_own_client_sends_no_cap_to_the_same_server(self):
+    def test_the_apps_own_client_sends_its_callers_cap_and_no_seed_to_the_same_server(self):
         server = _FakeOllamaServer("stop", 10, '{"ok": true}')
         try:
             runner.llm_module.LLM(provider="ollama", model="m", ollama_url=server.url)._raw_chat(
                 "sys", "u", 8192, 0.1, 6500, timeout_seconds=30)
         finally:
             server.close()
-        assert "num_predict" not in server.requests[0]["options"]
+        options = server.requests[0]["options"]
+        assert options["num_predict"] == 6500 and "seed" not in options
