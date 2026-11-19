@@ -4,6 +4,23 @@
 
 ### Added
 
+- **A warning before a long generation on a CPU.** On a machine with no GPU the bundled
+  model can take from about 20 minutes to over an hour for a full run, and nothing said so
+  until it was under way. The Generate page now shows an amber notice as soon as it opens,
+  before any document is added, when the local Ollama model runs on CPU: how long it can
+  take, and the ways out (a hosted provider, Ollama on a GPU, or a larger
+  `LLM_TIMEOUT_SECONDS` if calls time out). On a Mac it also says that Docker cannot use
+  the GPU, so Ollama should run natively there. The app asks Ollama's `/api/ps` where the
+  loaded model runs (CPU, GPU, or split between them). On a first run nothing is loaded
+  yet, so it loads the small embedding model the app uses anyway, which takes well under a
+  second, and asks again. It never guesses from the URL, because the "bundled" Ollama URL
+  can point at the CPU-only container or at a native Ollama on the host, which is often a
+  GPU. When Ollama cannot be reached, the model cannot be loaded or the answer is not
+  understood, nothing is claimed, so there is no warning. Hosted providers are unchanged.
+  `POST /api/usage/estimate` gains `accelerator` and, when relevant, `warning` for a local
+  model. The text is deliberately not a computed number of minutes: the existing token
+  estimate covers only part of what a real run produces and would promise a run far
+  shorter than people see. The worker concurrency default is unchanged (#249).
 - **Configurable LLM timeout.** New `LLM_TIMEOUT_SECONDS` setting replaces the timeout of
   every LLM call (test generation and every other model call) on every provider,
   including AWS Bedrock. Unset, the previous built-in values still apply (180 to 300 s

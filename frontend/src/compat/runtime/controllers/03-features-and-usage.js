@@ -53,6 +53,7 @@ async function showFeatureCreate() {
   $("#f-log").textContent = "";
   $("#f-log").style.display = "none";
   if ($("#f-cost-estimate")) $("#f-cost-estimate").textContent = "";
+  scheduleCostEstimate(); // lets a "runs on CPU" warning show before any document is added
   if ($("#f-match-key")) $("#f-match-key").value = "";
   await loadFeatureTicketOptions();
   updateBackbar();
@@ -117,21 +118,24 @@ async function updateCostEstimate() {
     ? [...fileEl.files].reduce((sum, f) => sum + (f.size || 0), 0)
     : 0;
   const textLength = textLen + fileBytes;
-  if (!textLength) {
-    el.textContent = "";
-    return;
-  }
-  el.textContent = "Estimating cost…";
+  // With no document there is no cost to show, but the call is still made: the server
+  // may answer with a warning (a local model running on CPU) that belongs before Generate.
+  el.textContent = textLength ? "Estimating cost…" : "";
   try {
     const r = await api("/api/usage/estimate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text_length: textLength }),
     });
-    el.textContent =
-      r.low != null && r.high != null
+    const cost = !textLength
+      ? ""
+      : r.low != null && r.high != null
         ? `Estimated cost: ${fmtUsd(r.low)}–${fmtUsd(r.high)} (${r.note})`
         : r.note || "";
+    const warning = r.warning
+      ? `<div style="color:var(--amber);margin-top:6px">⚠ ${esc(r.warning)}</div>`
+      : "";
+    el.innerHTML = esc(cost) + warning;
   } catch (e) {
     el.textContent = "";
   }

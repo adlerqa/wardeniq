@@ -313,6 +313,72 @@ class LLM:
         # hosted: we can't cheaply ping without spending a call; report config state
         return {"ok": bool(self.api_key and self.model), "provider": self.provider}
 
+    def _ollama_loaded_models(self):
+        """What Ollama's `/api/ps` lists as loaded right now: a list (empty when nothing is
+        loaded), or None when Ollama cannot be reached or the answer cannot be read."""
+        try:
+            r = httpx.get(f"{self.ollama_url}/api/ps", timeout=2.0,
+                          headers=self._ollama_headers())
+            r.raise_for_status()
+            listed = r.json().get("models") or []
+        except Exception:  # noqa: BLE001 — unreachable, not JSON, or not an object
+            return None
+        loaded = [m for m in listed if isinstance(m, dict)]
+        return None if listed and not loaded else loaded   # unreadable entries are not "empty"
+
+    @staticmethod
+    def _placement(loaded: list):
+        """"cpu", "gpu" or "mixed" from `/api/ps` entries, or None if the sizes make no sense.
+
+        Each entry has `size` (the model's total bytes) and `size_vram` (the bytes held in
+        GPU memory): 0 means it runs on CPU, all of it means GPU, in between is split. The
+        server's hardware decides this, not one model, so every loaded model counts.
+        """
+        try:
+            total = sum(int(m.get("size") or 0) for m in loaded)
+            vram = sum(int(m.get("size_vram") or 0) for m in loaded)
+        except (TypeError, ValueError):
+            return None
+        if total <= 0:
+            return None
+        if vram <= 0:
+            return "cpu"
+        return "gpu" if vram >= total * 0.98 else "mixed"   # 0.98: "all of it" is not always exact
+
+    def accelerator(self, probe_model: str = "") -> dict:
+        """Where does a local Ollama model run: "cpu", "gpu", "mixed" or "unknown"?
+
+        Used to warn before a long generation on a CPU. Only Ollama has an answer, so every
+        other provider returns `{"accelerator": None}` (nothing to say).
+
+        It is always a measurement and never a guess. Ollama's `/api/ps` reports where each
+        loaded model lives. On a first run, or after Ollama has unloaded everything, nothing
+        is loaded and there is nothing to read; then `probe_model` (the small embedding model
+        the app uses anyway) is loaded with a one-word embedding, which takes well under a
+        second, and `/api/ps` is read again. The URL is deliberately not used to guess:
+        the "bundled" URL setting can point at the container (CPU) or at a native Ollama on
+        the host (often a GPU), and only the server knows. If Ollama cannot be reached, the
+        model cannot be loaded, or the answer is not understood, nothing is claimed
+        ("unknown"), so a wrong warning is never shown.
+        """
+        if self.provider != "ollama":
+            return {"accelerator": None}
+        unknown = {"accelerator": "unknown"}
+        loaded = self._ollama_loaded_models()
+        if loaded is None:
+            return unknown
+        if not loaded and probe_model:
+            try:
+                r = httpx.post(f"{self.ollama_url}/api/embed", timeout=15.0,
+                               headers=self._ollama_headers(),
+                               json={"model": probe_model, "input": "x"})
+                r.raise_for_status()
+            except Exception:  # noqa: BLE001 — not pulled, unreachable, or refused
+                return unknown
+            loaded = self._ollama_loaded_models()
+        where = self._placement(loaded) if loaded else None
+        return {"accelerator": where or "unknown"}
+
     def ping(self) -> dict:
         """Active check: do a tiny JSON round-trip (used by the 'test' button)."""
         d = self.chat_json("You are a health check. Respond with a valid JSON object.", 'Return {"ok": true} in JSON format.', num_ctx=512, max_tokens=50)
