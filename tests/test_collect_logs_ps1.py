@@ -10,10 +10,13 @@ with PowerShell 7's `$PSNativeCommandUseErrorActionPreference` (a failing native
 becomes a terminating error under "Stop") and a fake `docker` on PATH. They run the real,
 unmodified script and are skipped where `pwsh` is not installed.
 """
+import http.server
 import os
 import re
 import shutil
+import socket
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -36,6 +39,9 @@ case "$1" in
   logs) c="${@: -1}"
         if [ "$c" = "warden-mongot" ]; then
           echo "mongot line"; echo "WARNING: Java warning on stderr" >&2; exit 1
+        fi
+        if [ "$c" = "warden-ollama" ]; then
+          echo "log line from $c"; echo "Picked up JAVA_TOOL_OPTIONS: -XX:UseSVE=0" >&2; exit 0
         fi
         echo "log line from $c"; exit 0 ;;
   compose) echo "NAME STATUS"; exit 0 ;;
@@ -119,3 +125,95 @@ def test_the_web_request_still_fails_into_its_catch_under_continue():
     text = SCRIPT.read_text()
     request = next(ln for ln in text.splitlines() if "Invoke-WebRequest" in ln and not ln.strip().startswith("#"))
     assert "-ErrorAction Stop" in request
+
+
+# --- #286 follow-ups: stderr wording and the app status file ---------------------------------
+
+@needs_pwsh
+def test_a_containers_stderr_line_is_kept_as_plain_text(tmp_path):
+    # Windows PowerShell 5.1 wrote a "NativeCommandError / CategoryInfo / At line:" block around
+    # the first stderr line of each log. PowerShell 7 does not reproduce that wrapper, so on this
+    # runner the test guards the text staying intact; the wrapper itself was confirmed on 5.1.
+    _, logs = run_collect(tmp_path, PARENT_STOP)
+    text = (logs / "warden-ollama.log").read_text(encoding="utf-8-sig")
+    assert "Picked up JAVA_TOOL_OPTIONS: -XX:UseSVE=0" in text
+    assert "log line from warden-ollama" in text
+    for wrapper in ("NativeCommandError", "CategoryInfo", "FullyQualifiedErrorId", "At line:", "collect-logs.ps1:"):
+        assert wrapper not in text, text
+
+
+def test_logs_are_written_through_tostring_not_a_raw_redirect():
+    code = "\n".join(ln for ln in SCRIPT.read_text().splitlines() if not ln.strip().startswith("#"))
+    assert re.search(r"docker logs --tail 400 \$c 2>&1 \| ForEach-Object \{ \$_\.ToString\(\) \}", code)
+    assert "docker compose ps 2>&1 | ForEach-Object { $_.ToString() }" in code
+    assert not re.search(r"docker (logs|compose ps)[^\n]*\*>", code)
+
+
+def test_both_collectors_ask_the_public_boot_status_endpoint():
+    # /api/status needs a login: an unauthenticated call returns 401.
+    for path in (SCRIPT, REPO_ROOT / "collect-logs.sh"):
+        code = "\n".join(ln for ln in path.read_text().splitlines() if not ln.strip().startswith("#"))
+        assert "/api/auth/boot-status" in code, path.name
+        assert "/api/status" not in code, path.name
+
+
+def _port_8001_is_free():
+    with socket.socket() as s:
+        return s.connect_ex(("127.0.0.1", 8001)) != 0
+
+
+class _App:
+    """A stand-in for the app on :8001 (the port collect-logs.ps1 queries)."""
+
+    def __init__(self, routes):
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                code, body = routes.get(self.path, (404, b'{"detail":"Not Found"}'))
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 8001), H)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@needs_pwsh
+def test_status_file_holds_the_boot_status_when_the_app_answers(tmp_path):
+    if not _port_8001_is_free():
+        pytest.skip("port 8001 is in use (is the app running?)")
+    app = _App({"/api/auth/boot-status": (200, b'{"stage":"indexing","ready":false}')})
+    try:
+        _, logs = run_collect(tmp_path, PARENT_STOP)
+    finally:
+        app.close()
+    assert '"stage":"indexing"' in (logs / "app_status.json").read_text(encoding="utf-8-sig")
+
+
+@needs_pwsh
+def test_an_http_error_is_not_reported_as_unreachable(tmp_path):
+    if not _port_8001_is_free():
+        pytest.skip("port 8001 is in use (is the app running?)")
+    app = _App({"/api/auth/boot-status": (401, b'{"detail":"Not authenticated"}')})
+    try:
+        _, logs = run_collect(tmp_path, PARENT_STOP)
+    finally:
+        app.close()
+    text = (logs / "app_status.json").read_text(encoding="utf-8-sig")
+    assert "401" in text and "unreachable" not in text
+
+
+@needs_pwsh
+def test_no_answer_at_all_is_reported_as_unreachable(tmp_path):
+    if not _port_8001_is_free():
+        pytest.skip("port 8001 is in use (is the app running?)")
+    _, logs = run_collect(tmp_path, PARENT_STOP)
+    assert "app unreachable" in (logs / "app_status.json").read_text(encoding="utf-8-sig")

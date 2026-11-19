@@ -49,6 +49,11 @@
   is still a 401. Each request still waits for the MongoDB driver's server-selection
   timeout (30 s by default; set `serverSelectionTimeoutMS` in `MONGO_URI` to shorten it)
   (#282).
+- Generation skips Fusion when neither the project nor the previous feature version
+  has reusable test candidates, and skips generation workers/fallbacks for zero-focus
+  categories. The shared E2E/edge/business call still runs if any of its outputs is
+  requested, avoiding wasted model calls on CPU-only installations (#139).
+
 - On Windows, `run.ps1` no longer loses most of the collected logs. It calls
   `collect-logs.ps1` with `$ErrorActionPreference = "Stop"`, which the script inherited,
   so the first container whose `docker logs` reported an error (mongot prints a Java
@@ -56,6 +61,15 @@
   and the rest were never written, and the only message was "log collection failed".
   The script now keeps going and keeps what each command printed, and its web request
   still falls back to "app unreachable" (#286).
+- The log collectors write cleaner, more useful files. On Windows PowerShell 5.1,
+  `collect-logs.ps1` wrapped the first stderr line of each container log in a
+  "NativeCommandError / CategoryInfo" block; each log is now just the text the container
+  printed. `app_status.json` was filled from `/api/status`, which needs a login, so it
+  said "app unreachable" (or held a 401) for a running app. Both `collect-logs.ps1` and
+  `collect-logs.sh` now read the public `/api/auth/boot-status`, which shows the startup
+  stage (for example "indexing" when mongot is not up), and the PowerShell script records
+  "app answered with HTTP <code>" for an HTTP error instead of "app unreachable"
+  (reported by connabyss on #286).
 - The bundled stack no longer fails to start on a Linux host whose user is not uid 1000.
   `run.sh` and `install.sh` keep the mongot password file (`config/pwfile`, and
   `config/pwfile-percona` for the Percona stack) at mode 400, owned by whoever ran
@@ -131,6 +145,16 @@
   Features list. It used to come back empty for them (#221).
 - OpenAPI YAML extraction now reports every method of a path, not just the first
   one, when an operation has nested keys such as `summary:` or `responses:` (#221).
+- Fix nested objects in test case expected responses displaying as `[object Object]`; render them as formatted, escaped JSON.
+- A wrong password on a fresh install, before the admin account exists, now says
+  "Invalid username or password" like everywhere else. It used to answer 503 with
+  "No user accounts exist. Run scripts/reset-admin-password.sh", which sent people to
+  a recovery they did not need: the default admin login still creates the admin. The
+  recovery hint is still part of the public boot status that the sign-in page shows
+  while the app is starting. These failed attempts now count toward the sign-in
+  limit like any other: by default ten wrong tries lock the account for 15 minutes
+  (`AUTH_MAX_FAILURES_PER_ACCOUNT`, `AUTH_LOCKOUT_SECONDS`), which includes `admin` on a
+  fresh install (#172).
 
 ## v0.3.0 — 2026-11-04
 
