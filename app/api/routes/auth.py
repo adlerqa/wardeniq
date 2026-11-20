@@ -275,13 +275,6 @@ def login_password(body: LoginPasswordIn, response: Response, request: Request =
         # account costs the same time as a wrong password (no user enumeration).
         auth.password_matches(_DUMMY_PASSWORD_HASH, password)
         if username.lower() != "admin" or password != DEFAULT_ADMIN_PASSWORD:
-            try:
-                has_users = store.has_users()
-            except Exception:
-                raise HTTPException(503, _DATABASE_UNAVAILABLE_MESSAGE) from None
-            if not has_users:
-                status = public_boot_status()
-                raise HTTPException(503, " ".join(filter(None, [status["detail"], _NO_USERS_MESSAGE])))
             throttle.fail(store, tkeys)
             _audit(request, "auth.login_failed", target=username, actor={}, detail="password")
             raise HTTPException(401, "Invalid username or password")

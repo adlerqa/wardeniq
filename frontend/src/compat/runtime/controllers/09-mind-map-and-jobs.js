@@ -317,6 +317,7 @@ async function loadMindmap() {
     const r = await api(`/api/projects/${pid}/mindmap`);
     MM_DATA = r;
     MM_FOCUS = null;
+    renderMindmapDiag(r.last_analysis?.per_repo || []);
     renderMmGraph();
     if (!r.features.length) {
       $("#mm-map").innerHTML =

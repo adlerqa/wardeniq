@@ -255,8 +255,8 @@ class TestSmtpAndPasswordLogin:
         body = self.auth_routes.LoginPasswordIn(username="admin", password="wrongpassword")
         with pytest.raises(self.auth_routes.HTTPException) as exc:
             self.auth_routes.login_password(body, FakeResponse())
-        assert exc.value.status_code == 503
-        assert "scripts/reset-admin-password.sh" in exc.value.detail
+        assert exc.value.status_code == 401
+        assert exc.value.detail == "Invalid username or password"
 
         # 2b. Correct credentials must succeed and bootstrap user
         body = self.auth_routes.LoginPasswordIn(username="admin", password="admin123")

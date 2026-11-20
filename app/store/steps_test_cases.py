@@ -59,18 +59,8 @@ class StepsTestCasesMixin(_Base):
         affected = self.cases.count_documents({"step_ids": sid})
         return {"updated": sid, "affected_cases": affected}
 
-    def list_steps(self, limit=200, skip=0):
-        # Fetch the page first, then compute usage counts in ONE aggregation
-        # against cases.step_ids (indexed). Previously this was N count_documents
-        # calls, one per step, which was the main cause of the step-library
-        # loader appearing to hang on non-trivial datasets.
-        steps = list(
-            self.steps.find({}, {"embedding": 0})
-            .sort("usage_count", -1)
-            .skip(skip)
-            .limit(limit)
-        )
-        ids = [str(s["_id"]) for s in steps]
+    def _distinct_case_counts(self, ids):
+        """{step_id: number of distinct test cases whose step_ids contain it}."""
         counts = {}
         if ids:
             pipeline = [
@@ -92,19 +82,72 @@ class StepsTestCasesMixin(_Base):
             ]
             for row in self.cases.aggregate(pipeline):
                 counts[row["_id"]] = len(row["cases"])
+        return counts
+
+    def list_steps(self, limit=200, skip=0):
+        # The order has to be the count the list SHOWS, which is the number
+        # of distinct cases using the step. The stored usage_count cannot order
+        # the library: it is incremented on every reuse and never decremented
+        # (not when a case stops using the step, not when the case is
+        # deleted), so a step that was reused a lot in the past sorts above a
+        # step that is used by more cases today (issue #270).
+        #
+        # ONE aggregation over the cases groups them by step_ids with
+        # $addToSet on the case's own _id, so a case that references the same
+        # step more than once in its own step_ids still counts once - the
+        # same count resolve_steps reports with live_usage=True, which is the
+        # count the step editor shows (issue #175). The step ids in
+        # cases.step_ids are strings (the API writes str(inserted_id)), while
+        # the steps collection's _id is an ObjectId - comparing the two in a
+        # $lookup or a $match never matches, which is why this counts in
+        # Python instead of $lookup-ing the steps into the cases pipeline.
+        # Only the ids of the whole library are fetched to compute the order,
+        # and the embedding vectors only for the page being returned. Steps
+        # used by no case go last, in id order, and steps with the same count
+        # keep a stable order (id ascending).
+        counts = {}
+        for row in self.cases.aggregate([
+            {"$unwind": "$step_ids"},
+            {"$group": {"_id": "$step_ids", "cases": {"$addToSet": "$_id"}}},
+        ]):
+            counts[str(row["_id"])] = len(row["cases"])
+
+        rows = [(s["_id"], counts.get(str(s["_id"]), 0))
+                for s in self.steps.find({}, {"_id": 1})]
+        # str(ObjectId) is hex of the raw bytes, so it orders the same as the
+        # ObjectId itself - stable and type-safe across MongoDB and mongomock.
+        rows.sort(key=lambda r: (-r[1], str(r[0])))
+
+        page_ids = [sid for sid, _ in rows[skip:skip + limit]]
+        page = {}
+        if page_ids:
+            for d in self.steps.find({"_id": {"$in": page_ids}}, {"embedding": 0}):
+                page[str(d["_id"])] = d
+
         out = []
-        for s in steps:
-            s["id"] = str(s.pop("_id"))
-            s["used_in_cases"] = counts.get(s["id"], 0)
-            out.append(s)
+        for sid, count in rows[skip:skip + limit]:
+            d = page.get(str(sid))
+            if d is None:
+                continue
+            d["id"] = str(d.pop("_id"))
+            d["used_in_cases"] = count
+            out.append(d)
         return out
 
-    def resolve_steps(self, step_ids):
+    def resolve_steps(self, step_ids, live_usage=False):
+        """`live_usage=True` recounts usage_count as distinct cases (one extra query),
+        for the case editor's "shared by N testcases" note. The stored counter is only
+        ever incremented, once per reuse, so it counts a case that uses a step twice
+        as two and never drops when a case stops using it (issue #175)."""
         by_id = {}
         for s in self.steps.find({"_id": {"$in": [ObjectId(i) for i in step_ids]}}):
             by_id[str(s["_id"])] = {"id": str(s["_id"]), "action": s.get("action"),
                                     "expected": s.get("expected"),
                                     "usage_count": s.get("usage_count", 1)}
+        if live_usage and by_id:
+            counts = self._distinct_case_counts(list(by_id))
+            for sid, step in by_id.items():
+                step["usage_count"] = counts.get(sid, 0)
         return [by_id[i] for i in step_ids if i in by_id]
 
     @staticmethod
@@ -671,7 +714,8 @@ class StepsTestCasesMixin(_Base):
         return {"id": cid, "display_id": c.get("display_id"),
                 "title": c.get("title"), "type": c.get("type"),
                 "priority": c.get("priority"), "preconditions": c.get("preconditions"),
-                "tags": c.get("tags", []), "steps": self.resolve_steps(c.get("step_ids", [])),
+                "tags": c.get("tags", []),
+                "steps": self.resolve_steps(c.get("step_ids", []), live_usage=True),
                 "features": fnames, "shared_with_features": len(feats),
                 "metadata": c.get("metadata", {}),
                 "execution_status": c.get("execution_status", "untested"),

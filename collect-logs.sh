@@ -21,5 +21,7 @@ if grep -q '^COMPOSE_FILE=' .env 2>/dev/null; then
 else
   docker compose -f docker-compose.app.yml -f docker-compose.mongodb.yml -f docker-compose.ollama.yml ps > logs/_status.txt 2>&1
 fi
-curl -s localhost:8001/api/status > logs/app_status.json 2>&1 || echo "app unreachable" > logs/app_status.json
+# /api/status needs a login (an unauthenticated call returns a 401); boot-status is public
+# and shows the startup stage, e.g. "indexing" while mongot is not up.
+curl -s localhost:8001/api/auth/boot-status > logs/app_status.json 2>&1 || echo "app unreachable" > logs/app_status.json
 echo "done -> ./logs/"
