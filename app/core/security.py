@@ -25,11 +25,27 @@ import re
 
 from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
+from pymongo.errors import PyMongoError
 
 import auth
 from core.config import IS_PRODUCTION
+from core.logging_setup import get_logger
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
                                               # mutated, never rebound)
+
+log = get_logger("security")
+
+# Answered (503, not 401) when the database cannot be reached while resolving who is
+# calling. The session or token is not known to be bad, so the client must not treat it
+# as a sign-out; the UI shows this text and keeps the session (#282).
+DATABASE_UNAVAILABLE_DETAIL = ("The database is unavailable, so your session can't be checked "
+                               "right now. You are not signed out; try again shortly.")
+
+
+def database_unavailable_response() -> JSONResponse:
+    return JSONResponse({"detail": DATABASE_UNAVAILABLE_DETAIL}, status_code=503,
+                        headers={"Retry-After": "5"})
+
 
 # --------------------------------------------------------------- auth gateway
 # Paths reachable without a session. The SPA itself is public (it shows the login
@@ -199,7 +215,14 @@ async def auth_gateway(request: Request, call_next):
     path = request.url.path
     if request.method == "OPTIONS" or _is_public(path):
         return await call_next(request)
-    user, tok_sv = resolve_principal(request)
+    try:
+        user, tok_sv = resolve_principal(request)
+    except PyMongoError as e:
+        # Fail closed, but say what is wrong: an outage is not an invalid session.
+        # Only the error type is logged; driver messages can carry connection details.
+        log.warning("auth: database unavailable while resolving the principal (%s)",
+                    type(e).__name__)
+        return database_unavailable_response()
     if not user or not user.get("active"):
         return JSONResponse({"detail": "authentication required"}, status_code=401)
     # Reject sessions minted before the user's session_version was bumped (role

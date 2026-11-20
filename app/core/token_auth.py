@@ -16,6 +16,8 @@ principal identically to a human one, with no new code there.
 """
 import os
 
+from pymongo.errors import PyMongoError
+
 import auth
 from core.client_ip import client_ip
 from core.state import store  # noqa: F401  (bare name-import is safe: store is
@@ -35,8 +37,11 @@ def _client_ip(request) -> str:
 
 def bearer_token_principal(request):
     """core/security.py principal-resolver signature: `fn(request) -> user dict |
-    None`. Never raises — a malformed header or a store hiccup must fail closed
-    (None → 401 via the gateway), never surface as a 500."""
+    None`. A malformed header or an unexpected error fails closed (None → 401 via the
+    gateway), never a 500. The one exception is a database outage (PyMongoError): that
+    propagates, and the gateway answers 503, because the token is not known to be bad
+    and a client must not discard a good token over an outage (#282). Access is still
+    denied either way."""
     try:
         header = request.headers.get("authorization") or ""
         if not header.lower().startswith("bearer "):
@@ -59,5 +64,7 @@ def bearer_token_principal(request):
                 "all_projects": tok.get("all_projects", True),
                 "project_ids": tok.get("project_ids", []),
                 "is_service_account": True, "token_id": tok["id"]}
+    except PyMongoError:
+        raise
     except Exception:  # noqa: BLE001
         return None

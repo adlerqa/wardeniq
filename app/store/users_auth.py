@@ -7,6 +7,7 @@ import time
 from datetime import datetime, timezone
 
 from bson import ObjectId
+from bson.errors import InvalidId
 from pymongo import ReturnDocument, timeout
 
 
@@ -56,10 +57,16 @@ class UsersAuthMixin(_Base):
                 "password_hash": u.get("password_hash")}
 
     def get_user(self, uid):
-        try:
-            return self._user_out(self.users.find_one({"_id": ObjectId(uid)}))
-        except Exception:  # noqa: BLE001
+        # A malformed id (a tampered cookie) is "no such user". A storage error is not:
+        # it must propagate so callers can tell "your session is invalid" (401) from
+        # "the database is down" (503) instead of signing everyone out (#282).
+        if not uid:       # ObjectId(None) would mint a fresh id and query for it
             return None
+        try:
+            oid = ObjectId(uid)
+        except (InvalidId, TypeError):
+            return None
+        return self._user_out(self.users.find_one({"_id": oid}))
 
     def get_user_by_email(self, email):
         return self._user_out(self.users.find_one({"email": (email or "").strip().lower()}))
