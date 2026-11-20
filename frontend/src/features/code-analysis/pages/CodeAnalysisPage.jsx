@@ -87,29 +87,6 @@ export default function CodeAnalysisPage() {
               ANALYSIS CONTROLS
           ====================================================== */}
           <div className="ca-controls w-full">
-            {/* Project */}
-            <div className="ca-field ca-project">
-              <label htmlFor="cyc-proj">Project</label>
-
-              <div className="ca-select-wrapper">
-                <select id="cyc-proj" />
-
-                <svg
-                  viewBox="0 0 24 24"
-                  width="14"
-                  height="14"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="m6 9 6 6 6-6" />
-                </svg>
-              </div>
-            </div>
-
             {/* Lookback */}
             <div className="ca-field ca-lookback">
               <label htmlFor="cyc-days">

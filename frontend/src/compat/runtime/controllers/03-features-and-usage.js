@@ -1170,9 +1170,10 @@ window.openFeature = async (fid) => {
   }
 };
 async function openFeatureTestCases(fid, pid) {
+  // Test Cases follows the sidebar project; adopt the feature's project first.
+  if (pid && pid !== currentProject) setCurrentProject(pid);
   navigateTo("cases");
   await initCases();
-  $("#tc-proj").value = pid || currentProject || "";
   await fillFeatFilter();
   $("#tc-feat").value = fid;
   $("#tc-type").value = "";

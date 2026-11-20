@@ -170,9 +170,9 @@
   display: grid;
 
   grid-template-columns:
-    minmax(300px, 400px)
     175px
     auto;
+  justify-content: start;
 
   align-items: end;
 

@@ -680,11 +680,6 @@ const handleResetInteraction = () => {
           </div>
 
           <div className="mindmap-controls">
-            <div className="mindmap-control-project">
-              <label>Project</label>
-              <select id="mm-proj"></select>
-            </div>
-
             <button
               type="button"
               className="go mindmap-primary-btn"

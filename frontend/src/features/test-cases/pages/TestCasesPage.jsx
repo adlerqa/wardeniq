@@ -31,14 +31,6 @@ export default function TestCasesPage() {
           {/* Primary filters */}
           <div className="case-filter-primary">
             <div className="case-filter-field">
-              <label htmlFor="tc-proj">Project</label>
-
-              <select id="tc-proj">
-                <option value="">All projects</option>
-              </select>
-            </div>
-
-            <div className="case-filter-field">
               <label htmlFor="tc-feat">Feature</label>
 
               <select id="tc-feat">

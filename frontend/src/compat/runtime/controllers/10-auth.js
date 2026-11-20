@@ -84,6 +84,9 @@ function applyRole() {
   document
     .querySelectorAll("nav button[data-admin]")
     .forEach((b) => (b.hidden = !admin));
+  document.querySelectorAll("[data-admin-section]").forEach((section) => {
+    section.hidden = !admin;
+  });
   const rob = $("#ro-banner");
   if (rob) rob.hidden = role !== "viewer";
   applyRoleTooltips(role);

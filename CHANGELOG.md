@@ -22,6 +22,13 @@
 
 ### Changed
 
+- **Project pages follow the sidebar project, and dropdowns open below their field.**
+  Test Cases, Code Analysis, Mind Map and Test Cycles no longer have their own Project
+  dropdown; they load and act on the project selected in the sidebar and reload when it
+  changes. Every single-choice dropdown in the app (filters, settings, modals, branch
+  pickers and the sidebar project selector) now opens directly below its field at the
+  field's width, with keyboard support; multi-selects, disabled fields and touch
+  devices keep the browser's native picker (#256).
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

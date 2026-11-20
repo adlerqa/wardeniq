@@ -843,6 +843,7 @@ function navigateTo(v) {
     .querySelectorAll(".view")
     .forEach((s) => (s.hidden = s.id !== "view-" + v));
   $("#view-title").textContent = TITLES[v] || "";
+  syncSidebarProject();
   if (v === "dashboard") loadDashboard();
   if (v === "projects") {
     showProjectList();
@@ -896,9 +897,81 @@ function navigateTo(v) {
     );
   } catch (e) {}
 }
+
+function syncSidebarProject(projects) {
+  const select = $("#sidebar-project-switcher");
+  const compact = $("#sidebar-project-collapsed");
+  const list = Array.isArray(projects) ? projects : window.allProjects || [];
+  if (select) {
+    select.innerHTML = list.length
+      ? list.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("")
+      : `<option value="">No project selected</option>`;
+    select.value = currentProject || "";
+  }
+  document.querySelectorAll("#f-project, #dev-proj").forEach((el) => {
+    el.value = currentProject || "";
+  });
+  const active = list.find((p) => p.id === currentProject);
+  const name = active ? active.name : "No project selected";
+  const initials = active
+    ? active.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase()
+    : "—";
+  if (compact) {
+    compact.textContent = initials;
+    compact.title = name;
+    compact.setAttribute("aria-label", `Current project: ${name}`);
+  }
+  const projectViews = ["features", "cases", "cycles", "testcycles", "mindmap", "develop", "steps", "gap"];
+  const context = $("#current-project-header");
+  if (context) {
+    context.textContent = active && projectViews.includes(currentViewName)
+      ? `Project: ${active.name}`
+      : "";
+    context.hidden = !(active && projectViews.includes(currentViewName));
+  }
+}
+
+function persistNavigation() {
+  try {
+    localStorage.setItem(
+      "wq_nav",
+      JSON.stringify({ view: currentViewName, project: currentProject, feature: currentFeature }),
+    );
+  } catch (e) {}
+}
+
+function setCurrentProject(pid) {
+  currentProject = pid || null;
+  syncSidebarProject();
+  persistNavigation();
+  return currentProject;
+}
+
+function selectGlobalProject(pid) {
+  if (!pid || pid === currentProject) return;
+  setCurrentProject(pid);
+  currentFeature = null;
+  if (["features", "cases", "cycles", "testcycles", "mindmap", "develop", "gap"].includes(currentViewName))
+    navigateTo(currentViewName);
+  else if (currentViewName === "projects") {
+    loadProjects();
+    renderBreadcrumbs();
+  }
+}
+window.syncSidebarProject = syncSidebarProject;
+window.setCurrentProject = setCurrentProject;
+window.selectGlobalProject = selectGlobalProject;
+
 document
   .querySelectorAll("nav button")
   .forEach((b) => (b.onclick = () => navigateTo(b.dataset.view)));
+if ($("#sidebar-project-switcher"))
+  $("#sidebar-project-switcher").onchange = (e) => selectGlobalProject(e.target.value);
+if ($("#sidebar-project-collapsed"))
+  $("#sidebar-project-collapsed").onclick = () => {
+    $("#sidebar-toggle")?.click();
+    $("#sidebar-toggle")?.focus();
+  };
 if ($("#sidebar-toggle"))
   $("#sidebar-toggle").onclick = () => {
     $("#app-shell").classList.toggle("sidebar-collapsed");
@@ -908,7 +981,22 @@ if ($("#sidebar-toggle"))
       "title",
       isCollapsed ? "Expand sidebar" : "Collapse sidebar",
     );
+    $("#sidebar-toggle").setAttribute(
+      "aria-label",
+      isCollapsed ? "Expand sidebar" : "Collapse sidebar",
+    );
+    try {
+      localStorage.setItem("wq_sidebar_collapsed", isCollapsed ? "1" : "0");
+    } catch (e) {}
   };
+try {
+  if (localStorage.getItem("wq_sidebar_collapsed") === "1") {
+    $("#app-shell")?.classList.add("sidebar-collapsed");
+    $("#sidebar-toggle").textContent = "›";
+    $("#sidebar-toggle").setAttribute("title", "Expand sidebar");
+    $("#sidebar-toggle").setAttribute("aria-label", "Expand sidebar");
+  }
+} catch (e) {}
 
 function getProjectName(projectId) {
   if (window.allProjects) {
