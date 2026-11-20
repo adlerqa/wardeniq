@@ -19,13 +19,16 @@ from embeddings import Embedder
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
+from core import state
 from core.config import GEN_TOTAL
-from core.deps import _ext_error, current_ollama_url
+from core.deps import _ext_error, current_llm, current_ollama_url
+from core.logging_setup import get_logger
 from core.security import _allowed_project_ids, _current_user, _require_job_project
 from core.state import store
 from workers.registry import JOB_RETRY_HANDLERS, JOB_WORKERS, RETRY_REQUIRES_HANDLER, launch_job
 
 router = APIRouter()
+log = get_logger("jobs_usage")
 
 
 @router.get("/api/jobs")
@@ -68,10 +71,29 @@ def estimate_cost(body: CostEstimateIn):
     model = s.get("llm_model", "")
     prices = s.get("llm_prices") or {}
     total = body.total if body.total is not None else GEN_TOTAL
-    return usage.estimate_generation_cost(
+    result = usage.estimate_generation_cost(
         text_length=max(0, body.text_length), total=total,
         provider=provider, model=model, prices=prices,
     )
+    # A local model on a CPU is slow, and a hosted price range says nothing about that.
+    # Ask the model that a real run would use right now where it runs, so the Generate
+    # page can warn before a long job starts. Only a local Ollama has an answer; for any
+    # other provider nothing is added and the response is exactly what it was. The
+    # embedding model is the probe when Ollama has nothing loaded yet (a first run).
+    try:
+        llm = current_llm()
+        if llm.provider == "ollama":
+            emb = getattr(state, "embedder", None)
+            probe = emb.model if emb is not None and getattr(emb, "provider", "") == "ollama" else ""
+            where = llm.accelerator(probe_model=probe)
+            result["accelerator"] = where["accelerator"]
+            warning = usage.cpu_generation_warning(where["accelerator"])
+            if warning:
+                result["warning"] = warning
+    except Exception as e:  # noqa: BLE001 — the warning is advice; it must never break the estimate
+        log.warning("estimate: could not determine where the local model runs (%s)",
+                    type(e).__name__)
+    return result
 
 
 class EmbeddingIn(BaseModel):

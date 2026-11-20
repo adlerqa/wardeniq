@@ -288,6 +288,30 @@ def estimate_generation_cost(text_length, total, provider, model, prices=None):
                    "and model behavior."}
 
 
+def cpu_generation_warning(accelerator):
+    """Pre-run warning for a local model that is not running (fully) on a GPU, or None.
+
+    The text is deliberately qualitative. The token estimate above covers only a slice of
+    what a real run produces (the extraction passes, Fusion and the per-type generation
+    all decode far more than `completion_tokens_mid`), so dividing it by a tokens-per-second
+    figure would promise a much shorter run than people see. The range below is what was
+    reported for the bundled 3B model: about 18 minutes on a 12-core desktop and 50 to 60
+    minutes on an older dual-core laptop (issue #249).
+    """
+    if accelerator == "cpu":
+        return ("This model runs on CPU only, so a full generation can take from about 20 "
+                "minutes to over an hour on a typical machine. If this is the bundled Ollama "
+                "container, it does not use a GPU on any operating system, even when the machine "
+                "has one. For faster runs use a hosted provider (Configuration → LLM), or run "
+                "Ollama natively on a machine with a GPU and point wardenIQ at it "
+                "(OLLAMA_URL in .env). If calls time out, raise LLM_TIMEOUT_SECONDS in .env.")
+    if accelerator == "mixed":
+        return ("This model only partly fits in GPU memory, so part of it runs on CPU and "
+                "generation will be slower than on a full GPU. A smaller model or more GPU "
+                "memory helps.")
+    return None
+
+
 def summarize(rec, prices=None):
     """Turn a raw recorder into {by_model, prompt_tokens, completion_tokens,
     total_tokens, cost_usd}. cost_usd is None when nothing could be priced."""
