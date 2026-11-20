@@ -78,6 +78,29 @@ export function SkeletonTable({ cols = 5, rows = 5, label = "Loading table" }) {
   );
 }
 
+/** Placeholder list rows: icon, two lines and a pill (compat skeleton.rows()). */
+export function SkeletonRows({ count = 5, label = "Loading rows" }) {
+  return (
+    <SkeletonState label={label}>
+      <div className="overflow-hidden rounded-xl border border-solid border-line">
+        {Array.from({ length: count }, (_, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-[14px] border-0 border-b border-solid border-white/[0.04] px-4 py-[14px] last:border-b-0"
+          >
+            <SkeletonLine className="!my-0 !h-9 !w-9 flex-[0_0_auto] !rounded-[10px]" />
+            <div className="flex-1">
+              <SkeletonLine size="lg" className="!mb-2 !mt-0" />
+              <SkeletonLine size="sm" className="!my-0" />
+            </div>
+            <SkeletonLine className="!my-0 !h-5 !w-16 flex-[0_0_auto] !rounded-[20px]" />
+          </div>
+        ))}
+      </div>
+    </SkeletonState>
+  );
+}
+
 /** Wrapper that announces the loading state to assistive tech. */
 export function SkeletonState({ label = "Loading content", children }) {
   return (

@@ -1,11 +1,19 @@
-import "./modal css/step-modal.css";
+import { createPortal } from "react-dom";
 
-/** Shared step-modal overlay. */
-export default function StepModal() {
-  return (
+import "../styles/step-modal.css";
+
+/**
+ * Create / edit step dialog for the Step Library (was wired by the compat
+ * 07-library-and-crud.js). `modal` holds the fields; the parent saves.
+ *
+ * Rendered into document.body: the screen's .view container is animated
+ * (transform), which would otherwise make it the containing block of this
+ * position:fixed overlay and pin the dialog to the page instead of the window.
+ */
+export default function StepModal({ modal, setField, onClose, onSave }) {
+  return createPortal(
     <div
-      className="modal step-modal-overlay"
-      id="step-modal"
+      className={`modal step-modal-overlay${modal.open ? " show" : ""}`}
       role="dialog"
       aria-modal="true"
       aria-labelledby="step-modal-heading"
@@ -19,7 +27,7 @@ export default function StepModal() {
             </span>
 
             <h2 id="step-modal-heading">
-              Create Step
+              {modal.heading}
             </h2>
 
             <p>
@@ -28,8 +36,8 @@ export default function StepModal() {
           </div>
 
           <button
-            id="step-modal-close"
             type="button"
+            onClick={onClose}
             className="step-modal-close"
             title="Close"
             aria-label="Close modal"
@@ -64,7 +72,11 @@ export default function StepModal() {
             </div>
 
             <div className="step-modal-select-wrap">
-              <select id="step-modal-prefix">
+              <select
+                id="step-modal-prefix"
+                value={modal.prefix}
+                onChange={(e) => setField("prefix", e.target.value)}
+              >
                 <option value="Given">Given</option>
                 <option value="When">When</option>
                 <option value="Then">Then</option>
@@ -106,6 +118,8 @@ export default function StepModal() {
               id="step-modal-action"
               placeholder="e.g. user is on the login page"
               required
+              value={modal.action}
+              onChange={(e) => setField("action", e.target.value)}
             />
           </div>
 
@@ -122,32 +136,35 @@ export default function StepModal() {
             <textarea
               id="step-modal-expected"
               placeholder="e.g. login form is displayed"
+              value={modal.expected}
+              onChange={(e) => setField("expected", e.target.value)}
             />
           </div>
 
           {/* Warning */}
-          <div
-            id="step-modal-warn"
-            className="step-modal-warning"
-            style={{ display: "none" }}
-          />
+          {modal.warn && <div className="step-modal-warning">{modal.warn}</div>}
         </div>
 
         {/* Footer */}
         <div className="step-modal-footer">
           <button
-            id="step-modal-cancel"
             type="button"
             className="step-modal-cancel"
+            onClick={onClose}
           >
             Cancel
           </button>
 
           <button
-            id="step-modal-save"
             type="button"
             className="step-modal-save"
+            disabled={modal.saving}
+            onClick={onSave}
           >
+            {modal.saving ? (
+              "Saving…"
+            ) : (
+              <>
             <svg
               viewBox="0 0 24 24"
               width="15"
@@ -163,9 +180,13 @@ export default function StepModal() {
             </svg>
 
             <span>Save step</span>
+              </>
+            )}
           </button>
         </div>
       </div>
     </div>
+    ,
+    document.body,
   );
 }

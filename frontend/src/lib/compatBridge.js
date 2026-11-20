@@ -101,3 +101,21 @@ export function roleDescription(role) {
   const rbac = typeof window !== "undefined" ? window.RBAC : undefined;
   return (rbac && rbac.DESC && rbac.DESC[role]) || "";
 }
+
+/**
+ * Open a test case in its feature workspace (was openAndGoToCase in
+ * 05-step-workflows.js): open the feature, switch to the Features screen, then
+ * open the case and scroll to it.
+ */
+export async function openCaseInFeature(caseId, featureId) {
+  const openFeature = compatFn("openFeature");
+  const navigateTo = compatFn("navigateTo");
+  const viewCase = compatFn("viewCase");
+  if (openFeature) await openFeature(featureId);
+  if (navigateTo) navigateTo("features");
+  setTimeout(() => {
+    if (viewCase) viewCase(caseId);
+    const el = document.querySelector(`[data-case-item="${caseId}"]`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, 300);
+}

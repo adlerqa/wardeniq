@@ -1,11 +1,15 @@
-/**
- * StepLibraryPage
- *
- * React-owned shell for Step Library.
- * Existing data loading, filtering, editing and deleting remain handled
- * by the compatibility controller.
- */
+import { SkeletonRows } from "../../../components/feedback/Skeleton.jsx";
+import StepDetailPane from "../components/StepDetailPane.jsx";
+import StepModal from "../components/StepModal.jsx";
+import StepRow from "../components/StepRow.jsx";
+import useStepLibrary from "../hooks/useStepLibrary.js";
+import { filterSteps } from "../lib/steps.js";
+
+/** Step Library: reusable steps, their usage, and the create / edit dialog. */
 export default function StepLibraryPage() {
+  const lib = useStepLibrary();
+  const visible = filterSteps(lib.steps, lib.filters);
+  const selected = lib.steps.find((s) => s.id === lib.selectedId) || null;
   return (
     <section
       id="view-steps"
@@ -28,14 +32,15 @@ export default function StepLibraryPage() {
               </h1>
 
               <span
-                id="s-count"
                 className="
                   inline-flex min-h-[24px] items-center justify-center
                   rounded-md border border-slate-700/80
                   bg-slate-900/70 px-2
                   text-[11px] font-semibold text-slate-400
                 "
-              />
+              >
+                {lib.status === "ready" || lib.steps.length ? `(${lib.steps.length})` : ""}
+              </span>
             </div>
 
             <p className="mt-2 max-w-[760px] text-[12.5px] leading-5 text-slate-500">
@@ -45,8 +50,8 @@ export default function StepLibraryPage() {
           </div>
 
           <button
-            id="s-new"
             type="button"
+            onClick={lib.openCreate}
             className="
               go
               !m-0 !inline-flex !h-10
@@ -122,6 +127,8 @@ export default function StepLibraryPage() {
                   type="text"
                   id="s-search"
                   placeholder="Search by action or expected result..."
+                  value={lib.filters.q}
+                  onChange={(e) => lib.setFilters({ q: e.target.value })}
                   className="
                     !m-0 !h-10 !w-full
                     !rounded-lg !border !border-slate-700/80
@@ -151,6 +158,8 @@ export default function StepLibraryPage() {
 
               <select
                 id="s-filter-type"
+                value={lib.filters.type}
+                onChange={(e) => lib.setFilters({ type: e.target.value })}
                 className="
                   !m-0 !h-10 !w-full
                   !rounded-lg !border !border-slate-700/80
@@ -185,6 +194,8 @@ export default function StepLibraryPage() {
 
               <select
                 id="s-filter-usage"
+                value={lib.filters.usage}
+                onChange={(e) => lib.setFilters({ usage: e.target.value })}
                 className="
                   !m-0 !h-10 !w-full
                   !rounded-lg !border !border-slate-700/80
@@ -239,155 +250,64 @@ export default function StepLibraryPage() {
             </div>
 
             <div className="max-h-[650px] min-h-[560px] overflow-y-auto">
-              <div id="s-list-body">
-                {/* Loaded dynamically */}
+              {/* The id stays: the guided tour points at the list. */}
+              <div id="s-list-body" role="listbox" aria-label="Library steps">
+                {lib.status === "loading" && (
+                  <SkeletonRows count={8} label="Loading step library" />
+                )}
+                {lib.status === "error" && (
+                  <div className="mt-2 p-[18px] text-[12.5px] text-red">
+                    Couldn&apos;t load steps. {lib.error}
+                  </div>
+                )}
+                {lib.status === "ready" &&
+                  (visible.length ? (
+                    visible.map((s) => (
+                      <StepRow
+                        key={s.id}
+                        step={s}
+                        selected={lib.selectedId === s.id}
+                        onSelect={lib.selectRow}
+                        onEdit={lib.openEdit}
+                        onDelete={lib.remove}
+                      />
+                    ))
+                  ) : (
+                    <div className="flex min-h-[300px] flex-col items-center justify-center gap-[7px] text-center">
+                      <div className="mb-1 flex h-[38px] w-[38px] items-center justify-center rounded-[9px] border border-solid border-[#243244] bg-[#101923] text-[#64748b]">
+                        <svg
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                          className="h-[17px] w-[17px] fill-none stroke-current [stroke-linecap:round] [stroke-linejoin:round] [stroke-width:1.7]"
+                        >
+                          <circle cx="11" cy="11" r="7" />
+                          <path d="m20 20-4-4" />
+                        </svg>
+                      </div>
+                      <strong className="text-[12px] font-semibold text-[#aeb9c7]">No matching steps</strong>
+                      <span className="text-[11px] text-[#5e6d81]">Try changing your search or filters.</span>
+                    </div>
+                  ))}
               </div>
             </div>
           </div>
 
-          {/* =====================================================
-              DETAIL PANEL
-          ====================================================== */}
-          <aside
-            id="s-detail-pane"
-            style={{ display: "none" }}
-            className="
-              w-[360px] shrink-0
-              flex-col
-              overflow-hidden
-              rounded-xl
-              border border-slate-800
-              bg-[#0D151F]
-              max-[1100px]:w-[320px]
-            "
-          >
-            {/* Drawer header */}
-            <div
-              className="
-                flex min-h-[60px] items-center justify-between
-                border-b border-slate-800
-                px-5
-              "
-            >
-              <div>
-                <div className="text-[10px] font-medium uppercase tracking-[0.1em] text-slate-600">
-                  Selected step
-                </div>
-
-                <h3 className="mt-0.5 text-[14px] font-semibold text-slate-200">
-                  Step details
-                </h3>
-              </div>
-
-              <button
-                className="
-                  ghost
-                  !flex !h-8 !w-8
-                  !items-center !justify-center
-                  !rounded-lg
-                  !border !border-transparent
-                  !bg-transparent
-                  !p-0
-                  !text-slate-500
-                  transition-all
-                  hover:!border-slate-700
-                  hover:!bg-slate-800
-                  hover:!text-slate-200
-                "
-                id="s-detail-close"
-                type="button"
-                title="Close details"
-                aria-label="Close step details"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="16"
-                  height="16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                >
-                  <path d="M18 6 6 18" />
-                  <path d="m6 6 12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Detail content */}
-            <div className="flex flex-1 flex-col gap-6 p-5">
-              {/* Type */}
-              <div>
-                <span className="block text-[9.5px] font-semibold uppercase tracking-[0.1em] text-slate-600">
-                  Type
-                </span>
-
-                <div
-                  id="s-detail-type"
-                  className="mt-2"
-                />
-              </div>
-
-              {/* Action */}
-              <div>
-                <span className="block text-[9.5px] font-semibold uppercase tracking-[0.1em] text-slate-600">
-                  Action / Description
-                </span>
-
-                <div
-                  id="s-detail-action"
-                  className="
-                    mt-2 break-words
-                    text-[13px] font-medium
-                    leading-5 text-slate-200
-                  "
-                />
-              </div>
-
-              {/* Expected result */}
-              <div>
-                <span className="block text-[9.5px] font-semibold uppercase tracking-[0.1em] text-slate-600">
-                  Expected result
-                </span>
-
-                <div
-                  id="s-detail-expected"
-                  className="
-                    mt-2 break-words
-                    text-[12px] leading-5
-                    text-slate-400
-                  "
-                />
-              </div>
-
-              {/* Used cases */}
-              <div className="border-t border-slate-800 pt-5">
-                <div
-                  id="s-detail-cases-title"
-                  className="
-                    flex items-center gap-2
-                    text-[11px] font-semibold
-                    text-slate-400
-                  "
-                >
-                  Used in cases (0)
-                </div>
-
-                <div
-                  id="s-detail-cases-list"
-                  className="
-                    mt-3 flex max-h-[320px]
-                    flex-col gap-2
-                    overflow-y-auto
-                  "
-                >
-                  {/* Loaded dynamically */}
-                </div>
-              </div>
-            </div>
-          </aside>
+          {selected && (
+            <StepDetailPane
+              step={selected}
+              detail={lib.detail}
+              onClose={lib.closeDetails}
+              onOpenCase={lib.openCase}
+            />
+          )}
         </div>
       </div>
+      <StepModal
+        modal={lib.modal}
+        setField={lib.setModalField}
+        onClose={lib.closeModal}
+        onSave={lib.save}
+      />
     </section>
   );
 }

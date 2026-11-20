@@ -62,6 +62,12 @@
   hand-off) and audit log are now React and Tailwind, with the same behaviour and text. The
   legacy `11-users.js` controller and the Users-only styles are removed. Loading
   placeholders for tables come from the shared React `Skeleton` component.
+- **Step Library rebuilt in React (part of #257).** The step list (search, type and usage
+  filters), the detail pane with the cases that use a step, and the create / edit step
+  dialog are now React, with the same behaviour and text. The legacy `05-step-workflows.js`
+  controller, the step half of `07-library-and-crud.js` and the Step Library-only styles are
+  removed. The dialog's Save button now always reads "Save step"; before, it lost its icon
+  and read "Save" after the first save.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access
