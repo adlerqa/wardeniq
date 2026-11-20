@@ -68,6 +68,10 @@
   controller, the step half of `07-library-and-crud.js` and the Step Library-only styles are
   removed. The dialog's Save button now always reads "Save step"; before, it lost its icon
   and read "Save" after the first save.
+- **Dashboard rebuilt in React (part of #257).** The workspace overview (KPI tiles, coverage,
+  test cases by type, project roll-up, loading, empty and error states) is now rendered by
+  React with the same markup and styles. The legacy `01-dashboard.js` controller and the
+  unused legacy `.dash` scaffold styles are removed.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

@@ -32,6 +32,44 @@ export function SkeletonBlockLines({ count = 4 }) {
 const CARD =
   "min-h-[154px] rounded-2xl border border-solid border-[rgba(116,139,166,0.16)] bg-[linear-gradient(145deg,rgba(24,34,48,0.6),rgba(13,20,30,0.7))] p-[22px]";
 
+/** Placeholder card (compat .sk-card). */
+export function SkeletonCard({ className = "", children }) {
+  return <div className={`${CARD} ${className}`}>{children}</div>;
+}
+
+/** Placeholder KPI tiles (compat skeleton.kpis()). */
+export function SkeletonKpis({ count = 7 }) {
+  return Array.from({ length: count }, (_, i) => (
+    <div key={i} className="min-h-[86px] rounded-[14px] border border-solid border-line p-[18px]">
+      <SkeletonLine className="!h-6 !w-1/2" />
+      <SkeletonLine size="sm" className="!mt-2.5" />
+    </div>
+  ));
+}
+
+/** Loading placeholder of the Dashboard (compat skeleton.dashboard()). */
+export function SkeletonDashboard() {
+  return (
+    <SkeletonState label="Loading dashboard">
+      <SkeletonLine size="lg" className="!mb-5 !h-6 !w-[180px]" />
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-4">
+        <SkeletonKpis count={7} />
+      </div>
+      <div className="grid grid-cols-1 gap-4 min-[1000px]:grid-cols-2">
+        <SkeletonCard>
+          <SkeletonKpis count={2} />
+        </SkeletonCard>
+        <SkeletonCard>
+          <SkeletonBlockLines count={5} />
+        </SkeletonCard>
+      </div>
+      <SkeletonCard className="mt-4">
+        <SkeletonBlockLines count={6} />
+      </SkeletonCard>
+    </SkeletonState>
+  );
+}
+
 /** Grid of placeholder cards (compat skeleton.cards()). */
 export function SkeletonCards({ count = 6 }) {
   return (

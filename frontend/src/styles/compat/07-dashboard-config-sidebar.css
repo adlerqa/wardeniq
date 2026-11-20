@@ -26,46 +26,7 @@
   background: rgba(255, 255, 255, 0.04);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
 }
-/* dashboard scaffold */
-.dash {
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
-}
-.dash-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-}
-.dash-head h1 {
-  font-size: 24px;
-  font-weight: 600;
-  color: #fff;
-  margin: 0;
-  letter-spacing: -0.01em;
-}
-.dash-head p {
-  margin: 5px 0 0;
-  font-size: 12px;
-  color: var(--rc-s400);
-}
-.dash-scope {
-  border: 1px solid #334155;
-  background: #0b1424;
-  color: var(--rc-s200);
-  border-radius: 10px;
-  padding: 9px 12px;
-  font-size: 13px;
-  height: auto;
-  width: auto;
-  min-width: 180px;
-}
-.dash-scope:focus {
-  border-color: var(--rc-teal);
-  box-shadow: none;
-}
+/* dashboard skeleton grid (00-core.js skeleton.dashboard) */
 .dash-metrics {
   display: grid;
   gap: 16px;
