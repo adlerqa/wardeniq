@@ -39,6 +39,11 @@
 
 ### Changed
 
+- **API tokens panel rebuilt in React (part of #257).** The API tokens panel on the Users
+  screen is now a React and Tailwind component, with no change in behaviour, and the
+  legacy `17-api-tokens.js` controller is removed. A shared React API helper
+  (`frontend/src/lib/api.js`) handles responses like the legacy `api()` (sign-in on
+  401, "Can't reach the server" on network errors) for the screens that follow.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

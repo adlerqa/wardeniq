@@ -16,6 +16,10 @@ src/
 │   └── overlays/
 │       ├── AppOverlays.jsx
 │       └── modals/
+├── lib/
+│   ├── api.js            # fetch helper (same behaviour as compat api())
+│   ├── compatBridge.js   # toast / confirm / modal / sign-in from the compat runtime
+│   └── html.js
 ├── layouts/
 │   ├── ApplicationFrame.jsx
 │   ├── Header.jsx
@@ -110,7 +114,8 @@ These files are **not a target architecture**. They are an explicit migration bo
 
 When converting a controller to fully idiomatic React:
 
-1. Create API functions/hooks inside that feature.
+1. Create API functions/hooks inside that feature, calling `src/lib/api.js`
+   (and `src/lib/compatBridge.js` for toasts and dialogs).
 2. Move DOM state into React state.
 3. Replace `innerHTML` output with React components.
 4. Remove that feature's imperative controller code.
