@@ -47,6 +47,37 @@ export function SkeletonCards({ count = 6 }) {
   );
 }
 
+/** Placeholder table: a header row and `rows` rows of `cols` cells (compat skeleton.table()). */
+export function SkeletonTable({ cols = 5, rows = 5, label = "Loading table" }) {
+  const c = Array.from({ length: cols }, (_, i) => i);
+  return (
+    <SkeletonState label={label}>
+      <div className="overflow-auto">
+        <table>
+          <tbody>
+            <tr>
+              {c.map((i) => (
+                <th key={i}>
+                  <SkeletonLine size="sm" className="!my-0 !w-[70%]" />
+                </th>
+              ))}
+            </tr>
+            {Array.from({ length: rows }, (_, r) => (
+              <tr key={r}>
+                {c.map((i) => (
+                  <td key={i}>
+                    <SkeletonLine className="!my-0" />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </SkeletonState>
+  );
+}
+
 /** Wrapper that announces the loading state to assistive tech. */
 export function SkeletonState({ label = "Loading content", children }) {
   return (

@@ -89,3 +89,15 @@ export function usageLogLines(usage) {
   const fn = compatFn("usageLogLines");
   return fn ? fn(usage) : [];
 }
+
+/** The signed-in user ({ id, email, role, ... }) known to the compat runtime, or null. */
+export function currentUser() {
+  const fn = compatFn("getCurrentUser");
+  return fn ? fn() || null : null;
+}
+
+/** Description of a role from the optional global RBAC table, or "". */
+export function roleDescription(role) {
+  const rbac = typeof window !== "undefined" ? window.RBAC : undefined;
+  return (rbac && rbac.DESC && rbac.DESC[role]) || "";
+}

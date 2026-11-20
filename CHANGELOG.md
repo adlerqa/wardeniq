@@ -57,6 +57,11 @@
   `12-validator.js` controller and its `.val-*` styles are removed. Opening the screen again
   now stops following the previous generation job, so a job for another feature can no
   longer replace what is on screen.
+- **Users screen rebuilt in React (part of #257).** The invite form, users list (filters,
+  role change, project access, resend/cancel invite, enable/disable, delete, the only-admin
+  hand-off) and audit log are now React and Tailwind, with the same behaviour and text. The
+  legacy `11-users.js` controller and the Users-only styles are removed. Loading
+  placeholders for tables come from the shared React `Skeleton` component.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

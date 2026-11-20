@@ -1387,12 +1387,7 @@ body.role-viewer .needs-editor-hide {
   flex-shrink: 0;
   color: #9cc7ff;
 }
-/* Project-access picker (invite + user management) */
-.proj-access-toggle {
-  display: flex;
-  gap: 18px;
-  margin-bottom: 8px;
-}
+/* Radio + label used by the "Project access" dialog body (users/lib/users.js). */
 .radio-inline {
   display: inline-flex;
   align-items: center;
@@ -1404,104 +1399,5 @@ body.role-viewer .needs-editor-hide {
 .radio-inline input {
   width: auto;
   margin: 0;
-}
-.proj-checklist {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  max-height: 180px;
-  overflow: auto;
-  background: var(--panel2);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px;
-}
-.proj-checklist[hidden] {
-  display: none !important;
-}
-.proj-checklist label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 5px 9px;
-  cursor: pointer;
-}
-.proj-checklist label:hover {
-  border-color: var(--accent2);
-}
-.proj-checklist input {
-  width: auto;
-  margin: 0;
-}
-.proj-checklist .empty {
-  color: var(--muted);
-  font-size: 12px;
-}
-.u-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 12px;
-}
-.u-filters input,
-.u-filters select {
-  margin: 0;
-}
-.u-actions {
-  display: flex;
-  gap: 6px;
-  justify-content: flex-end;
-  flex-wrap: nowrap;
-}
-.u-action {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
-  font-weight: 500;
-  padding: 5px 11px;
-  border-radius: 7px;
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.03);
-  color: var(--text);
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    background 0.12s,
-    border-color 0.12s;
-}
-.u-action svg {
-  opacity: 0.75;
-}
-.u-action:hover {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: var(--accent2);
-}
-.u-action.danger {
-  color: #f4a3a3;
-  border-color: rgba(239, 68, 68, 0.28);
-}
-.u-action.danger:hover {
-  background: rgba(239, 68, 68, 0.14);
-  border-color: rgba(239, 68, 68, 0.5);
-  color: #fca5a5;
-}
-.access-cell {
-  font-size: 11.5px;
-  color: var(--muted);
-}
-.access-cell .chip {
-  display: inline-block;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 1px 8px;
-  margin: 1px 2px;
-  color: var(--text);
 }
 /* Validator & Test Plan Styles */

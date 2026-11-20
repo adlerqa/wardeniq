@@ -831,6 +831,10 @@ let ME = null;
 function getCurrentFeatureId() {
   return currentFeature;
 }
+// Signed-in user (or null), for React screens until identity moves to React (#257).
+function getCurrentUser() {
+  return ME;
+}
 let ANALYSIS_IMPACTED = [];
 
 // ---- nav ----

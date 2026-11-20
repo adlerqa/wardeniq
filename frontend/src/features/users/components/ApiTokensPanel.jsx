@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
-import { SkeletonLine, SkeletonState } from "../../../components/feedback/Skeleton.jsx";
+import { SkeletonTable } from "../../../components/feedback/Skeleton.jsx";
 import { api } from "../../../lib/api.js";
 import { toast, uiConfirm, uiModalHTML } from "../../../lib/compatBridge.js";
 import {
@@ -17,36 +17,6 @@ import {
 
 const BADGE =
   "rounded-[20px] border border-solid border-transparent px-[11px] py-1 text-[10.5px] font-medium";
-
-function LoadingTable() {
-  const cols = [0, 1, 2, 3];
-  return (
-    <SkeletonState label="Loading API tokens">
-      <div className="overflow-auto">
-        <table>
-          <tbody>
-            <tr>
-              {cols.map((c) => (
-                <th key={c}>
-                  <SkeletonLine size="sm" className="!my-0 !w-[70%]" />
-                </th>
-              ))}
-            </tr>
-            {[0, 1, 2, 3, 4, 5].map((r) => (
-              <tr key={r}>
-                {cols.map((c) => (
-                  <td key={c}>
-                    <SkeletonLine className="!my-0" />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </SkeletonState>
-  );
-}
 
 function AccessCell({ token, projects }) {
   const access = tokenAccess(token, projects);
@@ -111,7 +81,7 @@ function TokenTable({ tokens, projects, onRevoke }) {
                   <button
                     type="button"
                     onClick={() => onRevoke(t)}
-                    className="inline-flex cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[9px] border-none bg-transparent bg-[linear-gradient(135deg,#fb7185,#ef4444)] px-[13px] py-2 text-[12px] font-medium text-[#f4a3a3] transition-[background,border-color] duration-[120ms] hover:bg-none hover:bg-[rgba(239,68,68,0.14)] hover:text-[#fca5a5]"
+                    className="inline-flex cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[9px] border-none border-[rgba(239,68,68,0.28)] bg-transparent bg-[linear-gradient(135deg,#fb7185,#ef4444)] px-[13px] py-2 text-[12px] font-medium text-[#f4a3a3] transition-[background,border-color] duration-[120ms] hover:bg-none hover:bg-[rgba(239,68,68,0.14)] hover:text-[#fca5a5]"
                   >
                     Revoke
                   </button>
@@ -319,7 +289,7 @@ export default function ApiTokensPanel() {
         )}
       </div>
       <div className="mt-3.5">
-        {status === "loading" && <LoadingTable />}
+        {status === "loading" && <SkeletonTable cols={4} rows={6} label="Loading API tokens" />}
         {status === "error" && <div className="mt-2 text-[12.5px] text-red">{error}</div>}
         {status === "ready" && (
           <TokenTable tokens={tokens} projects={projects} onRevoke={revokeToken} />
