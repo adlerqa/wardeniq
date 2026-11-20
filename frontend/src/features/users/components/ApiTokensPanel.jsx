@@ -70,7 +70,7 @@ function AccessCell({ token, projects }) {
 
 function TokenTable({ tokens, projects, onRevoke }) {
   if (!tokens.length)
-    return <div className="py-4 text-xs text-muted">{EMPTY_TEXT}</div>;
+    return <div className="py-4 text-[12px] text-muted">{EMPTY_TEXT}</div>;
   return (
     <table>
       <thead>
@@ -103,15 +103,15 @@ function TokenTable({ tokens, projects, onRevoke }) {
                 <span className={`${BADGE} bg-white/[0.06] text-muted`}>revoked</span>
               )}
             </td>
-            <td className="text-xs text-muted">{formatTimestamp(t.last_used_at)}</td>
-            <td className="text-xs text-muted">{formatTimestamp(t.expires_at)}</td>
+            <td className="text-[12px] text-muted">{formatTimestamp(t.last_used_at)}</td>
+            <td className="text-[12px] text-muted">{formatTimestamp(t.expires_at)}</td>
             <td>
               <div className="flex flex-nowrap justify-end gap-1.5">
                 {t.active && (
                   <button
                     type="button"
                     onClick={() => onRevoke(t)}
-                    className="inline-flex cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[7px] border border-solid border-[rgba(239,68,68,0.28)] bg-white/[0.03] px-[11px] py-[5px] text-xs font-medium text-[#f4a3a3] transition-colors duration-[120ms] hover:border-[rgba(239,68,68,0.5)] hover:bg-[rgba(239,68,68,0.14)] hover:text-[#fca5a5]"
+                    className="inline-flex cursor-pointer items-center gap-[5px] whitespace-nowrap rounded-[9px] border-none bg-transparent bg-[linear-gradient(135deg,#fb7185,#ef4444)] px-[13px] py-2 text-[12px] font-medium text-[#f4a3a3] transition-[background,border-color] duration-[120ms] hover:bg-none hover:bg-[rgba(239,68,68,0.14)] hover:text-[#fca5a5]"
                   >
                     Revoke
                   </button>
@@ -313,7 +313,7 @@ export default function ApiTokensPanel() {
                 </label>
               ))
             ) : (
-              <span className="text-xs text-muted">{NO_PROJECTS_TEXT}</span>
+              <span className="text-[12px] text-muted">{NO_PROJECTS_TEXT}</span>
             )}
           </div>
         )}

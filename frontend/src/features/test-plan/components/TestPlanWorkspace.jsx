@@ -48,7 +48,7 @@ export default function TestPlanWorkspace({ state, onGenerate }) {
           />
         </div>
       )}
-      <div className="mb-3 text-xs text-muted" aria-live="polite">
+      <div className="mb-3 text-[12px] text-muted" aria-live="polite">
         {state.status.error ? (
           <span className="text-[12.5px] text-red">{state.status.text}</span>
         ) : (
@@ -57,7 +57,7 @@ export default function TestPlanWorkspace({ state, onGenerate }) {
       </div>
       {content && (
         <div
-          className={`mt-[15px] max-h-[600px] overflow-y-auto whitespace-pre-wrap rounded-lg border border-solid border-line bg-panel2 p-4 text-xs leading-[1.6] text-text ${
+          className={`mt-[15px] max-h-[600px] overflow-y-auto whitespace-pre-wrap rounded-lg border border-solid border-line bg-panel2 p-4 text-[12px] leading-[1.6] text-text ${
             state.mono ? "font-[monospace]" : "[font-family:inherit]"
           }`}
         >

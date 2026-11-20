@@ -3,7 +3,7 @@ export default function TestPlanEmptyState() {
   return (
     <div className="card">
       <h2>Test Plan</h2>
-      <div className="text-xs text-muted">
+      <div className="text-[12px] text-muted">
         Please select a feature first to generate a test plan.
       </div>
     </div>

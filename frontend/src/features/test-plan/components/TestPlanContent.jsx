@@ -81,7 +81,7 @@ export default function TestPlanContent({ plan }) {
     <>
       <h1>{header.title}</h1>
       {header.projectLine && (
-        <div className="mb-[15px] text-xs text-muted">{header.projectLine}</div>
+        <div className="mb-[15px] text-[12px] text-muted">{header.projectLine}</div>
       )}
       {sections.map((s, i) => (
         <Section key={i} section={s} />
