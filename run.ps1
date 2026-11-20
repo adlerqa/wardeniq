@@ -242,6 +242,10 @@ if ($Reset) {
 
 Write-Host "==> building + starting wardenIQ"
 docker @Compose up -d --build
+if ($LASTEXITCODE -ne 0) {
+    [Console]::Error.WriteLine("==> build/start failed, see above")
+    exit 1
+}
 
 # Readiness gate: don't report success until the app actually answers, not just
 # "started". Polls the same public boot-status endpoint the sign-in screen

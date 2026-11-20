@@ -54,6 +54,8 @@
 
 ### Fixed
 
+- `run.ps1` now checks the native `docker compose up -d --build` exit code and stops immediately with a clear error instead of entering the five-minute readiness wait when the build/start command fails (#284).
+
 - **A local Ollama model is now held to the output limit the code asks for.** Test generation
   asks for a limit on every call (3,000 to 10,000 tokens), but only Anthropic and Bedrock were
   given it; Ollama never received `num_predict`, so a small model that fell into a repetition
