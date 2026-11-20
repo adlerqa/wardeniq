@@ -37,6 +37,15 @@
 
 ### Fixed
 
+- `GET /api/test-cases` now honours a project-scoped user's project access when no
+  `project_id` filter is given. The route used to read `cases` from a response that
+  actually contains `items` (whose rows have no `features` key), so its filter never
+  ran and a user limited to project A could see project B's test cases and a global
+  `total`. The allowed projects are now passed into the store query, so `count`,
+  `skip` and `limit` are computed on the scoped set, while an explicit `project_id`
+  (already checked by `_require_project`) is still honoured without double filtering
+  (#304).
+
 - Generation skips Fusion when neither the project nor the previous feature version
   has reusable test candidates, and skips generation workers/fallbacks for zero-focus
   categories. The shared E2E/edge/business call still runs if any of its outputs is

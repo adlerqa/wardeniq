@@ -733,7 +733,7 @@ class StepsTestCasesMixin(_Base):
     def list_test_cases(self, project_id=None, feature_id=None, ctype=None,
                         tag=None, q=None, status="active", execution_status=None,
                         lineage=None, step_id=None,
-                        limit=50, skip=0):
+                        limit=50, skip=0, project_ids=None):
         active_fids, _ = self.active_feature_ids()
         active = self.active_case_ids(active_fids)
         # scope
@@ -742,6 +742,14 @@ class StepsTestCasesMixin(_Base):
         elif project_id:
             scope = set()
             for fid in [str(f["_id"]) for f in self.features.find({"project_id": project_id}, {"_id": 1})]:
+                scope.update(self.feature_test_case_ids(fid))
+        elif project_ids is not None:
+            # Union of cases touching any of the caller's allowed projects. A
+            # case shared across features is visible if any of them is allowed.
+            # Scoping here (before count/skip/limit) keeps total and pages consistent.
+            scope = set()
+            for fid in [str(f["_id"]) for f in self.features.find(
+                    {"project_id": {"$in": list(project_ids)}}, {"_id": 1})]:
                 scope.update(self.feature_test_case_ids(fid))
         else:
             scope = None
