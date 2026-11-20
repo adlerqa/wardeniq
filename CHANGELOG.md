@@ -51,6 +51,18 @@
   repair is not cut off at the same place. The limit of the business-tests fallback rises from
   6,000 to 8,000 tokens, because its real replies reached 87% to 96% of the old limit. The Mind
   Map reviewer's limit is `MINDMAP_REVIEW_MAX_TOKENS` (default 2000) and can be raised (#249).
+- **The business-tests fallback no longer asks for one test per requirement.** When the
+  combined E2E call wrote too few business tests, a second call was told to write exactly one
+  test per extracted requirement (about 20 for a typical PRD). The business suite is later
+  trimmed to its focus share (about 8 or 9 with the default split), and a small model asked
+  for more distinct tests than it can think of repeats itself: in two measured runs it wrote
+  4,784 and 3,946 tokens (34% to 40% of the whole run's output and about a third of its time),
+  and in one of them 19 of its 20 tests had the same title. It now asks for what will be
+  used: the larger of the suite size the code already calls acceptable and what the focus
+  budget keeps, minus the business tests already written, never more than the number of
+  requirements. A heavy functional focus still asks for every requirement. In three
+  measured runs the call fell to 327 to 1,763 tokens and the duplicates to 2 per run. It
+  does not make a CPU-only run fast; that needs a GPU or a hosted provider (Part of #249).
 - Generation skips Fusion when neither the project nor the previous feature version
   has reusable test candidates, and skips generation workers/fallbacks for zero-focus
   categories. The shared E2E/edge/business call still runs if any of its outputs is

@@ -1,5 +1,6 @@
 import concurrent.futures
 import json
+import math
 import os
 import re
 import time
@@ -1062,6 +1063,36 @@ FOCUS_NAMES = ("functional", "e2e", "api", "nfr", "ui")
 _FOCUS_DEFAULT = 100.0 / len(FOCUS_NAMES)  # even split across the 5 sliders
 
 
+def _business_fallback_request(requirement_count, have, acceptable_min, others, focus, total,
+                               smoke_mode=False):
+    """How many business tests the fallback call should ask the model for.
+
+    The fallback used to be told to write one test per extracted requirement (about 20 for
+    a typical PRD). `_budget_suites` then keeps only the business suite's share of the pool
+    (about 8 to 9 with the default even focus split), and the duplicate filter drops the
+    repeats a small model writes when it is asked for more distinct tests than it can think
+    of. So it asks for what will actually be used: the larger of the suite size the code
+    itself calls acceptable and the number `_budget_suites` will keep, minus the business
+    tests the E2E call already produced. `others` holds the pool counts of the other
+    categories ("api", "ui", "e2e", "nfr") before trimming, which can only overestimate the
+    pool, so this errs towards asking for a few too many rather than too few.
+    """
+    weights = {name: max(0.0, float((focus or {}).get(name, _FOCUS_DEFAULT))) for name in FOCUS_NAMES}
+    weight_sum = sum(weights.values()) or 100.0
+    share = weights["functional"] / weight_sum
+    if smoke_mode:
+        kept_by_budget = round(max(0, int(total)) * share)
+    else:
+        rest = sum(count for name, count in others.items() if weights.get(name, 0) > 0)
+        # pool = rest + b and b = share * pool  ->  b = share * rest / (1 - share).
+        # With no other category left, nothing is trimmed and every rule is kept.
+        kept_by_budget = requirement_count if share >= 1 else math.ceil(share * rest / (1 - share))
+    wanted = max(int(acceptable_min), int(kept_by_budget)) - int(have)
+    if requirement_count > 0:
+        wanted = min(wanted, int(requirement_count))
+    return max(1, wanted)
+
+
 def _budget_suites(suites: dict, total: int, focus: dict, smoke_mode=False) -> dict:
     """Trim each generated suite so the final case counts track the user's
     focus weights (functional / e2e / api / nfr / ui), instead of only gating
@@ -1843,7 +1874,16 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
             fallback = call_llm_json_with_repair(
                 llm, SYSTEM,
                 build_business_test_prompt(
-                    context, business_rag_context, top_k=_category_top_k("business", is_ollama)
+                    context, business_rag_context, top_k=_category_top_k("business", is_ollama),
+                    max_tests=_business_fallback_request(
+                        requirement_count, len(business_tests), acceptable_business_min,
+                        {
+                            "api": len(api_tests), "ui": len(ui_tests), "e2e": len(e2e_tests),
+                            "nfr": len(_as_list(e2e_result.get("edge_cases")))
+                            if evidence_sufficient.get("edge") else 0,
+                        },
+                        focus, total, smoke_mode=bool(params.get("smoke_mode")),
+                    ),
                 ),
                 # 8000, not 6000: on a local model its real replies were 5,208, 5,597 and 5,788
                 # tokens (87-96% of 6000), so a slightly longer one would have been cut off now

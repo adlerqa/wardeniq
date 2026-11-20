@@ -1612,7 +1612,8 @@ The values below are examples - replace each one with real values from the evide
   ]
 }}""".strip()
 
-def build_business_test_prompt(context: dict, rag_context: dict = None, top_k: int = 6) -> str:
+def build_business_test_prompt(context: dict, rag_context: dict = None, top_k: int = 6,
+                               max_tests: int | None = None) -> str:
     # Raw context["summaries"]["prd"] is intentionally not read here -- mirrors the
     # redundant-bulk-text removal already applied to build_shared_context_block() /
     # build_e2e_agent_prompt() / build_e2e_fallback_prompt(). The structured
@@ -1637,8 +1638,27 @@ def build_business_test_prompt(context: dict, rag_context: dict = None, top_k: i
         business_rules = []
     rag_evidence = build_rag_evidence_block(rag_context, top_k)
 
-    max_tests = len(business_rules) if business_rules else 10
-    count_instruction = f"The requirement evidence contains {len(business_rules)} distinct rules. Generate exactly {len(business_rules)} tests — one per rule." if business_rules else "Count the distinct rules in the evidence below. Generate exactly one test per rule. Do not group rules together."
+    rule_count = len(business_rules)
+    # How many tests to ask for. Without a caller-chosen limit this is the old behaviour:
+    # one test per rule (or a fixed ceiling of 10 when no rules were extracted). A caller
+    # that knows how many tests will actually be kept passes `max_tests`, so a feature with
+    # 20 rules is not asked for 20 tests when 9 are all that survive the later filters --
+    # a small model asked for more distinct tests than it can think of repeats itself.
+    requested = rule_count if business_rules else 10
+    if max_tests is not None:
+        requested = max(1, min(requested, int(max_tests)))
+    if business_rules and requested < rule_count:
+        count_instruction = (
+            f"The requirement evidence contains {rule_count} distinct rules. Generate exactly "
+            f"{requested} tests, each for a DIFFERENT rule: pick the {requested} most important "
+            "rules. Never write two tests for the same rule or with the same title."
+        )
+    elif business_rules:
+        count_instruction = f"The requirement evidence contains {rule_count} distinct rules. Generate exactly {rule_count} tests — one per rule."
+    elif max_tests is not None:
+        count_instruction = f"Count the distinct rules in the evidence below. Generate one test per rule, at most {requested} tests. Do not group rules together."
+    else:
+        count_instruction = "Count the distinct rules in the evidence below. Generate exactly one test per rule. Do not group rules together."
 
     return f"""{output_contract_header('Generate one business rule test per requirement rule')}
 
@@ -1653,7 +1673,7 @@ FIELD VALUE RULES — violations make the entire response invalid:
 - The "steps" array must contain at least 3 items following Given / When / Then format.
 - The "steps" array must use objects with "content" and a concise one-line "expectedResult" for every step that can show an observable outcome. Keep the top-level "expected_result" as the whole-test outcome only.
 
-OUTPUT CEILING: Output at most {max_tests} tests. Generating a test for a topic not stated in the evidence below also makes the response invalid.
+OUTPUT CEILING: Output at most {requested} tests. Generating a test for a topic not stated in the evidence below also makes the response invalid.
 
 BUSINESS CONTEXT (structured — authoritative for which rules exist):
 {json.dumps(business_context, indent=2)}
