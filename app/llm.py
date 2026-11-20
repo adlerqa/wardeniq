@@ -19,6 +19,12 @@ log = get_logger("llm")
 # source code shown to the reviewer from this same number).
 OLLAMA_MAX_NUM_CTX = int(os.getenv("OLLAMA_MAX_NUM_CTX", "8192"))
 
+# The output limit sent to a provider that cannot run without one (Anthropic, Bedrock) when
+# the caller did not choose one. It used to be chat_json's own default; that default is now
+# None, so a caller that never chose a limit does not get one imposed on a local Ollama model
+# (see _raw_chat), while those two providers receive exactly what they always did.
+DEFAULT_MAX_TOKENS = 4000
+
 
 def _timeout_from_env(raw: str | None) -> float | None:
     """Parse LLM_TIMEOUT_SECONDS. Blank, invalid or non-positive means "unset"."""
@@ -132,7 +138,7 @@ class LLM:
             modelId=self.model,
             system=[{"text": system + " Respond with a single JSON object only."}],
             messages=[{"role": "user", "content": [{"text": user}]}],
-            inferenceConfig={"temperature": temperature, "maxTokens": max_tokens},
+            inferenceConfig={"temperature": temperature, "maxTokens": max_tokens or DEFAULT_MAX_TOKENS},
         )
         u = resp.get("usage") or {}
         usage.record(self.model, u.get("inputTokens", 0), u.get("outputTokens", 0), kind="llm")
@@ -147,7 +153,7 @@ class LLM:
 
     # ---- unified JSON chat ---------------------------------------------------
     def chat_json(self, system: str, user: str, num_ctx: int = 8192,
-                  temperature: float = 0.2, max_tokens: int = 4000, retries: int = 1) -> dict:
+                  temperature: float = 0.2, max_tokens: int | None = None, retries: int = 1) -> dict:
         last = None
         for _ in range(retries + 1):
             try:
@@ -179,13 +185,21 @@ class LLM:
             # RAM to spare, raising OLLAMA_MAX_NUM_CTX widens the code window and directly
             # improves coverage accuracy. Default is unchanged at 8192.
             ollama_ctx = min(num_ctx or 8192, OLLAMA_MAX_NUM_CTX)
+            options = {"temperature": temperature, "num_ctx": ollama_ctx}
+            # An output limit the caller chose is sent as num_predict. Ollama otherwise lets a
+            # reply run until the client's timeout, and a small model that falls into a
+            # repetition loop writes thousands of tokens (about 20,000 in 30 minutes in one
+            # observed run). None means the caller chose no limit, so none is imposed; a limit
+            # nobody tuned for this model could cut off an answer that used to finish.
+            if max_tokens and max_tokens > 0:
+                options["num_predict"] = int(max_tokens)
             r = httpx.post(f"{self.ollama_url}/api/chat",
                            timeout=timeout_seconds or resolve_timeout(300.0),
                            headers=self._ollama_headers(), json={
                 "model": self.model, "stream": False, "format": "json",
                 "messages": [{"role": "system", "content": system},
                              {"role": "user", "content": user}],
-                "options": {"temperature": temperature, "num_ctx": ollama_ctx}})
+                "options": options})
             # Ollama answers 404 when the model isn't pulled yet — turn that into an
             # actionable instruction instead of a bare HTTP error.
             if r.status_code == 404:
@@ -197,6 +211,11 @@ class LLM:
             data = r.json()
             usage.record(self.model, data.get("prompt_eval_count", 0),
                          data.get("eval_count", 0), kind="llm")
+            if options.get("num_predict") and data.get("done_reason") == "length":
+                # The reply was cut off at the limit, so the JSON is probably truncated; the
+                # repair step in the generation pipeline expects exactly this.
+                log.warning("ollama reply for %s was cut off at its %d-token output limit",
+                            self.model, options["num_predict"])
             # Ollama can return "content": null (e.g. an empty/truncated generation)
             # instead of "" — normalize so every caller can rely on a plain string
             # ("" meaning "no content") regardless of which provider answered.
@@ -207,7 +226,7 @@ class LLM:
                            headers={"x-api-key": self.api_key,
                                     "anthropic-version": "2023-06-01",
                                     "content-type": "application/json"},
-                           json={"model": self.model, "max_tokens": max_tokens,
+                           json={"model": self.model, "max_tokens": max_tokens or DEFAULT_MAX_TOKENS,
                                  "system": system + " Respond with a single JSON object only.",
                                  "messages": [{"role": "user", "content": user}]})
             if r.status_code in (400, 404):

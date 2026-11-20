@@ -54,6 +54,20 @@
 
 ### Fixed
 
+- **A local Ollama model is now held to the output limit the code asks for.** Test generation
+  asks for a limit on every call (3,000 to 10,000 tokens), but only Anthropic and Bedrock were
+  given it; Ollama never received `num_predict`, so a small model that fell into a repetition
+  loop kept writing until the call timed out (about 20,000 tokens in 30 minutes in one observed
+  run), which on CPU is exactly where people are told to raise the timeout. A limit a caller
+  chose is now sent to Ollama. `chat_json` and `call_llm_json_with_repair` no longer default to
+  4000: a caller that never chose a limit (the code generator, the Mind Map reviewers that use
+  the default) is not limited on Ollama, as before, and Anthropic and Bedrock still receive 4000
+  for those callers. OpenAI-compatible providers are unchanged. A reply cut off at its limit is
+  logged and is usually salvaged by the existing JSON repair, which keeps the entries completed
+  before the cut; if the model has to repair it, that call gets a quarter more room so the
+  repair is not cut off at the same place. The limit of the business-tests fallback rises from
+  6,000 to 8,000 tokens, because its real replies reached 87% to 96% of the old limit. The Mind
+  Map reviewer's limit is `MINDMAP_REVIEW_MAX_TOKENS` (default 2000) and can be raised (#249).
 - Generation skips Fusion when neither the project nor the previous feature version
   has reusable test candidates, and skips generation workers/fallbacks for zero-focus
   categories. The shared E2E/edge/business call still runs if any of its outputs is

@@ -173,9 +173,24 @@ def _raw_llm_call(llm, system_prompt, user_prompt, num_ctx, temperature,
         )
 
 
-def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=4000,
+def _repair_limit(max_tokens):
+    """The output limit for the call that repairs a reply, or None when the caller chose none.
+
+    A reply cut off at its limit is truncated JSON, and the repair call has to write the
+    whole object out again, which is at least as long as the truncated text. Giving the
+    repair the same limit would cut it off at the same place again, so both attempts would
+    fail. A quarter more, plus a little for the closing brackets, lets it finish.
+    """
+    return int(max_tokens * 1.25) + 256 if max_tokens else None
+
+
+def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=None,
                               attempts=2, timeout_seconds=None) -> dict:
-    """Retry transport/parse failures and use the model itself to repair malformed JSON."""
+    """Retry transport/parse failures and use the model itself to repair malformed JSON.
+
+    `max_tokens` is the caller's own output limit (a local Ollama model is held to it; see
+    LLM._raw_chat). The default None means the caller chose none: no limit is imposed on
+    Ollama, and the providers that require one get their usual default."""
     if timeout_seconds is None:
         timeout_seconds = resolve_timeout(300)
     last_error = None
@@ -206,7 +221,7 @@ def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=4000,
                         repair_prompt,
                         8192,
                         0.0,
-                        max_tokens,
+                        _repair_limit(max_tokens),
                         timeout_seconds,
                     )
                     return _json_object(repaired)
@@ -1830,7 +1845,10 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                 build_business_test_prompt(
                     context, business_rag_context, top_k=_category_top_k("business", is_ollama)
                 ),
-                max_tokens=6000,
+                # 8000, not 6000: on a local model its real replies were 5,208, 5,597 and 5,788
+                # tokens (87-96% of 6000), so a slightly longer one would have been cut off now
+                # that Ollama honours the limit. 8000 still fits the 240 s timeout at GPU speed.
+                max_tokens=8000,
                 timeout_seconds=resolve_timeout(240),
             )
             business_tests.extend(_as_list(fallback.get("business_tests")))
