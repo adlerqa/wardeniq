@@ -68,7 +68,7 @@ export default function EmbeddingSettingsCard() {
           API key / secret
           <span className="fi" tabIndex="0" data-tip="Hosted providers: your API key. AWS Bedrock: leave blank to use the machine's IAM role, or enter accessKeyId:secretAccessKey. Ollama: leave blank.">i</span>
         </label>
-        <input type="password" id="cfg-embed-key" placeholder="API token is required" />
+        <input type="password" id="cfg-embed-key" placeholder="Optional — no key needed for bundled Ollama" />
       </div>
       <div className="cfg-field">
         <label>
@@ -76,7 +76,7 @@ export default function EmbeddingSettingsCard() {
           <span className="muted" style={{ fontWeight: "400" }}>(optional)</span>
           <span className="fi" tabIndex="0" data-tip="Leave blank for the provider default. OpenAI-compatible: your custom base URL. AWS Bedrock: an optional private VPC / PrivateLink endpoint for air-gapped networks.">i</span>
         </label>
-        <input id="cfg-embed-base" placeholder="Endpoint URL is required" />
+        <input id="cfg-embed-base" placeholder="Not used with Ollama" />
       </div>
       <div className="cfg-status muted" id="cfg-embed-status"></div>
       <div id="cfg-embed-log" className="cfg-log" style={{ display: "none", whiteSpace: "pre-wrap", fontFamily: "monospace", fontSize: "11px", marginTop: "8px", maxHeight: "160px", overflow: "auto" }}></div>
