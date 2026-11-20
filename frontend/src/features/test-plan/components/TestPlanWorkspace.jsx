@@ -1,4 +1,4 @@
-import { SkeletonLines, SkeletonState } from "../../../components/feedback/Skeleton.jsx";
+import { SkeletonBlockLines, SkeletonState } from "../../../components/feedback/Skeleton.jsx";
 import { exportUrls } from "../lib/testPlan.js";
 import TestPlanContent from "./TestPlanContent.jsx";
 
@@ -63,9 +63,10 @@ export default function TestPlanWorkspace({ state, onGenerate }) {
         >
           {content.kind === "skeleton" ? (
             <SkeletonState label={content.label}>
+              {/* Flat lines in one grid, like the compat skeleton.blockLines(). */}
               <div className="grid gap-[18px]">
-                {content.blocks.map((n, i) => (
-                  <SkeletonLines key={i} count={n} />
+                {content.blocks.map((n, b) => (
+                  <SkeletonBlockLines key={b} count={n} />
                 ))}
               </div>
             </SkeletonState>

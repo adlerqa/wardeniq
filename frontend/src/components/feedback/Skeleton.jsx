@@ -15,12 +15,33 @@ export function SkeletonLine({ size = "md", className = "" }) {
   return <div className={`${BASE} ${SIZES[size]} ${className}`} />;
 }
 
-/** A block of `count` lines: first large, last small (compat skeleton.blockLines). */
-export function SkeletonLines({ count = 4 }) {
+/**
+ * A block of `count` lines (first large, last small), returned as a fragment so
+ * the lines sit directly in the parent's layout, like compat skeleton.blockLines().
+ */
+export function SkeletonBlockLines({ count = 4 }) {
   return (
-    <div>
+    <>
       {Array.from({ length: count }, (_, i) => (
         <SkeletonLine key={i} size={i === 0 ? "lg" : i === count - 1 ? "sm" : "md"} />
+      ))}
+    </>
+  );
+}
+
+const CARD =
+  "min-h-[154px] rounded-2xl border border-solid border-[rgba(116,139,166,0.16)] bg-[linear-gradient(145deg,rgba(24,34,48,0.6),rgba(13,20,30,0.7))] p-[22px]";
+
+/** Grid of placeholder cards (compat skeleton.cards()). */
+export function SkeletonCards({ count = 6 }) {
+  return (
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
+      {Array.from({ length: count }, (_, i) => (
+        <div key={i} className={CARD}>
+          <SkeletonLine size="lg" />
+          <SkeletonLine size="sm" />
+          <SkeletonLine className="!mt-[22px] w-[40%]" />
+        </div>
       ))}
     </div>
   );

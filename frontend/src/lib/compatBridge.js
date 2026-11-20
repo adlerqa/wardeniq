@@ -73,3 +73,19 @@ export function currentFeatureName() {
   const el = document.getElementById("d-name");
   return el ? el.textContent || "" : "";
 }
+
+/**
+ * Follow a background job (03-features-and-usage.js watchJob: SSE plus a
+ * safety poll). Calls onTick(job) on every update; returns a stop function.
+ * Without the compat runtime it returns a no-op stop.
+ */
+export function watchJob(jobId, onTick, intervalMs) {
+  const fn = compatFn("watchJob");
+  return fn ? fn(jobId, onTick, intervalMs) || (() => {}) : () => {};
+}
+
+/** Token-usage lines appended to a job log (03-features-and-usage.js usageLogLines). */
+export function usageLogLines(usage) {
+  const fn = compatFn("usageLogLines");
+  return fn ? fn(usage) : [];
+}

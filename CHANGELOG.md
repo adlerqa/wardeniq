@@ -51,6 +51,12 @@
   previous generation stream, so a plan still generating for another feature can no longer
   replace the one on screen. Loading placeholders now come from a shared React `Skeleton`
   component.
+- **MCQ Validator screen rebuilt in React (part of #257).** The Validator screen is now
+  React and Tailwind, with the same states and text (no validator yet, generating with the
+  job log, questions with confidence and comments, submit, results, retake), and the legacy
+  `12-validator.js` controller and its `.val-*` styles are removed. Opening the screen again
+  now stops following the previous generation job, so a job for another feature can no
+  longer replace what is on screen.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

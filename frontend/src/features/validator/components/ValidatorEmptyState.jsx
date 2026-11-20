@@ -1,9 +1,11 @@
-/** ValidatorEmptyState for validator. */
+/** Shown on the MCQ Validator screen when no feature is open. */
 export default function ValidatorEmptyState() {
   return (
-    <div className="card" id="val-no-feature">
+    <div className="card">
       <h2>MCQ Validator</h2>
-      <div className="muted">Please select a feature first to run the requirements validator.</div>
+      <div className="text-[12px] text-muted">
+        Please select a feature first to run the requirements validator.
+      </div>
     </div>
   );
 }

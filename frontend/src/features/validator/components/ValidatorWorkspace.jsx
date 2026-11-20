@@ -1,41 +1,85 @@
-/** ValidatorWorkspace for validator. */
-export default function ValidatorWorkspace() {
+import { useEffect, useRef } from "react";
+
+import { SkeletonCards, SkeletonState } from "../../../components/feedback/Skeleton.jsx";
+import ValidatorQuestions from "./ValidatorQuestions.jsx";
+import ValidatorResults from "./ValidatorResults.jsx";
+
+/**
+ * MCQ Validator workspace card. Stays mounted (hidden when no feature is open)
+ * and keeps the Generate and Retake buttons mounted, because the compat viewer
+ * read-only pass (enforceViewerReadOnly in 10-auth.js) marks buttons in the
+ * visible view by adding a class to them when the screen opens.
+ */
+export default function ValidatorWorkspace({ state, generate, retake, ...answering }) {
+  const log = useRef(null);
+  const logText = state.logLines.join("\n");
+  useEffect(() => {
+    if (log.current) log.current.scrollTop = log.current.scrollHeight;
+  }, [logText, state.logVisible]);
+
   return (
-    <div className="card" id="val-workspace" style={{ display: "none" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h2 id="val-feat-title">MCQ Validator</h2>
-        <div style={{ display: "flex", gap: "6px" }}>
-          <button className="go" id="val-generate-btn">Generate Validator</button>
-          <button className="ghost" id="val-retake-btn">↻ Retake Validator</button>
+    <div className="card" hidden={!state.hasFeature}>
+      <div className="flex items-center justify-between">
+        <h2>{state.title}</h2>
+        <div className="flex gap-1.5">
+          <button
+            className="go"
+            hidden={!state.generateVisible}
+            disabled={state.generateDisabled}
+            onClick={generate}
+          >
+            Generate Validator
+          </button>
+          <button
+            className="ghost"
+            hidden={!state.retakeVisible}
+            disabled={state.retakeDisabled}
+            onClick={retake}
+          >
+            ↻ Retake Validator
+          </button>
         </div>
       </div>
-      <div className="sub">Resolve requirement ambiguity, validate business intent, and detect gaps before QA begins.</div>
-      <div id="val-progress" className="progress" style={{ display: "none" }}>
-        <div className="pbar" id="val-bar"></div>
+      <div className="sub">
+        Resolve requirement ambiguity, validate business intent, and detect gaps before QA begins.
       </div>
-      <div className="job-log" id="val-log"></div>
-      <div id="val-status" className="muted" style={{ marginBottom: "12px" }}></div>
-      <div id="val-qa-container"></div>
-      <div id="val-results" style={{ display: "none" }}>
-        <div className="kpis" style={{ marginBottom: "20px" }}>
-          <div className="kpi">
-            <div className="v accent" id="val-score">-</div>
-            <div className="l">Clarity Score</div>
-          </div>
-          <div className="kpi">
-            <div className="v" id="val-rating">-</div>
-            <div className="l">Rating</div>
-          </div>
-          <div className="kpi">
-            <div className="v" id="val-weak-count">-</div>
-            <div className="l">Weak Categories</div>
-          </div>
+      {state.progressVisible && (
+        <div className="mb-1 mt-2.5 h-2 overflow-hidden rounded-lg border border-solid border-line bg-panel2">
+          {/* Width is the job's live percentage, so it stays an inline style. */}
+          <div
+            className="h-full rounded-lg bg-[linear-gradient(90deg,var(--accent),var(--accent2))] transition-[width] duration-300"
+            style={{ width: `${state.barWidth}%` }}
+          />
         </div>
-        <h3 style={{ marginTop: "20px", fontSize: "14px", color: "var(--accent)", borderBottom: "1px solid var(--line)", paddingBottom: "6px" }}>Weak Requirement Areas</h3>
-        <div id="val-weak-list" className="muted" style={{ margin: "10px 0" }}></div>
-        <h3 style={{ marginTop: "20px", fontSize: "14px", color: "var(--accent)", borderBottom: "1px solid var(--line)", paddingBottom: "6px" }}>Detailed Question Results</h3>
-        <div id="val-details-list" style={{ marginTop: "10px" }}></div>
+      )}
+      {state.logVisible && (
+        <div ref={log} className="job-log !block">
+          {logText}
+        </div>
+      )}
+      <div className="mb-3 text-[12px] text-muted" aria-live="polite">
+        {state.status.error ? (
+          <span className="text-[12.5px] text-red">{state.status.text}</span>
+        ) : (
+          state.status.text
+        )}
       </div>
+      <div>
+        {state.qa && state.qa.kind === "skeleton" && (
+          <SkeletonState label={state.qa.label}>
+            <SkeletonCards count={3} />
+          </SkeletonState>
+        )}
+        {state.qa && state.qa.kind === "questions" && (
+          <ValidatorQuestions
+            questions={state.qa.questions}
+            answers={state.answers}
+            submitting={state.submitting}
+            {...answering}
+          />
+        )}
+      </div>
+      {state.results && <ValidatorResults score={state.results} />}
     </div>
   );
 }

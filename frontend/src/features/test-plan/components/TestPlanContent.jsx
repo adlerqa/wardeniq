@@ -9,7 +9,7 @@ function Section({ section }) {
   const s = section;
   return (
     <>
-      <h2 className="!mt-5 border-0 border-b border-solid border-line pb-[5px] text-accent2">
+      <h2 className="!mt-5 [border-bottom:1px_solid_var(--line)] pb-[5px] text-accent2">
         {s.title}
       </h2>
       {s.kind === "paragraph" && <p>{s.text}</p>}
