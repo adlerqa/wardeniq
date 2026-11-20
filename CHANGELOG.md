@@ -9,8 +9,8 @@
   until it was under way. The Generate page now shows an amber notice as soon as it opens,
   before any document is added, when the local Ollama model runs on CPU: how long it can
   take, and the ways out (a hosted provider, Ollama on a GPU, or a larger
-  `LLM_TIMEOUT_SECONDS` if calls time out). On a Mac it also says that Docker cannot use
-  the GPU, so Ollama should run natively there. The app asks Ollama's `/api/ps` where the
+  `LLM_TIMEOUT_SECONDS` if calls time out). It also says that the bundled Ollama container
+  never uses a GPU, on any operating system, so Ollama should run natively to use one. The app asks Ollama's `/api/ps` where the
   loaded model runs (CPU, GPU, or split between them). On a first run nothing is loaded
   yet, so it loads the small embedding model the app uses anyway, which takes well under a
   second, and asks again. It never guesses from the URL, because the "bundled" Ollama URL

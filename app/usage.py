@@ -300,10 +300,11 @@ def cpu_generation_warning(accelerator):
     """
     if accelerator == "cpu":
         return ("This model runs on CPU only, so a full generation can take from about 20 "
-                "minutes to over an hour on a typical machine. For faster runs use a hosted "
-                "provider (Configuration → LLM) or run Ollama on a GPU. On a Mac, Docker cannot "
-                "use the GPU, so run Ollama natively on the Mac instead. If calls time out, "
-                "raise LLM_TIMEOUT_SECONDS in .env.")
+                "minutes to over an hour on a typical machine. If this is the bundled Ollama "
+                "container, it does not use a GPU on any operating system, even when the machine "
+                "has one. For faster runs use a hosted provider (Configuration → LLM), or run "
+                "Ollama natively on a machine with a GPU and point wardenIQ at it "
+                "(OLLAMA_URL in .env). If calls time out, raise LLM_TIMEOUT_SECONDS in .env.")
     if accelerator == "mixed":
         return ("This model only partly fits in GPU memory, so part of it runs on CPU and "
                 "generation will be slower than on a full GPU. A smaller model or more GPU "

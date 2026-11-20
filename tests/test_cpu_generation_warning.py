@@ -238,9 +238,22 @@ class TestCpuGenerationWarning:
         assert "hosted provider" in w and "GPU" in w
         assert "LLM_TIMEOUT_SECONDS" in w
 
-    def test_it_tells_mac_users_that_docker_cannot_use_the_gpu(self):
+    def test_it_says_the_bundled_container_never_uses_a_gpu_on_any_os(self):
+        # The bundled compose file gives the Ollama container no GPU on any operating system
+        # (a Windows machine with an AMD GPU sat idle, #306), so the hint is not Mac-only.
         w = usage.cpu_generation_warning("cpu")
-        assert "On a Mac" in w and "Docker cannot use the GPU" in w and "natively" in w
+        assert "bundled Ollama container" in w and "does not use a GPU" in w
+        assert "on any operating system" in w
+        assert "On a Mac" not in w and "Docker cannot" not in w
+
+    def test_it_says_how_to_get_a_gpu_and_point_the_app_at_it(self):
+        w = usage.cpu_generation_warning("cpu")
+        assert "natively on a machine with a GPU" in w and "OLLAMA_URL" in w
+
+    def test_it_stays_conditional_because_the_url_does_not_say_which_ollama_it_is(self):
+        # The app cannot tell the bundled container from a native CPU-only Ollama, so the
+        # container claim must be an "if", not a statement about the user's setup.
+        assert "If this is the bundled Ollama container" in usage.cpu_generation_warning("cpu")
 
     def test_mixed_gets_a_different_warning(self):
         w = usage.cpu_generation_warning("mixed")
