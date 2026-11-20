@@ -1,9 +1,11 @@
-/** TestPlanEmptyState for test-plan. */
+/** Shown on the Test Plan screen when no feature is open. */
 export default function TestPlanEmptyState() {
   return (
-    <div className="card" id="tp-no-feature">
+    <div className="card">
       <h2>Test Plan</h2>
-      <div className="muted">Please select a feature first to generate a test plan.</div>
+      <div className="text-xs text-muted">
+        Please select a feature first to generate a test plan.
+      </div>
     </div>
   );
 }

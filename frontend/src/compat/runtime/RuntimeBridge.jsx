@@ -14,14 +14,13 @@ import chunk10 from "./controllers/10-auth.js?raw";
 import chunk11 from "./controllers/11-users.js?raw";
 import chunk12 from "./controllers/12-validator.js?raw";
 import chunk13 from "./controllers/13-gap-analysis.js?raw";
-import chunk14 from "./controllers/14-test-plan.js?raw";
 import chunk15 from "./controllers/15-imports.js?raw";
 import chunk16 from "./controllers/16-boot.js?raw";
 
 const runtimeChunks = [
   chunk00, chunk01, chunk02, chunk03, chunk04, chunk05,
   chunk06, chunk07, chunk08, chunk09, chunk10, chunk11,
-  chunk12, chunk13, chunk14, chunk15, chunk16,
+  chunk12, chunk13, chunk15, chunk16,
 ];
 
 let runtimeLoadPromise;

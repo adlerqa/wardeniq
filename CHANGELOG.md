@@ -44,6 +44,13 @@
   legacy `17-api-tokens.js` controller is removed. A shared React API helper
   (`frontend/src/lib/api.js`) handles responses like the legacy `api()` (sign-in on
   401, "Can't reach the server" on network errors) for the screens that follow.
+- **Test Plan screen rebuilt in React (part of #257).** The Test Plan screen is now React
+  and Tailwind, with the same states and text (loading, no plan yet, generating with live
+  progress, completed with CSV/PDF export, failed, connection lost and re-check), and the
+  legacy `14-test-plan.js` controller is removed. Opening the screen again now stops the
+  previous generation stream, so a plan still generating for another feature can no longer
+  replace the one on screen. Loading placeholders now come from a shared React `Skeleton`
+  component.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

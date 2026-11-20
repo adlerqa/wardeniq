@@ -826,6 +826,11 @@ const TITLES = {
   config: "Configuration",
 };
 let ME = null;
+// Read-only accessor for React screens (src/lib/compatBridge.js) until the
+// navigation state moves out of this file (#257).
+function getCurrentFeatureId() {
+  return currentFeature;
+}
 let ANALYSIS_IMPACTED = [];
 
 // ---- nav ----

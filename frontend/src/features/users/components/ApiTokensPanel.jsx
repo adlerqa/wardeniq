@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
+import { SkeletonLine, SkeletonState } from "../../../components/feedback/Skeleton.jsx";
 import { api } from "../../../lib/api.js";
 import { toast, uiConfirm, uiModalHTML } from "../../../lib/compatBridge.js";
 import {
@@ -14,22 +15,20 @@ import {
   validateTokenForm,
 } from "../lib/apiTokens.js";
 
-const SKELETON_LINE =
-  "relative m-0 block h-3 overflow-hidden rounded-md bg-[#151d29] bg-[linear-gradient(90deg,rgba(255,255,255,0.02)_0%,rgba(255,255,255,0.07)_45%,rgba(255,255,255,0.02)_90%)] bg-[length:320px_100%] bg-no-repeat animate-shimmer";
 const BADGE =
   "rounded-[20px] border border-solid border-transparent px-[11px] py-1 text-[10.5px] font-medium";
 
 function LoadingTable() {
   const cols = [0, 1, 2, 3];
   return (
-    <div role="status" aria-label="Loading API tokens" className="w-full">
+    <SkeletonState label="Loading API tokens">
       <div className="overflow-auto">
         <table>
           <tbody>
             <tr>
               {cols.map((c) => (
                 <th key={c}>
-                  <div className={`${SKELETON_LINE} !h-2.5 w-[70%]`} />
+                  <SkeletonLine size="sm" className="!my-0 !w-[70%]" />
                 </th>
               ))}
             </tr>
@@ -37,7 +36,7 @@ function LoadingTable() {
               <tr key={r}>
                 {cols.map((c) => (
                   <td key={c}>
-                    <div className={SKELETON_LINE} />
+                    <SkeletonLine className="!my-0" />
                   </td>
                 ))}
               </tr>
@@ -45,7 +44,7 @@ function LoadingTable() {
           </tbody>
         </table>
       </div>
-    </div>
+    </SkeletonState>
   );
 }
 

@@ -56,3 +56,20 @@ export function refreshMe() {
   const fn = compatFn("refreshMe");
   if (fn) return fn();
 }
+
+/** Id of the feature open in the compat runtime (00-core.js `currentFeature`), or null. */
+export function currentFeatureId() {
+  const fn = compatFn("getCurrentFeatureId");
+  return fn ? fn() || null : null;
+}
+
+/**
+ * Name shown in the feature workspace header (#d-name, filled by
+ * 03-features-and-usage.js). Screens that title themselves after the open
+ * feature read it here, as the compat controllers did.
+ */
+export function currentFeatureName() {
+  if (typeof document === "undefined") return "";
+  const el = document.getElementById("d-name");
+  return el ? el.textContent || "" : "";
+}
