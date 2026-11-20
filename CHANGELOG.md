@@ -54,6 +54,11 @@
 
 ### Fixed
 
+- `LLM_TIMEOUT_SECONDS` now rejects non-finite values such as `nan`, `inf` and
+  `1e400`. The setting's use by Configuration Save/Test provider checks is documented,
+  and the Bedrock timeout selection is expressed explicitly without changing its
+  existing precedence (#267).
+
 - `run.ps1` now checks the native `docker compose up -d --build` exit code and stops immediately with a clear error instead of entering the five-minute readiness wait when the build/start command fails (#284).
 
 - **A local Ollama model is now held to the output limit the code asks for.** Test generation

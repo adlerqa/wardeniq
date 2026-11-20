@@ -61,6 +61,14 @@ class TestParsing:
     def test_positive_numbers_are_used(self, raw, expected):
         assert _timeout_from_env(raw) == expected
 
+    @pytest.mark.parametrize("raw", ["nan", "inf", "-inf", "1e400"])
+    def test_non_finite_values_are_ignored_with_warning(self, raw):
+        with patch.object(llm_module.log, "warning") as warning:
+            assert _timeout_from_env(raw) is None
+
+        warning.assert_called_once()
+        assert "finite and greater than 0" in warning.call_args.args[0]
+
     @pytest.mark.parametrize("raw,expected", [("1800", "1800.0"), ("", "None")])
     def test_the_module_reads_the_environment_variable(self, raw, expected):
         # A fresh interpreter: reloading llm in-process would replace the LLM class that
@@ -113,6 +121,43 @@ def _bedrock_client_kwargs(**kwargs):
     with patch("boto3.session.Session", return_value=session):
         client._raw_chat("system", "user", 8192, 0.1, 100, **kwargs)
     return session.client.call_args.kwargs
+
+
+class TestPing:
+    def test_ping_uses_the_configured_global_timeout(self, monkeypatch):
+        # Settings Save/Test call LLM.ping(); it intentionally inherits the
+        # configured timeout, which is documented for unreachable endpoints.
+        monkeypatch.setattr(llm_module, "LLM_TIMEOUT_SECONDS", 1800.0)
+        client = LLM(provider="openai", model="gpt-4o", api_key="k")
+        response = MagicMock(status_code=200, text="")
+        response.json.return_value = {
+            "choices": [{"message": {"content": '{"ok": true}'}}],
+        }
+
+        with patch("httpx.post", return_value=response) as post:
+            result = client.ping()
+
+        assert result["ok"] is True
+        assert post.call_args.kwargs["timeout"] == 1800.0
+
+    def test_ollama_ping_uses_the_configured_global_timeout(self, monkeypatch):
+        monkeypatch.setattr(llm_module, "LLM_TIMEOUT_SECONDS", 1800.0)
+        client = LLM(provider="ollama", model="qwen2.5:3b")
+        response = MagicMock(status_code=200, text="")
+        response.json.return_value = {
+            "message": {"content": '{"ok": true}'},
+        }
+        tags = MagicMock(status_code=200)
+        tags.json.return_value = {"models": [{"name": "qwen2.5:3b"}]}
+
+        with patch("httpx.post", return_value=response) as post, patch(
+            "httpx.get", return_value=tags
+        ):
+            result = client.ping()
+
+        assert result["ok"] is True
+        assert result["provider"] == "ollama"
+        assert post.call_args.kwargs["timeout"] == 1800.0
 
 
 class TestBedrock:
