@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 from pymongo import MongoClient
+from store import Store
 
 pytestmark = pytest.mark.dbintegration
 
@@ -21,19 +22,49 @@ MONGO_TEST_URI = os.getenv("MONGO_TEST_URI", "mongodb://localhost:27017")
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _server_reachable() -> bool:
+@pytest.fixture(scope="module", autouse=True)
+def _require_mongo():
+    """Skip this module's tests when no MongoDB is reachable.
+
+    This runs when the module's tests are about to run, not at import time, so a run that
+    deselects the dbintegration marker neither waits out the 1.5 s server selection timeout
+    nor opens a MongoClient, and the client used for the check is always closed.
+    """
+    client = None
     try:
-        MongoClient(MONGO_TEST_URI, serverSelectionTimeoutMS=1500).admin.command("ping")
-        return True
+        client = MongoClient(MONGO_TEST_URI, serverSelectionTimeoutMS=1500)
+        client.admin.command("ping")
     except Exception:  # noqa: BLE001
-        return False
+        pytest.skip(f"no MongoDB reachable at {MONGO_TEST_URI!r} (set MONGO_TEST_URI to run "
+                    "db-integration tests)")
+    finally:
+        if client is not None:
+            client.close()
 
 
-if not _server_reachable():
-    pytest.skip(f"no MongoDB reachable at {MONGO_TEST_URI!r} (set MONGO_TEST_URI to run "
-                "db-integration tests)", allow_module_level=True)
+def _database_names():
+    client = MongoClient(MONGO_TEST_URI)
+    try:
+        return set(client.list_database_names())
+    finally:
+        client.close()
 
-from store import Store  # noqa: E402
+
+@pytest.fixture()
+def store_factory():
+    """A Store per throwaway database, with every client closed when the test ends."""
+    stores = []
+
+    def make(name):
+        store = Store(MONGO_TEST_URI, name, 8)
+        stores.append(store)
+        return store
+
+    try:
+        yield make
+    finally:
+        for store in stores:
+            store.client.close()
 
 
 def _load_runner():
@@ -62,14 +93,15 @@ def stub_model(monkeypatch):
                         lambda self, *a, **k: '{"stub": true}')
 
 
-def test_the_real_pipeline_output_becomes_a_result_and_the_database_is_dropped(stub_model):
+def test_the_real_pipeline_output_becomes_a_result_and_the_database_is_dropped(stub_model,
+                                                                              store_factory):
     cfg = runner.EvalConfig(model="stub-model", mongo_uri=MONGO_TEST_URI)
     corpus = (ROOT / "examples" / "sample-prd.md").read_text(encoding="utf-8")
     original_gap_check = runner.svc._requirement_gaps
 
     run = runner.run_repeat(
         cfg, 1, corpus,
-        store_factory=lambda name: Store(MONGO_TEST_URI, name, 8),
+        store_factory=store_factory,
         llm_factory=lambda: runner.RecordingLLM(provider="ollama", model="stub-model",
                                                 ollama_url="http://127.0.0.1:1"),
         embedder=StubEmbedder())
@@ -98,16 +130,16 @@ def test_the_real_pipeline_output_becomes_a_result_and_the_database_is_dropped(s
     # The gap-check wrapper was removed again, and the throwaway database is gone.
     assert runner.svc._requirement_gaps is original_gap_check
     assert run["database"].startswith(runner.DB_PREFIX)
-    assert run["database"] not in MongoClient(MONGO_TEST_URI).list_database_names()
+    assert run["database"] not in _database_names()
 
 
-def test_two_repeats_never_share_data(stub_model):
+def test_two_repeats_never_share_data(stub_model, store_factory):
     cfg = runner.EvalConfig(model="stub-model", mongo_uri=MONGO_TEST_URI)
     corpus = (ROOT / "examples" / "sample-prd.md").read_text(encoding="utf-8")
     seen = []
 
     def factory(name):
-        store = Store(MONGO_TEST_URI, name, 8)
+        store = store_factory(name)
         seen.append((name, store))
         return store
 
@@ -119,4 +151,4 @@ def test_two_repeats_never_share_data(stub_model):
 
     assert all(r["ok"] for r in runs), [r["error"] for r in runs]
     assert seen[0][0] != seen[1][0]
-    assert not {n for n, _ in seen} & set(MongoClient(MONGO_TEST_URI).list_database_names())
+    assert not {n for n, _ in seen} & _database_names()

@@ -1539,9 +1539,9 @@ async function loadCoverage(fid) {
       `<div style="margin-top:14px;border:1px solid var(--line,#1e293b);border-radius:12px;padding:14px 16px;background:var(--panel,#0d1728)">
       <div style="font-size:13px;font-weight:600">Coverage <span style="font-weight:400;color:var(--muted,#94a3b8)">— aggregated across all PRs linked to this feature</span></div>
       <div style="font-size:12px;color:var(--muted,#94a3b8);margin:2px 0 10px">A test case counts as covered once ANY linked PR implements it (no single repo need cover everything).</div>
-      <div class="dash-gauge"><div class="top"><span>Code coverage (cases hit by PRs)</span><b>${s.code_pct}%</b></div><div class="track"><div class="fill code" style="width:${s.code_pct}%"></div></div></div>
+      <div class="dash-gauge"><div class="top"><span>Code coverage (cases implemented by PRs)</span><b>${s.code_pct}%</b></div><div class="track"><div class="fill code" style="width:${s.code_pct}%"></div></div></div>
       <div class="dash-gauge"><div class="top"><span>Automation Test Coverage (dev-written tests)</span><b>${s.automation_pct}%</b></div><div class="track"><div class="fill auto" style="width:${s.automation_pct}%"></div></div></div>
-      <div class="dash-cov-note">${s.covered_cases} covered · ${s.automated_cases} automated of ${s.total_cases} cases</div>
+      <div class="dash-cov-note">${s.covered_cases} covered${s.partial_cases ? ` · ${s.partial_cases} partial (not counted)` : ""} · ${s.automated_cases} automated of ${s.total_cases} cases</div>
       ${banner}
       ${strategy}
     </div>`;

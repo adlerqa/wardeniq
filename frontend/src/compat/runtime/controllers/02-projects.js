@@ -569,7 +569,10 @@ if ($("#proj-create-save"))
           body: JSON.stringify({ pat }),
         });
       } catch (e) {
-        toast(`Project created, but PAT save failed: ${e.message}`, true);
+        toast(`Project created, but PAT save failed: ${e.message}`, {
+          type: "warn",
+          title: "Project created, but PAT wasn't saved",
+        });
       }
       const allRepos = [
         ...NEW_PROJ.appRepos.map((r) => ({ ...r, repo_type: "app" })),
@@ -594,7 +597,10 @@ if ($("#proj-create-save"))
           });
           connected += 1;
         } catch (e) {
-          toast(`Repo ${r.full_name} failed: ${e.message}`, true);
+          toast(`Repo ${r.full_name} failed: ${e.message}`, {
+            type: "warn",
+            title: "Project created, but repository connection failed",
+          });
         }
       }
       if (connected > 0)
@@ -638,7 +644,10 @@ if ($("#proj-rename-btn"))
       loadProjects();
       toast("Project renamed successfully!");
     } catch (e) {
-      toast(e.message, true);
+      toast(e.message, {
+        type: "err",
+        title: "Couldn't rename project",
+      });
     }
   };
 function projectCardName(pid) {
@@ -665,7 +674,10 @@ window.renameProjectFromCard = async (pid) => {
     loadProjects();
     toast("Project renamed");
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't rename project",
+    });
   }
 };
 if ($("#proj-del-btn"))
@@ -782,7 +794,10 @@ if ($("#pd-pat-save"))
       toast("PAT saved");
       refreshProjectPatStatus();
     } catch (e) {
-      toast(e.message, true);
+      toast(e.message, {
+        type: "err",
+        title: "Couldn't save project token",
+      });
     }
   };
 
@@ -798,7 +813,10 @@ if ($("#pd-pat-clear"))
       toast("PAT cleared");
       refreshProjectPatStatus();
     } catch (e) {
-      toast(e.message, true);
+      toast(e.message, {
+        type: "err",
+        title: "Couldn't clear project token",
+      });
     }
   };
 
@@ -821,7 +839,10 @@ if ($("#repo-add"))
       loadRepos();
       toast("Repo added & watching");
     } catch (e) {
-      toast(e.message, true);
+      toast(e.message, {
+        type: "err",
+        title: "Couldn't add repository",
+      });
     }
   };
 
@@ -906,7 +927,10 @@ if ($("#repo-pick"))
         `${REPO_PICK_CACHE.length} repos loaded — click the box to browse, or type to filter`,
       );
     } catch (e) {
-      toast(e.message, true);
+      toast(e.message, {
+        type: "err",
+        title: "Couldn't load repositories",
+      });
     }
   };
 

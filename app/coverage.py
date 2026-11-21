@@ -1518,22 +1518,49 @@ def compute_unmapped_changes(files: list, covered: list) -> list:
     return out[:30]
 
 
+def is_confirmed(entry: dict) -> bool:
+    """True when a stored PR-coverage entry is a confirmed `covered` verdict.
+
+    A "partial" entry means the PR touched code relevant to the case but the model did
+    not confirm the behaviour is implemented, so it must not count as covered. Entries
+    saved before `status` existed were all full coverage, so a missing status counts as
+    covered. This is the same rule as CodeCoverageMixin.feature_coverage_report (#288).
+    """
+    return entry.get("status", "covered") == "covered"
+
+
+def coverage_counts(covered: list, total: int) -> dict:
+    """Headline numbers for one PR coverage run, from its stored `covered` entries.
+
+    `tests_covered` counts distinct cases with a confirmed verdict only. `tests_partial`
+    counts the cases that are partial and not also confirmed. `gaps_found` is every case
+    without a confirmed verdict (so partial cases remain gaps until confirmed).
+    """
+    confirmed = {c["test_case_id"] for c in covered
+                 if c.get("test_case_id") and is_confirmed(c)}
+    partial = {c["test_case_id"] for c in covered
+               if c.get("test_case_id") and c.get("status") == "partial"} - confirmed
+    return {"tests_covered": len(confirmed), "tests_partial": len(partial),
+            "gaps_found": max(0, total - len(confirmed))}
+
+
 def diff_runs(prev_run: dict | None, this_covered: list) -> dict:
     """Compute newly_covered / no_longer_covered relative to a prior run.
 
     `prev_run` is a code_coverage_runs document (or None if there is no prior).
     `this_covered` is the list of covered/partial items just produced by
-    review_coverage (each having `test_case_id` + status).
+    review_coverage (each having `test_case_id` + status). Only confirmed `covered`
+    verdicts take part in the comparison: a partial match was never confirmed, so
+    gaining or losing one is not a change in coverage (#291).
     """
-    this_ids = {c.get("test_case_id") for c in this_covered if c.get("test_case_id")
-                and c.get("status") in ("covered", "partial")}
+    this_ids = {c.get("test_case_id") for c in this_covered
+                if c.get("test_case_id") and is_confirmed(c)}
     if not prev_run:
         return {"prev_run_id": None, "newly_covered": sorted(this_ids),
                 "no_longer_covered": []}
     prev_result = prev_run.get("result") or {}
     prev_ids = {c.get("test_case_id") for c in (prev_result.get("covered") or [])
-                if c.get("test_case_id")
-                and c.get("status") in ("covered", "partial")}
+                if c.get("test_case_id") and is_confirmed(c)}
     return {
         "prev_run_id": prev_run.get("id"),
         "prev_pr_number": prev_run.get("pr_number"),

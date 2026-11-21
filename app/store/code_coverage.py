@@ -251,7 +251,11 @@ class CodeCoverageMixin(_Base):
     def feature_coverage_report(self, fid):
         """Aggregate coverage for a feature across all mapped PRs."""
         all_cases = self.feature_test_case_ids(fid)
-        covered_ids, dev_tested_ids, pr_rows = set(), set(), []
+        # Only a "covered" verdict counts toward the headline. A "partial" entry means the PR
+        # touched code relevant to the case but the implementation was not confirmed, so it is
+        # reported separately and never lifts the percentage (issue #249: one unrelated PR
+        # made every case "covered" and the dashboard read 100%).
+        covered_ids, partial_ids, dev_tested_ids, pr_rows = set(), set(), set(), []
         # Excluded PRs are ignored in coverage (still visible in Gap Analysis,
         # flagged) — a QA lead can drop outdated/junk PRs from the calculation.
         prs = [p for p in self.list_prs(feature_id=fid) if not p.get("excluded")]
@@ -259,11 +263,17 @@ class CodeCoverageMixin(_Base):
         evidence = []   # per covered (case, PR) with link + rationale
         for pr in prs:
             cov = self.coverage.find_one({"pr_id": pr["id"]})
-            cset = []
+            pr_covered = pr_partial = 0   # this PR's own counts; must match the headline rule
             if cov:
                 for c in cov.get("covered", []):
                     tcid = c.get("test_case_id")
-                    covered_ids.add(tcid); cset.append(tcid)
+                    # Entries stored before `status` existed were all full coverage.
+                    if c.get("status", "covered") == "covered":
+                        covered_ids.add(tcid)
+                        pr_covered += 1
+                    else:
+                        partial_ids.add(tcid)
+                        pr_partial += 1
                     if c.get("by_dev_test"):
                         dev_tested_ids.add(tcid)
                     case = self.cases.find_one({"_id": ObjectId(tcid)}, {"title": 1}) if tcid else None
@@ -277,14 +287,19 @@ class CodeCoverageMixin(_Base):
             repos_seen[pr.get("repo_id")] = repos_seen.get(pr.get("repo_id"), 0) + 1
             pr_rows.append({"number": pr.get("number"), "title": pr.get("title"),
                             "repo": pr.get("repo_full_name"), "state": pr.get("state"),
-                            "url": pr.get("url"), "covered_count": len(cset),
+                            "url": pr.get("url"), "covered_count": pr_covered,
+                            "partial_count": pr_partial,
                             "notice": (cov or {}).get("notice", ""),
                             "dev_tests": len((cov or {}).get("dev_test_files", []))})
         total = len(all_cases)
+        # A case another PR fully covers is covered, not partial.
+        partial_only = (partial_ids - covered_ids) & set(all_cases)
         return {
             "feature_id": fid, "total_test_cases": total,
             "covered": len(covered_ids & set(all_cases)),
+            "partial": len(partial_only),
             "uncovered": total - len(covered_ids & set(all_cases)),
+            "partial_pct": round(100 * len(partial_only) / total, 1) if total else 0,
             "dev_tested": len(dev_tested_ids & set(all_cases)),
             "pr_count": len(prs), "repos_touched": len(repos_seen),
             "prs": pr_rows, "evidence": evidence,

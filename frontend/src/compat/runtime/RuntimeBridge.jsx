@@ -95,6 +95,21 @@ export default function RuntimeBridge() {
 
   if (!failed) return null;
 
+    // Unsubscribe this effect, but keep the runtime's single-page listeners/timers.
+    // The shared loader and window guard prevent StrictMode from double wiring.
+    return () => {
+      active = false;
+    };
+  }, [attempt]);
+
+  function retry() {
+    if (retryPending.current) return;
+    retryPending.current = true;
+    setPending(true);
+    setAttempt((previous) => previous + 1);
+  }
+
+  if (!failed) return null;
   return (
     <div
       role="alert"
@@ -116,4 +131,5 @@ export default function RuntimeBridge() {
       </button>
     </div>
   );
+}
 }

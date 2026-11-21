@@ -199,7 +199,10 @@ window.manageAccess = async (id) => {
     toast("Project access updated");
     loadUsers();
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't update project access",
+    });
   }
 };
 // ---- project-access picker (invite form) ----
@@ -277,12 +280,20 @@ $("#u-invite").onclick = async () => {
     $("#u-name").value = "";
     const msg = (r && r.message) || "User created.";
     $("#u-msg").innerHTML = esc(msg);
-    if (r && (r.delivery === "refused" || r.delivery === "error"))
-      toast(msg, true);
-    else toast(msg);
+    if (r && (r.delivery === "refused" || r.delivery === "error")) {
+      toast(msg, {
+        type: "warn",
+        title: "User created, but invitation email failed",
+      });
+    } else {
+      toast(msg);
+    }
     loadUsers();
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't invite user",
+    });
   }
 };
 window.setUserRole = async (id, role) => {
@@ -308,7 +319,10 @@ window.setUserRole = async (id, role) => {
     toast(`Role changed to ${role}.`);
     loadUsers();
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't change user role",
+    });
     loadUsers();
   }
 };
@@ -322,7 +336,10 @@ window.toggleUser = async (id, active) => {
     toast(active ? "Enabled" : "Disabled");
     loadUsers();
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't update user status",
+    });
   }
 };
 window.delUser = async (id, email) => {
@@ -333,7 +350,10 @@ window.delUser = async (id, email) => {
     toast("User deleted");
     loadUsers();
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't delete user",
+    });
   }
 };
 window.resendInvite = async (id, email) => {
@@ -341,12 +361,20 @@ window.resendInvite = async (id, email) => {
     const r = await api(`/api/users/${id}/resend-invite`, { method: "POST" });
     const msg = (r && r.message) || "Invite re-sent.";
     $("#u-msg").innerHTML = esc(msg);
-    if (r && (r.delivery === "refused" || r.delivery === "error"))
-      toast(msg, true);
-    else toast(msg);
+    if (r && (r.delivery === "refused" || r.delivery === "error")) {
+      toast(msg, {
+        type: "warn",
+        title: "Invitation email not sent",
+      });
+    } else {
+      toast(msg);
+    }
     loadUsers();
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't resend invitation",
+    });
   }
 };
 window.cancelInvite = async (id, email) => {
@@ -364,7 +392,10 @@ window.cancelInvite = async (id, email) => {
     toast("Invite cancelled");
     loadUsers();
   } catch (e) {
-    toast(e.message, true);
+    toast(e.message, {
+      type: "err",
+      title: "Couldn't cancel invitation",
+    });
   }
 };
 async function loadAudit() {
