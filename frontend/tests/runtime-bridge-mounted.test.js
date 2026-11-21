@@ -17,12 +17,21 @@ const bridgeUrl = new URL(
   "../src/compat/runtime/RuntimeBridge.jsx",
   import.meta.url,
 );
+const bridgeSource = readFileSync(bridgeUrl, "utf8").replace(
+  /\(\) => import\("(\.\/controllers\/[^"]+\?raw)"\)/g,
+  (_, path) => `() => __importController(${JSON.stringify(path)})`,
+);
 const { code } = await transformWithEsbuild(
-  readFileSync(bridgeUrl, "utf8"),
+  bridgeSource,
   bridgeUrl.pathname,
   { loader: "jsx", jsx: "automatic", format: "cjs" },
 );
 const require = createRequire(import.meta.url);
+
+async function flushRuntime() {
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+}
 
 test("Tailwind compiles the recovery panel's stacking utility above the login screen", async () => {
   const frontendDirectory = fileURLToPath(new URL("../", import.meta.url));
@@ -38,7 +47,10 @@ test("Tailwind compiles the recovery panel's stacking utility above the login sc
   assert.match(css, /\.z-\\\[10000\\\]\s*\{\s*z-index: 10000/);
 });
 
-function harness(t, { failures = 0, ready = false } = {}) {
+function harness(
+  t,
+  { failures = 0, importFailures = 0, ready = false } = {},
+) {
   const dom = new JSDOM('<div id="root"></div>', {
     url: "http://localhost/",
   });
@@ -64,6 +76,7 @@ function harness(t, { failures = 0, ready = false } = {}) {
   const failure = new Error("temporary runtime insertion failure");
   const logs = [];
   let attempts = 0;
+  let importAttempts = 0;
   const appendChild = document.body.appendChild;
   document.body.appendChild = function (node) {
     if (node.dataset?.wardeniqRuntime === "compat") {
@@ -78,10 +91,14 @@ function harness(t, { failures = 0, ready = false } = {}) {
     module,
     exports: module.exports,
     require(path) {
-      if (path.startsWith("./controllers/") && path.endsWith("?raw")) {
-        return readFileSync(new URL(path.slice(0, -4), bridgeUrl), "utf8");
-      }
       return require(path);
+    },
+    __importController(path) {
+      importAttempts++;
+      if (importAttempts <= importFailures) return Promise.reject(failure);
+      return Promise.resolve({
+        default: readFileSync(new URL(path.slice(0, -4), bridgeUrl), "utf8"),
+      });
     },
     window,
     document,
@@ -127,6 +144,7 @@ function harness(t, { failures = 0, ready = false } = {}) {
         root.render(
           strict ? React.createElement(React.StrictMode, null, element) : element,
         );
+        await flushRuntime();
       });
     },
     mountAndUnmountBeforeSettling() {
@@ -169,7 +187,7 @@ test("the mounted bridge recovers through Retry without remounting", async (t) =
   assert.equal(h.button.textContent, "Retrying...");
   assert.equal(h.alert.getAttribute("aria-busy"), "true");
   assert.equal(h.attempts, 1);
-  await act(async () => {});
+  await act(flushRuntime);
 
   assert.equal(h.attempts, 2);
   assert.equal(h.scripts.length, 1);
@@ -197,12 +215,34 @@ test("another mounted retry failure keeps the action available until success", a
   assert.equal(h.alert, null);
 });
 
+test("a failed controller import is retryable without remounting", async (t) => {
+  const h = harness(t, { importFailures: 1 });
+  await h.mount();
+
+  assert.equal(h.attempts, 0);
+  assert.equal(h.scripts.length, 0);
+  assert.match(h.alert.textContent, /WardenIQ could not initialize/);
+  assert.equal(h.logs.length, 1);
+
+  await act(async () => {
+    h.clickRetry();
+    await flushRuntime();
+  });
+
+  assert.equal(h.attempts, 1);
+  assert.equal(h.scripts.length, 1);
+  assert.equal(h.window.__WARDENIQ_RUNTIME_READY__, true);
+  assert.equal(h.alert, null);
+});
+
 test("a successful mount initializes once without an error panel", async (t) => {
   const h = harness(t);
   await h.mount();
 
   assert.equal(h.attempts, 1);
   assert.equal(h.scripts.length, 1);
+  assert.match(h.scripts[0].textContent, /Legacy JavaScript/);
+  assert.doesNotMatch(h.scripts[0].textContent, /\[object Module\]/);
   assert.equal(h.window.__WARDENIQ_RUNTIME_READY__, true);
   assert.equal(h.alert, null);
   assert.deepEqual(h.logs, []);
@@ -236,7 +276,7 @@ test("StrictMode replay shares initialization and retains UI-driven recovery", a
 test("unmounting before failure settles ignores the stale effect result", async (t) => {
   const h = harness(t, { failures: 1 });
   h.mountAndUnmountBeforeSettling();
-  await act(async () => {});
+  await act(flushRuntime);
 
   assert.equal(h.attempts, 1);
   assert.equal(h.scripts.length, 0);

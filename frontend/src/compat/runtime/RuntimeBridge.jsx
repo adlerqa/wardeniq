@@ -1,25 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 
-const runtimeChunks = await Promise.all([
-  import("./controllers/00-core.js?raw"),
-  import("./controllers/01-dashboard.js?raw"),
-  import("./controllers/02-projects.js?raw"),
-  import( "./controllers/03-features-and-usage.js?raw"),
-  import("./controllers/04-test-cases.js?raw"),
-  import("./controllers/05-step-workflows.js?raw"),
-  import("./controllers/06-configuration.js?raw"),
-  import("./controllers/07-library-and-crud.js?raw"),
-  import("./controllers/08-code-analysis-and-cycles.js?raw"),
-  import("./controllers/09-mind-map-and-jobs.js?raw"),
-  import("./controllers/10-auth.js?raw"),
-  import("./controllers/11-users.js?raw"),
-  import("./controllers/12-validator.js?raw"),
-  import("./controllers/13-gap-analysis.js?raw"),
-  import("./controllers/14-test-plan.js?raw"),
-  import("./controllers/15-imports.js?raw"),
-  import("./controllers/16-boot.js?raw"),
-  import("./controllers/17-api-tokens.js?raw")
-]);
+const runtimeChunkImports = [
+  () => import("./controllers/00-core.js?raw"),
+  () => import("./controllers/01-dashboard.js?raw"),
+  () => import("./controllers/02-projects.js?raw"),
+  () => import("./controllers/03-features-and-usage.js?raw"),
+  () => import("./controllers/04-test-cases.js?raw"),
+  () => import("./controllers/05-step-workflows.js?raw"),
+  () => import("./controllers/06-configuration.js?raw"),
+  () => import("./controllers/07-library-and-crud.js?raw"),
+  () => import("./controllers/08-code-analysis-and-cycles.js?raw"),
+  () => import("./controllers/09-mind-map-and-jobs.js?raw"),
+  () => import("./controllers/10-auth.js?raw"),
+  () => import("./controllers/11-users.js?raw"),
+  () => import("./controllers/12-validator.js?raw"),
+  () => import("./controllers/13-gap-analysis.js?raw"),
+  () => import("./controllers/14-test-plan.js?raw"),
+  () => import("./controllers/15-imports.js?raw"),
+  () => import("./controllers/16-boot.js?raw"),
+  () => import("./controllers/17-api-tokens.js?raw"),
+];
 
 let runtimeLoadPromise;
 
@@ -27,13 +27,16 @@ let runtimeLoadPromise;
 function loadRuntime() {
   if (window.__WARDENIQ_RUNTIME_READY__) return Promise.resolve();
   if (!runtimeLoadPromise) {
-    runtimeLoadPromise = Promise.resolve()
-      .then(() => {
+    runtimeLoadPromise = Promise.all(
+      runtimeChunkImports.map((loadChunk) => loadChunk()),
+    )
+      .then((modules) => {
         if (window.__WARDENIQ_RUNTIME_READY__) return;
 
         // A classic script keeps the concatenated controllers in their shared global scope.
         const script = document.createElement("script");
         script.dataset.wardeniqRuntime = "compat";
+        const runtimeChunks = modules.map((module) => module.default);
         script.textContent = `${runtimeChunks.join("\n")}\n//# sourceURL=wardeniq-compat-runtime.js`;
         document.body.appendChild(script);
         window.__WARDENIQ_RUNTIME_READY__ = true;
