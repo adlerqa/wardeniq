@@ -23,7 +23,7 @@ export default function InviteUserPanel() {
         </div>
         <div style={{ flex: "0 0 140px" }}>
           <label>Role</label>
-          <select id="u-role">
+          <select id="u-role" aria-label="Filter cycles by Role">
             <option value="viewer">Viewer</option>
             <option value="editor">Editor</option>
             <option value="admin">Admin</option>

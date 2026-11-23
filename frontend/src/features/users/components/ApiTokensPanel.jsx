@@ -15,7 +15,7 @@ export default function ApiTokensPanel() {
         </div>
         <div style={{ flex: "0 0 140px" }}>
           <label>Role</label>
-          <select id="at-role">
+          <select id="at-role" aria-label="Filter by Role">
             <option value="viewer">Viewer</option>
             <option value="editor">Editor</option>
           </select>

@@ -45,7 +45,7 @@ export default function ProjectListPanel() {
               first to populate this dropdown.
             </div>
             <div className="cp-jira-row">
-              <select id="new-proj-jira">
+              <select id="new-proj-jira" aria-label="Filter by Project">  
                 <option value="">— none —</option>
               </select>
               <button className="ghost" id="new-proj-jira-refresh" type="button">Reload</button>
@@ -60,7 +60,7 @@ export default function ProjectListPanel() {
             </div>
             <div className="sub" style={{ margin: "0 0 8px" }}>Link a Confluence space to pull design/spec context for this project.</div>
             <div className="cp-jira-row">
-              <select id="new-proj-confluence">
+              <select id="new-proj-confluence" aria-label="Filter by Project">
                 <option value="">— none —</option>
               </select>
               <button className="ghost" id="new-proj-confluence-refresh" type="button">Reload</button>

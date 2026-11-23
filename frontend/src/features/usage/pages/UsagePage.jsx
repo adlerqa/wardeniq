@@ -216,6 +216,7 @@ export default function UsagePage() {
                 <select
                   id="usage-model-filter"
                   className="usage-select"
+                  aria-label="Filter by model"
                 >
                   <option value="">
                     All models
@@ -287,6 +288,7 @@ export default function UsagePage() {
                 <select
                   id="usage-project-filter"
                   className="usage-select"
+                  aria-label="Filter by project"
                 >
                   <option value="">
                     All projects

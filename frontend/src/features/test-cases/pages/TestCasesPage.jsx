@@ -137,12 +137,12 @@ export default function TestCasesPage() {
               <div className="case-filter-field">
                 <label htmlFor="tc-lineage">Reuse</label>
 
-                <select id="tc-lineage">
+                <select id="tc-lineage" aria-label="">
                   <option value="">Generated + reused</option>
 
                   <option value="inherited">Inherited / reused only</option>
 
-                  <option value="created">Created in selected feature</option>
+                  <option value="created" >Created in selected feature</option>
                 </select>
               </div>
             </div>

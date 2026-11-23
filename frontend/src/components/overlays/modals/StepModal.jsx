@@ -64,7 +64,7 @@ export default function StepModal() {
             </div>
 
             <div className="step-modal-select-wrap">
-              <select id="step-modal-prefix">
+              <select id="step-modal-prefix" aria-label="Filter by Prefix">
                 <option value="Given">Given</option>
                 <option value="When">When</option>
                 <option value="Then">Then</option>

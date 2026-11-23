@@ -16,7 +16,7 @@ export default function FeatureCreatePanel() {
           </div>
           <div>
             <label>Ticket key (optional)</label>
-            <select id="f-key">
+            <select id="f-key" aria-label="Filter by Key">
               <option value="">No Jira ticket</option>
             </select>
           </div>

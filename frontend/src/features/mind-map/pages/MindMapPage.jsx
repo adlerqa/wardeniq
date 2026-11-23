@@ -681,8 +681,8 @@ const handleResetInteraction = () => {
 
           <div className="mindmap-controls">
             <div className="mindmap-control-project">
-              <label>Project</label>
-              <select id="mm-proj"></select>
+              <label aria-label="mind-map-project">Project</label>
+              <select id="mm-proj" aria-label="Filter by Mind Map"></select>
             </div>
 
             <button
