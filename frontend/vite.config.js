@@ -17,6 +17,6 @@ export default defineConfig({
   build: {
     outDir: "../app/static-react",
     emptyOutDir: true,
-    sourcemap: true,
+    sourcemap: false,
   },
 });

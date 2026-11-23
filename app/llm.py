@@ -3,6 +3,7 @@ Mistral / any OpenAI-compatible endpoint). One `chat_json` entrypoint; the rest 
 the app never cares which provider is configured.
 """
 import json
+import math
 import os
 
 import httpx
@@ -19,9 +20,15 @@ log = get_logger("llm")
 # source code shown to the reviewer from this same number).
 OLLAMA_MAX_NUM_CTX = int(os.getenv("OLLAMA_MAX_NUM_CTX", "8192"))
 
+# The output limit sent to a provider that cannot run without one (Anthropic, Bedrock) when
+# the caller did not choose one. It used to be chat_json's own default; that default is now
+# None, so a caller that never chose a limit does not get one imposed on a local Ollama model
+# (see _raw_chat), while those two providers receive exactly what they always did.
+DEFAULT_MAX_TOKENS = 4000
+
 
 def _timeout_from_env(raw: str | None) -> float | None:
-    """Parse LLM_TIMEOUT_SECONDS. Blank, invalid or non-positive means "unset"."""
+    """Parse LLM_TIMEOUT_SECONDS. Blank, invalid or non-finite/non-positive means "unset"."""
     value = (raw or "").strip()
     if not value:
         return None
@@ -30,8 +37,10 @@ def _timeout_from_env(raw: str | None) -> float | None:
     except ValueError:
         log.warning("Ignoring LLM_TIMEOUT_SECONDS=%r: not a number", value)
         return None
-    if seconds <= 0:
-        log.warning("Ignoring LLM_TIMEOUT_SECONDS=%r: must be greater than 0", value)
+    if not math.isfinite(seconds) or seconds <= 0:
+        log.warning(
+            "Ignoring LLM_TIMEOUT_SECONDS=%r: must be finite and greater than 0", value
+        )
         return None
     return seconds
 
@@ -132,7 +141,7 @@ class LLM:
             modelId=self.model,
             system=[{"text": system + " Respond with a single JSON object only."}],
             messages=[{"role": "user", "content": [{"text": user}]}],
-            inferenceConfig={"temperature": temperature, "maxTokens": max_tokens},
+            inferenceConfig={"temperature": temperature, "maxTokens": max_tokens or DEFAULT_MAX_TOKENS},
         )
         u = resp.get("usage") or {}
         usage.record(self.model, u.get("inputTokens", 0), u.get("outputTokens", 0), kind="llm")
@@ -147,7 +156,7 @@ class LLM:
 
     # ---- unified JSON chat ---------------------------------------------------
     def chat_json(self, system: str, user: str, num_ctx: int = 8192,
-                  temperature: float = 0.2, max_tokens: int = 4000, retries: int = 1) -> dict:
+                  temperature: float = 0.2, max_tokens: int | None = None, retries: int = 1) -> dict:
         last = None
         for _ in range(retries + 1):
             try:
@@ -168,8 +177,10 @@ class LLM:
         if self.provider == "bedrock":
             # Bedrock never honoured the per-call timeouts: unset LLM_TIMEOUT_SECONDS keeps
             # botocore's own 60 s connect/read timeout, which retries a timed-out call.
-            timeout = (timeout_seconds or LLM_TIMEOUT_SECONDS
-                       if LLM_TIMEOUT_SECONDS is not None else None)
+            if LLM_TIMEOUT_SECONDS is None:
+                timeout = None
+            else:
+                timeout = timeout_seconds or LLM_TIMEOUT_SECONDS
             return self._bedrock_chat(system, user, temperature, max_tokens,
                                       timeout_seconds=timeout)
         if self.provider == "ollama":
@@ -179,13 +190,21 @@ class LLM:
             # RAM to spare, raising OLLAMA_MAX_NUM_CTX widens the code window and directly
             # improves coverage accuracy. Default is unchanged at 8192.
             ollama_ctx = min(num_ctx or 8192, OLLAMA_MAX_NUM_CTX)
+            options = {"temperature": temperature, "num_ctx": ollama_ctx}
+            # An output limit the caller chose is sent as num_predict. Ollama otherwise lets a
+            # reply run until the client's timeout, and a small model that falls into a
+            # repetition loop writes thousands of tokens (about 20,000 in 30 minutes in one
+            # observed run). None means the caller chose no limit, so none is imposed; a limit
+            # nobody tuned for this model could cut off an answer that used to finish.
+            if max_tokens and max_tokens > 0:
+                options["num_predict"] = int(max_tokens)
             r = httpx.post(f"{self.ollama_url}/api/chat",
                            timeout=timeout_seconds or resolve_timeout(300.0),
                            headers=self._ollama_headers(), json={
                 "model": self.model, "stream": False, "format": "json",
                 "messages": [{"role": "system", "content": system},
                              {"role": "user", "content": user}],
-                "options": {"temperature": temperature, "num_ctx": ollama_ctx}})
+                "options": options})
             # Ollama answers 404 when the model isn't pulled yet — turn that into an
             # actionable instruction instead of a bare HTTP error.
             if r.status_code == 404:
@@ -197,6 +216,11 @@ class LLM:
             data = r.json()
             usage.record(self.model, data.get("prompt_eval_count", 0),
                          data.get("eval_count", 0), kind="llm")
+            if options.get("num_predict") and data.get("done_reason") == "length":
+                # The reply was cut off at the limit, so the JSON is probably truncated; the
+                # repair step in the generation pipeline expects exactly this.
+                log.warning("ollama reply for %s was cut off at its %d-token output limit",
+                            self.model, options["num_predict"])
             # Ollama can return "content": null (e.g. an empty/truncated generation)
             # instead of "" — normalize so every caller can rely on a plain string
             # ("" meaning "no content") regardless of which provider answered.
@@ -207,7 +231,7 @@ class LLM:
                            headers={"x-api-key": self.api_key,
                                     "anthropic-version": "2023-06-01",
                                     "content-type": "application/json"},
-                           json={"model": self.model, "max_tokens": max_tokens,
+                           json={"model": self.model, "max_tokens": max_tokens or DEFAULT_MAX_TOKENS,
                                  "system": system + " Respond with a single JSON object only.",
                                  "messages": [{"role": "user", "content": user}]})
             if r.status_code in (400, 404):
@@ -312,6 +336,72 @@ class LLM:
             return {"ok": bool(self.model and self.region), "provider": "bedrock"}
         # hosted: we can't cheaply ping without spending a call; report config state
         return {"ok": bool(self.api_key and self.model), "provider": self.provider}
+
+    def _ollama_loaded_models(self):
+        """What Ollama's `/api/ps` lists as loaded right now: a list (empty when nothing is
+        loaded), or None when Ollama cannot be reached or the answer cannot be read."""
+        try:
+            r = httpx.get(f"{self.ollama_url}/api/ps", timeout=2.0,
+                          headers=self._ollama_headers())
+            r.raise_for_status()
+            listed = r.json().get("models") or []
+        except Exception:  # noqa: BLE001 — unreachable, not JSON, or not an object
+            return None
+        loaded = [m for m in listed if isinstance(m, dict)]
+        return None if listed and not loaded else loaded   # unreadable entries are not "empty"
+
+    @staticmethod
+    def _placement(loaded: list):
+        """"cpu", "gpu" or "mixed" from `/api/ps` entries, or None if the sizes make no sense.
+
+        Each entry has `size` (the model's total bytes) and `size_vram` (the bytes held in
+        GPU memory): 0 means it runs on CPU, all of it means GPU, in between is split. The
+        server's hardware decides this, not one model, so every loaded model counts.
+        """
+        try:
+            total = sum(int(m.get("size") or 0) for m in loaded)
+            vram = sum(int(m.get("size_vram") or 0) for m in loaded)
+        except (TypeError, ValueError):
+            return None
+        if total <= 0:
+            return None
+        if vram <= 0:
+            return "cpu"
+        return "gpu" if vram >= total * 0.98 else "mixed"   # 0.98: "all of it" is not always exact
+
+    def accelerator(self, probe_model: str = "") -> dict:
+        """Where does a local Ollama model run: "cpu", "gpu", "mixed" or "unknown"?
+
+        Used to warn before a long generation on a CPU. Only Ollama has an answer, so every
+        other provider returns `{"accelerator": None}` (nothing to say).
+
+        It is always a measurement and never a guess. Ollama's `/api/ps` reports where each
+        loaded model lives. On a first run, or after Ollama has unloaded everything, nothing
+        is loaded and there is nothing to read; then `probe_model` (the small embedding model
+        the app uses anyway) is loaded with a one-word embedding, which takes well under a
+        second, and `/api/ps` is read again. The URL is deliberately not used to guess:
+        the "bundled" URL setting can point at the container (CPU) or at a native Ollama on
+        the host (often a GPU), and only the server knows. If Ollama cannot be reached, the
+        model cannot be loaded, or the answer is not understood, nothing is claimed
+        ("unknown"), so a wrong warning is never shown.
+        """
+        if self.provider != "ollama":
+            return {"accelerator": None}
+        unknown = {"accelerator": "unknown"}
+        loaded = self._ollama_loaded_models()
+        if loaded is None:
+            return unknown
+        if not loaded and probe_model:
+            try:
+                r = httpx.post(f"{self.ollama_url}/api/embed", timeout=15.0,
+                               headers=self._ollama_headers(),
+                               json={"model": probe_model, "input": "x"})
+                r.raise_for_status()
+            except Exception:  # noqa: BLE001 — not pulled, unreachable, or refused
+                return unknown
+            loaded = self._ollama_loaded_models()
+        where = self._placement(loaded) if loaded else None
+        return {"accelerator": where or "unknown"}
 
     def ping(self) -> dict:
         """Active check: do a tiny JSON round-trip (used by the 'test' button)."""

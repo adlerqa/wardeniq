@@ -1,9 +1,11 @@
 import concurrent.futures
 import json
+import math
 import os
 import re
 import time
 
+import carry_gate
 import usage
 from core.logging_setup import get_logger
 from llm import resolve_timeout
@@ -20,6 +22,7 @@ from testgen.prompt_builder import (
     build_raw_api_spec_from_documents,
     build_repair_prompt,
     build_ui_agent_prompt,
+    collect_evidence_lines,
     filter_hallucinated_entities,
     filter_prompt_exemplar_copies_with_reasons,
     is_few_shot_leak,
@@ -27,6 +30,7 @@ from testgen.prompt_builder import (
     REASON_DUPLICATE,
     REASON_EDGE_SUPPRESSED,
     REASON_NO_SOURCE_GROUNDING,
+    REASON_UI_RULE_NOT_IN_DOCUMENTS,
 )
 from testgen.lineage import (
     REUSE_SIMILARITY_API,
@@ -173,9 +177,24 @@ def _raw_llm_call(llm, system_prompt, user_prompt, num_ctx, temperature,
         )
 
 
-def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=4000,
+def _repair_limit(max_tokens):
+    """The output limit for the call that repairs a reply, or None when the caller chose none.
+
+    A reply cut off at its limit is truncated JSON, and the repair call has to write the
+    whole object out again, which is at least as long as the truncated text. Giving the
+    repair the same limit would cut it off at the same place again, so both attempts would
+    fail. A quarter more, plus a little for the closing brackets, lets it finish.
+    """
+    return int(max_tokens * 1.25) + 256 if max_tokens else None
+
+
+def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=None,
                               attempts=2, timeout_seconds=None) -> dict:
-    """Retry transport/parse failures and use the model itself to repair malformed JSON."""
+    """Retry transport/parse failures and use the model itself to repair malformed JSON.
+
+    `max_tokens` is the caller's own output limit (a local Ollama model is held to it; see
+    LLM._raw_chat). The default None means the caller chose none: no limit is imposed on
+    Ollama, and the providers that require one get their usual default."""
     if timeout_seconds is None:
         timeout_seconds = resolve_timeout(300)
     last_error = None
@@ -206,7 +225,7 @@ def call_llm_json_with_repair(llm, system_prompt, user_prompt, max_tokens=4000,
                         repair_prompt,
                         8192,
                         0.0,
-                        max_tokens,
+                        _repair_limit(max_tokens),
                         timeout_seconds,
                     )
                     return _json_object(repaired)
@@ -780,6 +799,113 @@ def _filter_ungrounded_suite_cases(cases: list[dict], corpus: str) -> list[dict]
     return kept
 
 
+# --- UI rule evidence check ---------------------------------------------------------
+# A UI validation is a claim about the product: "this field is required", "this one takes
+# at most 100 characters". _filter_ui_tests() only proves the FIELD exists in the
+# documents, and _case_has_source_grounding() passes on one shared word, so a model asked
+# for UI validations on a document that names a field but states no rule for it (a "Sort
+# by" dropdown, a brand filter) invented the usual rules and every one was kept (a real
+# run: "Sort by is required", "Other brands must be unchecked", "select at least one
+# brand"; none are in the documents).
+#
+# The prompt now shows the documents as numbered lines ([E1] [E2] ...; see
+# collect_evidence_lines) and every validation must cite the numbers of the lines that
+# state its rule. Citing a number is something every model can do; copying a sentence
+# exactly is not. This check then compares the validation with the lines it cites, by
+# plain text comparison (no model call, same on every provider). It is kept only when:
+#   1. it cites at least one line, and every cited number is a real line;
+#   2. the cited lines mention the field the validation is about;
+#   3. every number in its intent / expected behaviour is in the cited lines;
+#   4. nearly all the words of its intent (apart from the field's own words) are in the
+#      cited lines: at most a quarter may be missing, and one word may always be missing,
+#      so a line that only NAMES the field cannot back a rule it never states ("must be
+#      selected" is not in a line that says "Sort by price/relevance").
+# Not checked: the wording of an error message, and whether the rule was understood
+# correctly; only that the cited lines say something that supports it.
+_UI_CLAIM_UNSUPPORTED_SHARE = 0.25  # of the intent's words; one word may always be missing
+_UI_MAX_CITATIONS = 3
+_UI_CHECK_STOP = _SOURCE_GROUNDING_STOP | {
+    "the", "and", "for", "are", "was", "can", "not", "any", "all", "its", "has", "but",
+    "you", "your", "should", "would", "could", "may", "might", "user", "users", "than",
+    "less", "more", "field", "value", "input", "page", "form",
+}
+_UI_CHECK_WORD = re.compile(r"[a-z0-9]+")
+_UI_CITATION = re.compile(r"[Ee]?\s*(\d+)")
+
+
+def _ui_check_words(text: str) -> set[str]:
+    """Lowercase content words and numbers of a text, plural 's' removed; small words and
+    filler dropped. Numbers stay: they are the most checkable part of a rule."""
+    words = set()
+    for word in _UI_CHECK_WORD.findall(str(text or "").lower()):
+        if word in _UI_CHECK_STOP or (len(word) < 3 and not word.isdigit()):
+            continue
+        words.add(word if word.isdigit() else _stem(word))
+    return words
+
+
+def _cited_lines(case: dict, lines_by_id: dict[str, str]) -> tuple[list[str], list[str]]:
+    """(texts of the cited lines that exist, cited ids that do not exist)."""
+    raw = case.get("evidence")
+    parts = raw if isinstance(raw, (list, tuple)) else [raw]
+    ids = []
+    for part in parts:
+        ids.extend(f"E{n}" for n in _UI_CITATION.findall(str(part or "")))
+    ids = list(dict.fromkeys(ids))[:_UI_MAX_CITATIONS]
+    return [lines_by_id[i] for i in ids if i in lines_by_id], [i for i in ids if i not in lines_by_id]
+
+
+def _ui_rule_evidence_problem(case: dict, lines_by_id: dict[str, str]) -> str | None:
+    """None when the cited lines back the validation, else a short plain reason (logged,
+    so a dropped case can be explained)."""
+    cited, unknown = _cited_lines(case, lines_by_id)
+    if unknown:
+        return "cites a line that does not exist: " + ", ".join(unknown)
+    if not cited:
+        return "no evidence cited"
+    cited_words = _ui_check_words(" ".join(cited))
+    field_words = _ui_check_words(case.get("field") or case.get("element") or "")
+    if field_words and len(field_words & cited_words) / len(field_words) < 0.5:
+        return "the cited lines do not mention the field"
+    claimed = _NUMBER_TOKEN.findall(
+        f"{case.get('intent') or ''} {case.get('expected_behavior') or ''}"
+    )
+    # "2.5" is two tokens in the lines ("2", "5"), so compare digit groups.
+    missing = sorted({n for n in claimed if not set(re.findall(r"\d+", n)) <= cited_words})
+    if missing:
+        return "number not in the cited lines: " + ", ".join(missing)
+    claim_words = _ui_check_words(case.get("intent") or "") - field_words
+    unsupported = claim_words - cited_words
+    if len(unsupported) > max(1, int(len(claim_words) * _UI_CLAIM_UNSUPPORTED_SHARE)):
+        return "the cited lines do not state this rule"
+    return None
+
+
+def _filter_ui_rules_with_reasons(
+    cases: list[dict], evidence_lines: list[dict]
+) -> tuple[list[dict], list[tuple[dict, str]]]:
+    lines_by_id = {line["id"]: line["text"] for line in evidence_lines or []}
+    kept, rejected = [], []
+    for case in cases or []:
+        if not isinstance(case, dict):
+            continue
+        problem = _ui_rule_evidence_problem(case, lines_by_id)
+        if problem is None:
+            # Some models put angle brackets around a real label (they copy the example's
+            # placeholder style): "<Search box>" is the field "Search box".
+            case = dict(case)
+            for key in ("field", "element"):
+                value = case.get(key)
+                if isinstance(value, str) and value.strip().startswith("<") and value.strip().endswith(">"):
+                    case[key] = value.strip()[1:-1].strip()
+            kept.append(case)
+        else:
+            log.info('[TestGen][ui-rule] dropped field="%s": %s',
+                     case.get("field") or case.get("element") or "?", problem)
+            rejected.append((case, REASON_UI_RULE_NOT_IN_DOCUMENTS))
+    return kept, rejected
+
+
 # --- Category evidence sufficiency (deterministic, pre-generation) -------------------
 # The grounding filters above are all POST-generation: they drop what the model already
 # invented. That is the right shape for "this case's content isn't backed", but it is
@@ -1045,6 +1171,36 @@ def _apply_delta(existing: list, delta: dict, category: str) -> list[dict]:
 
 FOCUS_NAMES = ("functional", "e2e", "api", "nfr", "ui")
 _FOCUS_DEFAULT = 100.0 / len(FOCUS_NAMES)  # even split across the 5 sliders
+
+
+def _business_fallback_request(requirement_count, have, acceptable_min, others, focus, total,
+                               smoke_mode=False):
+    """How many business tests the fallback call should ask the model for.
+
+    The fallback used to be told to write one test per extracted requirement (about 20 for
+    a typical PRD). `_budget_suites` then keeps only the business suite's share of the pool
+    (about 8 to 9 with the default even focus split), and the duplicate filter drops the
+    repeats a small model writes when it is asked for more distinct tests than it can think
+    of. So it asks for what will actually be used: the larger of the suite size the code
+    itself calls acceptable and the number `_budget_suites` will keep, minus the business
+    tests the E2E call already produced. `others` holds the pool counts of the other
+    categories ("api", "ui", "e2e", "nfr") before trimming, which can only overestimate the
+    pool, so this errs towards asking for a few too many rather than too few.
+    """
+    weights = {name: max(0.0, float((focus or {}).get(name, _FOCUS_DEFAULT))) for name in FOCUS_NAMES}
+    weight_sum = sum(weights.values()) or 100.0
+    share = weights["functional"] / weight_sum
+    if smoke_mode:
+        kept_by_budget = round(max(0, int(total)) * share)
+    else:
+        rest = sum(count for name, count in others.items() if weights.get(name, 0) > 0)
+        # pool = rest + b and b = share * pool  ->  b = share * rest / (1 - share).
+        # With no other category left, nothing is trimmed and every rule is kept.
+        kept_by_budget = requirement_count if share >= 1 else math.ceil(share * rest / (1 - share))
+    wanted = max(int(acceptable_min), int(kept_by_budget)) - int(have)
+    if requirement_count > 0:
+        wanted = min(wanted, int(requirement_count))
+    return max(1, wanted)
 
 
 def _budget_suites(suites: dict, total: int, focus: dict, smoke_mode=False) -> dict:
@@ -1358,6 +1514,12 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     version = int(feature.get("version") or 1)
     total = max(1, int(params.get("total") or 16))
     focus = params.get("focus") or {name: _FOCUS_DEFAULT for name in FOCUS_NAMES}
+    # Match _budget_suites: omitted shares retain their default, explicit zero
+    # shares must not spend model time generating cases we will discard later.
+    enabled = {
+        name: max(0.0, float(focus.get(name, _FOCUS_DEFAULT))) > 0
+        for name in FOCUS_NAMES
+    }
 
     chunks = list(store.fchunks.find({"feature_id": feature_id}))
     rag_context = {
@@ -1408,6 +1570,14 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     # every grounding comparison keeps using the lowercased form exactly as before.
     evidence_text = _evidence_corpus(context, rag_context)
     corpus = evidence_text.lower()
+    # The documents as numbered lines: shown to the UI/repair prompts, and used to check
+    # the citations in what they return (one list, so both sides agree on the numbers).
+    ui_evidence_lines = collect_evidence_lines([
+        raw_text,
+        context.get("featureDescription"),
+        *(item.get("text") for item in chunks),
+        (context.get("summaries") or {}).get("figma"),
+    ])
     entities = [
         item for item in filter_hallucinated_entities(
             _as_list(grounded.get("grounded_entities")), corpus
@@ -1550,20 +1720,24 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
             29,
         )
     inherited_reused = inherited_rebuilt = 0
+    inherited_rejected = []
     errors = []
     fusion = {}
-    try:
-        fusion = call_llm_json_with_repair(
-            llm, SYSTEM, build_fusion_pass_prompt(context, project_tests), max_tokens=6000
-        )
-    except Exception as exc:  # noqa: BLE001 -- Fusion is an optimization (cross-feature
-        # reuse detection), not a requirement for generating this feature's own tests.
-        # A failure here -- an oversized prompt the budget above didn't fully prevent, a
-        # transient provider error, anything -- must not take the whole run down; it
-        # degrades to "no inheritance candidates this run" and fresh generation
-        # continues normally, exactly like the E2E/business worker failures below
-        # already degrade instead of crashing the pipeline.
-        errors.append(f"Fusion pass failed: {exc}")
+    if project_tests or previous_cases:
+        try:
+            fusion = call_llm_json_with_repair(
+                llm, SYSTEM, build_fusion_pass_prompt(context, project_tests), max_tokens=6000
+            )
+        except Exception as exc:  # noqa: BLE001 -- Fusion is an optimization (cross-feature
+            # reuse detection), not a requirement for generating this feature's own tests.
+            # A failure here -- an oversized prompt the budget above didn't fully prevent, a
+            # transient provider error, anything -- must not take the whole run down; it
+            # degrades to "no inheritance candidates this run" and fresh generation
+            # continues normally, exactly like the E2E/business worker failures below
+            # already degrade instead of crashing the pipeline.
+            errors.append(f"Fusion pass failed: {exc}")
+    else:
+        log_progress(update_job_fn, "Fusion skipped: no existing test candidates", 30)
     context["summaries"]["alreadyCovered"] = str(fusion.get("already_covered_summary") or "")
     log_progress(
         update_job_fn,
@@ -1590,6 +1764,17 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                 original = store.get_case(original["id"]) or original
         if not original:
             continue
+        # A test from this feature's own previous version is the same feature and is
+        # carried as before. A test from another feature is carried only when this
+        # feature's documents are about what it checks (see carry_gate.py): the model's
+        # pick alone attached nine Google-login tests to a product-search feature.
+        from_previous_version = any(case.get("id") == original.get("id") for case in previous_cases)
+        if not from_previous_version:
+            problem = carry_gate.relevance_problem(original, evidence_text)
+            if problem:
+                inherited_rejected.append({"title": original.get("title") or original.get("id"),
+                                           "reason": problem})
+                continue
         mode = str(reference.get("mode") or "").upper()
         if mode == "INHERIT_EXACT":
             store.associate(feature_id, original["id"], "carried", None)
@@ -1636,10 +1821,25 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                 inherited_rebuilt += 1
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"Inherited test repair failed: {exc}")
+    if inherited_rejected:
+        log_progress(
+            update_job_fn,
+            f"Fusion: {len(inherited_rejected)} test(s) of other features not carried over "
+            "because this feature's documents are not about them",
+            34,
+        )
+        for item in inherited_rejected:
+            log.info('[TestGen][fusion] not carried "%s": %s', item["title"], item["reason"])
+    # "Already covered, do not write tests for X" is handed to the agents that write this
+    # feature's tests. It is only true of tests that are in this feature's suite, so with
+    # nothing carried over the model's summary describes coverage this feature does not have
+    # (in the real run it claimed this feature's own endpoints were "fully covered").
+    if not (inherited_reused + inherited_rebuilt):
+        context["summaries"]["alreadyCovered"] = ""
     _mark("fusion")
 
     log_progress(update_job_fn, "DAG layer 1: generating API and UI tests", 38)
-    api_chunks = _chunks(api_surface, 8) or [[]]
+    api_chunks = (_chunks(api_surface, 8) or [[]]) if enabled["api"] else []
     # UI generation is conditioned on UI evidence actually existing. When ui_components
     # is empty -- Pass 1 grounded no UI element AND _derive_ui_components() found no
     # control in the raw document -- the previous `else [[]]` still queued one UI worker
@@ -1651,7 +1851,13 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     # byte-for-byte the previous behavior (one broad worker plus one per component
     # group), so genuine UI generation is untouched: an evidence-conditioned trigger,
     # not a suppression of the UI category.
-    ui_chunks = [[], *_chunks(ui_components, 25)] if evidence_sufficient["ui"] else []
+    ui_chunks = (
+        [[], *_chunks(ui_components, 25)]
+        if enabled["ui"] and evidence_sufficient["ui"] else []
+    )
+    for category in ("api", "ui"):
+        if not enabled[category]:
+            log_progress(update_job_fn, f"{category.upper()} workers skipped: focus is 0%", 38)
     jobs = []
     # These LLM calls run on ThreadPoolExecutor child threads; the token recorder
     # is thread-local, so bind the parent job's recorder inside each worker or the
@@ -1674,7 +1880,8 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     def run_ui_worker(chunk):
         usage.bind(_parent_rec)
         prompt = build_ui_agent_prompt(
-            context, chunk, ui_rag_context, top_k=_category_top_k("ui", is_ollama)
+            context, chunk, ui_rag_context, top_k=_category_top_k("ui", is_ollama),
+            evidence_lines=ui_evidence_lines,
         )
         return call_llm_json_with_repair(
             llm,
@@ -1742,33 +1949,37 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
 
     log_progress(update_job_fn, "DAG layer 2: generating E2E, edge, and business tests", 58)
     e2e_result = {}
-    try:
-        e2e_result = call_llm_json_with_repair(
-            llm,
-            SYSTEM,
-            build_e2e_agent_prompt(
-                context, api_surface[:80], ui_tests[:100], e2e_rag_context, len(api_surface),
-                top_k=_category_top_k("e2e", is_ollama),
-                # edge_cases and business_tests are produced by this SAME call
-                # (build_e2e_agent_prompt's output has all three keys) but neither has
-                # its own worker/LLM call, so each gets its own labeled evidence block
-                # here instead of a dedicated retrieval call: edge_cases needs
-                # API/state-mutation evidence (not journey evidence), business_tests
-                # needs the business-category evidence also used by the
-                # build_business_test_prompt() fallback below.
-                api_rag_context=api_rag_context,
-                api_top_k=_category_top_k("api", is_ollama),
-                business_rag_context=business_rag_context,
-                business_top_k=_category_top_k("business", is_ollama),
-            ),
-            max_tokens=10000,
-            timeout_seconds=resolve_timeout(300),
-        )
-    except Exception as exc:  # noqa: BLE001
-        errors.append(f"E2E worker failed: {exc}")
+    # One call produces all three suites, so retain it when ANY output is wanted.
+    if any(enabled[name] for name in ("e2e", "nfr", "functional")):
+        try:
+            e2e_result = call_llm_json_with_repair(
+                llm,
+                SYSTEM,
+                build_e2e_agent_prompt(
+                    context, api_surface[:80], ui_tests[:100], e2e_rag_context, len(api_surface),
+                    top_k=_category_top_k("e2e", is_ollama),
+                    # edge_cases and business_tests are produced by this SAME call
+                    # (build_e2e_agent_prompt's output has all three keys) but neither has
+                    # its own worker/LLM call, so each gets its own labeled evidence block
+                    # here instead of a dedicated retrieval call: edge_cases needs
+                    # API/state-mutation evidence (not journey evidence), business_tests
+                    # needs the business-category evidence also used by the
+                    # build_business_test_prompt() fallback below.
+                    api_rag_context=api_rag_context,
+                    api_top_k=_category_top_k("api", is_ollama),
+                    business_rag_context=business_rag_context,
+                    business_top_k=_category_top_k("business", is_ollama),
+                ),
+                max_tokens=10000,
+                timeout_seconds=resolve_timeout(300),
+            )
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"E2E worker failed: {exc}")
+    else:
+        log_progress(update_job_fn, "E2E/edge/business worker skipped: all focus shares are 0%", 58)
 
     e2e_tests = _as_list(e2e_result.get("e2e_tests"))
-    if len(e2e_tests) < 5 and len(api_surface) > 10 and not params.get("smoke_mode"):
+    if enabled["e2e"] and len(e2e_tests) < 5 and len(api_surface) > 10 and not params.get("smoke_mode"):
         try:
             fallback = call_llm_json_with_repair(
                 llm,
@@ -1804,14 +2015,26 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         min(10, max(3, round(requirement_count * 0.6)))
         if evidence_sufficient["business"] else 0
     )
-    if len(business_tests) < acceptable_business_min:
+    if enabled["functional"] and len(business_tests) < acceptable_business_min:
         try:
             fallback = call_llm_json_with_repair(
                 llm, SYSTEM,
                 build_business_test_prompt(
-                    context, business_rag_context, top_k=_category_top_k("business", is_ollama)
+                    context, business_rag_context, top_k=_category_top_k("business", is_ollama),
+                    max_tests=_business_fallback_request(
+                        requirement_count, len(business_tests), acceptable_business_min,
+                        {
+                            "api": len(api_tests), "ui": len(ui_tests), "e2e": len(e2e_tests),
+                            "nfr": len(_as_list(e2e_result.get("edge_cases")))
+                            if evidence_sufficient.get("edge") else 0,
+                        },
+                        focus, total, smoke_mode=bool(params.get("smoke_mode")),
+                    ),
                 ),
-                max_tokens=6000,
+                # 8000, not 6000: on a local model its real replies were 5,208, 5,597 and 5,788
+                # tokens (87-96% of 6000), so a slightly longer one would have been cut off now
+                # that Ollama honours the limit. 8000 still fits the 240 s timeout at GPU speed.
+                max_tokens=8000,
                 timeout_seconds=resolve_timeout(240),
             )
             business_tests.extend(_as_list(fallback.get("business_tests")))
@@ -1871,6 +2094,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                     # `e2e_rag_context`, matching the explicit "E2E/fallback/repair -> E2E
                     # retrieval context" grouping in the approved architecture.
                     "ragContext": e2e_rag_context,
+                    "evidenceLines": ui_evidence_lines,
                     "topK": _category_top_k("e2e", is_ollama),
                     "currentResult": hashed,
                     "ragValidation": {
@@ -1909,6 +2133,11 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         kept, rejected = filter_prompt_exemplar_copies_with_reasons(cases, corpus)
         suites[name] = kept
         filter_rejections.extend(rejected)
+    # A UI validation must cite the numbered document lines that state its rule; the
+    # citation is checked against the validation (see _filter_ui_rules_with_reasons).
+    kept, rejected = _filter_ui_rules_with_reasons(suites["ui_validations"], ui_evidence_lines)
+    suites["ui_validations"] = kept
+    filter_rejections.extend(rejected)
     # e2e / nfr must have some source overlap. Category-level "feature has a
     # description" was enough to let an ungrounded E2E exemplar ship.
     for suite_name in ("e2e_tests", "edge_cases"):
@@ -1988,6 +2217,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         "by_type": by_type,
         "inherited_reused": inherited_reused,
         "inherited_rebuilt": inherited_rebuilt,
+        "inherited_rejected": inherited_rejected,
         "discovered_api_count": len(api_surface),
         "rag_gap_count": len(gaps),
         "errors": errors,

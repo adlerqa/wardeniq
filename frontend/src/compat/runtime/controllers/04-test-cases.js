@@ -245,18 +245,30 @@ const EXPECTED_LABELS = {
   side_effects: "Side effects",
   negative_assertions: "Must not happen",
 };
+function expectedItemHtml(item) {
+  if (item !== null && typeof item === "object") {
+    return `<pre>${esc(JSON.stringify(item, null, 2))}</pre>`;
+  }
+  return esc(item);
+}
+
 function expectedValueHtml(value) {
   if (Array.isArray(value))
     return value.length
-      ? `<ul>${value.map((item) => `<li>${esc(typeof item === "object" ? JSON.stringify(item) : item)}</li>`).join("")}</ul>`
+      ? `<ul>${value.map((item) => `<li>${expectedItemHtml(item)}</li>`).join("")}</ul>`
       : `<span class="muted">None</span>`;
+
   if (value && typeof value === "object")
     return `<ul>${Object.entries(value)
-      .map(
-        ([key, item]) =>
-          `<li><b>${esc(key.replaceAll("_", " "))}:</b> ${esc(Array.isArray(item) ? item.join(", ") : item)}</li>`,
-      )
+      .map(([key, item]) => {
+        const rendered = Array.isArray(item)
+          ? `<ul>${item.map((entry) => `<li>${expectedItemHtml(entry)}</li>`).join("")}</ul>`
+          : expectedItemHtml(item);
+
+        return `<li><b>${esc(key.replaceAll("_", " "))}:</b> ${rendered}</li>`;
+      })
       .join("")}</ul>`;
+
   return `<span>${esc(value === null || value === undefined || value === "" ? "Not specified" : value)}</span>`;
 }
 function expectedResultHtml(value) {

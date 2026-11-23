@@ -4,6 +4,23 @@
 
 ### Added
 
+- **A warning before a long generation on a CPU.** On a machine with no GPU the bundled
+  model can take from about 20 minutes to over an hour for a full run, and nothing said so
+  until it was under way. The Generate page now shows an amber notice as soon as it opens,
+  before any document is added, when the local Ollama model runs on CPU: how long it can
+  take, and the ways out (a hosted provider, Ollama on a GPU, or a larger
+  `LLM_TIMEOUT_SECONDS` if calls time out). It also says that the bundled Ollama container
+  never uses a GPU, on any operating system, so Ollama should run natively to use one. The app asks Ollama's `/api/ps` where the
+  loaded model runs (CPU, GPU, or split between them). On a first run nothing is loaded
+  yet, so it loads the small embedding model the app uses anyway, which takes well under a
+  second, and asks again. It never guesses from the URL, because the "bundled" Ollama URL
+  can point at the CPU-only container or at a native Ollama on the host, which is often a
+  GPU. When Ollama cannot be reached, the model cannot be loaded or the answer is not
+  understood, nothing is claimed, so there is no warning. Hosted providers are unchanged.
+  `POST /api/usage/estimate` gains `accelerator` and, when relevant, `warning` for a local
+  model. The text is deliberately not a computed number of minutes: the existing token
+  estimate covers only part of what a real run produces and would promise a run far
+  shorter than people see. The worker concurrency default is unchanged (#249).
 - **Configurable LLM timeout.** New `LLM_TIMEOUT_SECONDS` setting replaces the timeout of
   every LLM call (test generation and every other model call) on every provider,
   including AWS Bedrock. Unset, the previous built-in values still apply (180 to 300 s
@@ -12,13 +29,229 @@
   CPU-only machines, where the bundled model can take several minutes per call and
   passes used to fail on working installs. Documented in `.env.example` and
   `docs/configuration.md` (Part of #130, #138).
+- **Coverage report parser (groundwork, not wired into the app yet).** New
+  `app/coverage_reports.py` reads lcov, Cobertura, JaCoCo and coverage.py XML reports
+  through `parse(path)` and returns one model with per-file line and branch hits, so the
+  same project gives the same numbers in every format. Unknown or malformed files raise
+  a typed `CoverageParseError` instead of crashing. Sample reports live in
+  `tests/fixtures/coverage/`. It is the first building block for the unit-test coverage
+  validator agent (#250, #245).
+
+### Changed
+
+- **Clearer notifications.** Toasts now have a warning style for an action that worked
+  but not completely. It is used when a user is created but the invitation email could
+  not be sent (on invite and on resend), and when a project is created but its access
+  token could not be saved or a repository could not be connected. Errors on the user,
+  project and settings screens now carry a specific title, such as "Couldn't invite
+  user" or "Couldn't save SMTP settings", instead of "Something went wrong". Other
+  screens keep the old title for now (#272, #274, #278).
+- **Smaller frontend build.** The production frontend build no longer emits a JavaScript
+  sourcemap, so the built output drops by about 1.3 MB (2.9 MB to 1.7 MB on disk). The
+  JavaScript the browser downloads is unchanged (about 198 kB gzipped). If the
+  compatibility runtime cannot be started, the app now shows a "could not initialize"
+  panel with a Retry button instead of staying blank (#265).
 
 ### Fixed
 
+- **A test from another feature is no longer carried over unless this feature's documents are about
+  it.** A real run on a product-search feature (Elasticsearch, brand filters, sort, suggestions), in a
+  project whose Login feature already had Google-login tests, attached nine of those login tests to the
+  search feature. The Fusion step shows a model every test already in the project and attached
+  whatever it named (`INHERIT_EXACT`) with no check, and its prompt pushed it ("you MUST inherit",
+  "aim to inherit ~90%"). Replaying the real step with the 16 login tests, qwen2.5:3b carried over 14
+  of them, qwen2.5:7b none, gemma3:4b 3 and llama3.2:3b 8; the right answer is none. Now a test of
+  another feature is carried over (exact or adapted) only when this feature's own documents are about
+  it, by plain text comparison with no model call: if the test names an endpoint and the documents
+  name endpoints, one must be the same endpoint (another API version is another endpoint); otherwise
+  at least two of its words, and 30% of them, must occur in the documents. Tests from the feature's
+  own previous version are carried as before. A test that is not carried is listed in the job result
+  as `inherited_rejected` with the reason. The model's `already_covered_summary` (handed to the
+  agents that write the feature's tests as "do not write tests for X") is now used only when a test
+  was really carried over; in the replay two models had copied the prompt's placeholder text and two
+  had claimed the feature's own endpoints were already covered. The prompt's placeholder example for
+  that summary is neutral now. With the gate, all four models carried over none of the unrelated
+  tests, and on a control feature that really is a variation of Login (V4: Apple sign in on the same
+  OAuth flow) 29 of the 33 tests they picked were kept. Trade-offs: a test that is truly reusable but
+  whose words are not in the new documents (shared infrastructure the documents never mention) is
+  no longer reused, and a project's reuse now depends on the documents naming what it reuses
+  (part of #249).
+- **PR coverage verdicts must now cite numbered code hunks that show the behaviour.** A real run
+  on a product-search feature (seven tests written for `GET /api/v2/search`, `/api/v2/suggest`, a
+  brand filter and a sort control) marked tests covered that the pull request does not implement:
+  against a PR that only has the v1 search (`GET /v1/search`), qwen2.5:3b marked five tests covered
+  and llama3.2:3b marked all seven. Four things caused it: the model was shown only the first
+  6,000 characters of the diff (about 12% of a 1,200-line PR, and the route file was not in it);
+  "covered" was the model's word, checked only as "a file that is in the diff"; a test for
+  `/api/v2/search` was paired with a PR that defines `/v1/search` by function name; and a route
+  written over several lines (`router.get(` then the path on the next line) was not recognised as
+  a route at all. Now the diff is split into numbered hunks, each batch of tests is shown the hunks
+  that match its own tests (a test's own route first; seed data, config, type files and tests are
+  not offered), and a verdict must cite the numbers of the hunks that show the behaviour. The app
+  checks that by text comparison with no model call: a verdict that cites no real hunk cannot be
+  covered, a claim whose cited hunks share almost nothing with the test is dropped, a test for an
+  endpoint the PR does not define cannot be covered, and a test for an endpoint the PR only defines
+  under another API version is left out. Multi-line routes are now found. The saved record lists
+  the hunks each verdict rests on. Replayed on qwen2.5 3b and 7b, gemma3 4b and llama3.2 3b against
+  both PRs (one run per model and PR, 56 verdicts), tests wrongly marked covered went from 14 to 0,
+  and tests correctly marked covered did not go down (4 to 5). Trade-offs: a function-name match
+  can still report a test as partial ("the PR touches related code"), which is not the same as
+  implemented; many tests the code really does implement are reported partial rather than covered
+  (most models cite the right route but rarely carry the rest); and whether the code does what the
+  test says beyond the words it shares with it is not checked (part of #249).
+- **UI tests must now cite the document lines that state their rule.** A real run on a
+  product-search feature kept three UI validations the documents never state ("Sort by is
+  required", "Other brands must be unchecked", "select at least one brand"): the documents
+  name a Sort by control and a brand filter but give no rule for either. Three things caused
+  it: the UI prompt demanded at least 4 to 8 validations whatever the evidence said, its worked
+  example (an "Event Title" field) leaked into answers, and the only check was whether the
+  field's name appeared in the documents. Now the app splits the feature's own documents into
+  numbered lines ([E1], [E2], ...) and the UI prompt shows them; there is no minimum, an empty
+  list is a correct answer, and the example is placeholders. Every UI validation must cite the
+  numbers of the lines that state its rule. Citing a number works on any model; copying a
+  sentence exactly does not. The app then checks the validation against the lines it cites, by
+  text comparison with no model call: the lines must exist, mention the field, contain every
+  number the case claims, and contain nearly all the words of its intent. A validation that
+  fails is dropped and counted in the job result as `ui-rule-not-in-documents`; a kept one
+  stores the line numbers it cited. The repair pass follows the same rule. Replayed on
+  qwen2.5 3b and 7b, gemma3 4b and llama3.2 3b with the real documents, the invented rules
+  were dropped on all four, and on a document that states its rules every validation the
+  models wrote was kept. Trade-offs: UI validations built only from field labels, with no rule
+  stated in the documents, are no longer generated. A statement the documents do make can
+  still be turned into a UI validation of the wrong kind (a caching sentence as a form rule):
+  the check proves the documents support the claim, not that it belongs to a screen. Error
+  message wording is not checked (part of #249).
+- `LLM_TIMEOUT_SECONDS` now rejects non-finite values such as `nan`, `inf` and
+  `1e400`. The setting's use by Configuration Save/Test provider checks is documented,
+  and the Bedrock timeout selection is expressed explicitly without changing its
+  existing precedence (#267).
+
+- `run.ps1` now checks the native `docker compose up -d --build` exit code and stops immediately with a clear error instead of entering the five-minute readiness wait when the build/start command fails (#284).
+
+- **A local Ollama model is now held to the output limit the code asks for.** Test generation
+  asks for a limit on every call (3,000 to 10,000 tokens), but only Anthropic and Bedrock were
+  given it; Ollama never received `num_predict`, so a small model that fell into a repetition
+  loop kept writing until the call timed out (about 20,000 tokens in 30 minutes in one observed
+  run), which on CPU is exactly where people are told to raise the timeout. A limit a caller
+  chose is now sent to Ollama. `chat_json` and `call_llm_json_with_repair` no longer default to
+  4000: a caller that never chose a limit (the code generator, the Mind Map reviewers that use
+  the default) is not limited on Ollama, as before, and Anthropic and Bedrock still receive 4000
+  for those callers. OpenAI-compatible providers are unchanged. A reply cut off at its limit is
+  logged and is usually salvaged by the existing JSON repair, which keeps the entries completed
+  before the cut; if the model has to repair it, that call gets a quarter more room so the
+  repair is not cut off at the same place. The limit of the business-tests fallback rises from
+  6,000 to 8,000 tokens, because its real replies reached 87% to 96% of the old limit. The Mind
+  Map reviewer's limit is `MINDMAP_REVIEW_MAX_TOKENS` (default 2000) and can be raised (#249).
+- **The business-tests fallback no longer asks for one test per requirement.** When the
+  combined E2E call wrote too few business tests, a second call was told to write exactly one
+  test per extracted requirement (about 20 for a typical PRD). The business suite is later
+  trimmed to its focus share (about 8 or 9 with the default split), and a small model asked
+  for more distinct tests than it can think of repeats itself: in two measured runs it wrote
+  4,784 and 3,946 tokens (34% to 40% of the whole run's output and about a third of its time),
+  and in one of them 19 of its 20 tests had the same title. It now asks for what will be
+  used: the larger of the suite size the code already calls acceptable and what the focus
+  budget keeps, minus the business tests already written, never more than the number of
+  requirements. A heavy functional focus still asks for every requirement. In three
+  measured runs the call fell to 327 to 1,763 tokens and the duplicates to 2 per run. It
+  does not make a CPU-only run fast; that needs a GPU or a hosted provider (Part of #249).
+- Generation skips Fusion when neither the project nor the previous feature version
+  has reusable test candidates, and skips generation workers/fallbacks for zero-focus
+  categories. The shared E2E/edge/business call still runs if any of its outputs is
+  requested, avoiding wasted model calls on CPU-only installations (#139).
+
+- On Windows, `run.ps1` no longer loses most of the collected logs. It calls
+  `collect-logs.ps1` with `$ErrorActionPreference = "Stop"`, which the script inherited,
+  so the first container whose `docker logs` reported an error (mongot prints a Java
+  warning to stderr) ended the whole collection. `warden-ollama.log`, `warden-app.log`
+  and the rest were never written, and the only message was "log collection failed".
+  The script now keeps going and keeps what each command printed, and its web request
+  still falls back to "app unreachable" (#286).
+- The log collectors write cleaner, more useful files. On Windows PowerShell 5.1,
+  `collect-logs.ps1` wrapped the first stderr line of each container log in a
+  "NativeCommandError / CategoryInfo" block; each log is now just the text the container
+  printed. `app_status.json` was filled from `/api/status`, which needs a login, so it
+  said "app unreachable" (or held a 401) for a running app. Both `collect-logs.ps1` and
+  `collect-logs.sh` now read the public `/api/auth/boot-status`, which shows the startup
+  stage (for example "indexing" when mongot is not up), and the PowerShell script records
+  "app answered with HTTP <code>" for an HTTP error instead of "app unreachable"
+  (reported by connabyss on #286).
+- The bundled stack no longer fails to start on a Linux host whose user is not uid 1000.
+  `run.sh` and `install.sh` keep the mongot password file (`config/pwfile`, and
+  `config/pwfile-percona` for the Percona stack) at mode 400, owned by whoever ran
+  them. The one-shot setup container ran as the image's default user (uid 1000, and
+  uid 1001 for Percona), could not read a file owned by another uid, and stopped with
+  `/run/secrets/mongot-pw: Permission denied`. mongot then never started and boot sat
+  at "indexing" with a message that pointed at the admin password. The setup
+  containers now run as root, as mongot already does, so the secret stays private on
+  the host and no `chown` workaround is needed. Docker Desktop was not affected, which
+  is why it only showed up on native Linux (#285).
+- The headline code coverage no longer counts a "partial" PR hit as covered. A PR
+  that touches code relevant to a test case, without the model confirming the
+  implementation, is stored as `partial`, but the feature report and the dashboard
+  added every entry to the covered set whatever its status, so linking one unrelated
+  PR could read as 100% coverage and "ready for manual QA". Only a confirmed
+  `covered` verdict counts now. Partial hits are reported separately (`partial` and
+  `partial_pct` on the feature coverage report, `partial_cases` in the coverage
+  summary and the dashboard, and a `partial_count` next to each PR's `covered_count`,
+  which now counts confirmed hits only) and shown on the feature page as "N partial (not
+  counted)". A case that one PR confirms and another only touches still counts as
+  covered once. Coverage entries saved before the status existed still count as
+  covered. The percentage is computed when the page loads, so features that were
+  reading too high show the lower number straight away, with no re-run (#287).
+- The Gap Analysis run screens no longer count a "partial" PR hit as covered either.
+  The run card's `tests_covered` / `gaps_found`, the run detail's "Tests covered" and
+  Covered/Missing lists, and the comparison with the previous run (`newly_covered` /
+  `no_longer_covered`, the up and down arrows) all treated a partial entry like a
+  confirmed one, so an unrelated PR matched loosely read "3/3, 100%" and a loose match
+  that disappeared was reported as lost coverage. Only a confirmed `covered` verdict
+  counts now. Partial hits are shown separately: the card says "N partial, not counted"
+  (new `tests_partial` field), and the detail view lists a partial case under Missing
+  with a "Partial match, not confirmed" note and the model's rationale. Partial cases
+  remain gaps until confirmed. Runs saved before this fix are corrected when they are
+  served, from their stored entries, so no re-run or migration is needed; an entry
+  saved before the status existed counts as covered (#291).
+- The feature PDF report now prints the real coverage numbers. Its "Code coverage" and
+  "Automation Test Coverage" cards read keys the coverage report never returns
+  (`code_pct`, `automation_pct`), so both showed 0% on every export. They now show the
+  confirmed code coverage and the same automation figure as the feature page (the
+  test-repo scan), and the PR count comes from the report instead of a fallback
+  (#287).
+- The step library is now ordered by the number of test cases it shows for a
+  step, not by the stored reuse counter. The counter is incremented on every
+  reuse of a step and never decremented - not when a case stops using the
+  step, not when the case is deleted - so a step that was reused a lot in the
+  past used to sit above a step that is used by more cases today, and a page
+  of N could leave out a step with a higher real count. The list and its
+  paging follow the distinct-case count now, with the step id as the
+  tie-break, so the order agrees with the count on screen and with the
+  "shared by N testcases" note of the step editor (#270). The counting is
+  one aggregation over the cases that groups them by step_ids with
+  `$addToSet` on the case's own id, then the ordering and the paging happen
+  in Python - the step ids in `cases.step_ids` are strings while the steps
+  collection's `_id` is an ObjectId, so a `$lookup` between the two never
+  matches on a real database; mongomock matches across the types, which is
+  why this now has a dbintegration test that runs against a real MongoDB
+  with string step ids (`tests/test_step_library_ordering_db.py`).
+- `install.sh` no longer stops with a bare status 141 on a host that has no
+  `openssl`. The random secret is then read from `/dev/urandom`, where the
+  reader dies of SIGPIPE once `head` has its bytes - under `set -euo pipefail`
+  that failed the whole pipeline and stopped the installer without a word.
+  The reader's status is now kept out of the pipeline, the same guard
+  `scripts/enable-mongo-auth.sh` already used, and a host with neither
+  `openssl` nor `/dev/urandom` gets a message instead of a silent failure
+  (#271). The `APP_SECRET` step now stops when the secret cannot be
+  generated, instead of writing an empty one.
+- Boot no longer bounces the admin back to Configuration on every refresh and deep link
+  when the LLM section was never saved but the bundled defaults work: `needsConfig()`
+  now treats a passing `GET /api/status` health check as configured and redirects only
+  when the model is actually unreachable (#169).
 - The LLM settings card no longer marks the API key and endpoint as required for
   Ollama. Placeholders are now provider-specific and update when you change the
   provider; for Ollama with a saved URL, the endpoint placeholder explains that
   leaving it blank resets to the bundled Ollama instance (#188).
+- The case editor's "shared by N testcases" note counts distinct test cases:
+  a case that uses one step twice no longer counts twice, and the count drops
+  when a case stops using the step (#175).
 - `install.sh` now probes `/dev/tty` by opening it before enabling interactive prompts. Runs without a controlling terminal use the existing non-interactive defaults instead of failing while opening the terminal (#220).
 - Test-case priority is stored in one vocabulary, High/Medium/Low, whichever
   path wrote it (generation, the editor, sheet import); existing cases are
@@ -29,6 +262,16 @@
   Features list. It used to come back empty for them (#221).
 - OpenAPI YAML extraction now reports every method of a path, not just the first
   one, when an operation has nested keys such as `summary:` or `responses:` (#221).
+- Fix nested objects in test case expected responses displaying as `[object Object]`; render them as formatted, escaped JSON.
+- A wrong password on a fresh install, before the admin account exists, now says
+  "Invalid username or password" like everywhere else. It used to answer 503 with
+  "No user accounts exist. Run scripts/reset-admin-password.sh", which sent people to
+  a recovery they did not need: the default admin login still creates the admin. The
+  recovery hint is still part of the public boot status that the sign-in page shows
+  while the app is starting. These failed attempts now count toward the sign-in
+  limit like any other: by default ten wrong tries lock the account for 15 minutes
+  (`AUTH_MAX_FAILURES_PER_ACCOUNT`, `AUTH_LOCKOUT_SECONDS`), which includes `admin` on a
+  fresh install (#172).
 
 ## v0.3.0 — 2026-11-04
 

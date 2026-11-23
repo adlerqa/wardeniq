@@ -13,9 +13,11 @@ import os
 import time
 import uuid
 
+import coverage as cov
 import pytest
 from bson import ObjectId
 from pymongo import MongoClient
+from store import Store
 
 pytestmark = pytest.mark.dbintegration
 
@@ -23,26 +25,24 @@ MONGO_TEST_URI = os.getenv("MONGO_TEST_URI", "mongodb://localhost:27017")
 MONGO_SEARCH_TEST_URI = os.getenv("MONGO_SEARCH_TEST_URI", "")
 
 
-def _server_reachable() -> bool:
+@pytest.fixture(scope="module", autouse=True)
+def _require_mongo():
+    """Skip this module's tests when no MongoDB is reachable.
+
+    This runs when the module's tests are about to run, not at import time, so a run that
+    deselects the dbintegration marker neither waits out the 1.5 s server selection timeout
+    nor opens a MongoClient, and the client used for the check is always closed.
+    """
     client = None
     try:
         client = MongoClient(MONGO_TEST_URI, serverSelectionTimeoutMS=1500)
         client.admin.command("ping")
-        return True
     except Exception:  # noqa: BLE001
-        return False
+        pytest.skip(f"no MongoDB reachable at {MONGO_TEST_URI!r} (set MONGO_TEST_URI to run "
+                    "db-integration tests)")
     finally:
-        # An unclosed client keeps its background monitor threads alive for the whole session.
         if client is not None:
             client.close()
-
-
-if not _server_reachable():
-    pytest.skip(f"no MongoDB reachable at {MONGO_TEST_URI!r} (set MONGO_TEST_URI to run "
-                "db-integration tests)", allow_module_level=True)
-
-import coverage as cov  # noqa: E402
-from store import Store  # noqa: E402
 
 
 @pytest.fixture()
@@ -53,6 +53,7 @@ def store():
         yield s
     finally:
         s.client.drop_database(db_name)
+        s.client.close()
 
 
 def feature(store, project, name, vectors, group_id=None, version=1):
@@ -373,6 +374,7 @@ def search_store():
         yield s
     finally:
         s.client.drop_database(db_name)
+        s.client.close()
 
 
 def test_real_mongot_finds_a_close_runner_up_behind_a_dominant_feature(search_store):

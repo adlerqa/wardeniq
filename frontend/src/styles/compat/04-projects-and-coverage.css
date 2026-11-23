@@ -1119,6 +1119,9 @@
 .toastmsg.err {
   border-left-color: var(--red);
 }
+.toastmsg.warn {
+  border-left-color: #eab308;
+}
 .iconbtn {
   background: transparent;
   border: none;

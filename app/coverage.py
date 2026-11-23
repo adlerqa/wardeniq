@@ -1226,13 +1226,17 @@ def verify_pr_implementation(llm, pr, prod_files, cases, batch_size=10, repo_fil
     reported 'covered' regardless of what the model says, since the downstream consumer
     provably was not updated by this PR.
     """
-    diff = "\n".join(f"{f['filename']} ({f['status']}, +{f.get('additions', 0)}/-{f.get('deletions', 0)})\n"
-                     f"{f.get('patch', '')}" for f in prod_files[:25])[:6000]
-    # Ground citations against the diff itself: the only files this PR can implement
-    # anything in are the ones it changed.
-    idx = citation_index([{"repo": "", "path": f.get("filename"), "text": f.get("patch") or ""}
-                          for f in prod_files[:25]])
+    # The diff as numbered hunks (see hunk_evidence.py): each batch is shown the hunks that
+    # match ITS cases instead of the first 6,000 characters of the diff, and a verdict must
+    # cite hunk numbers, which are then checked against the case.
+    import hunk_evidence
+    hunks = hunk_evidence.split_hunks(prod_files)
+    endpoints = hunk_evidence.diff_endpoints(prod_files)
+    case_df = hunk_evidence.document_frequency(cases)
+    changed_files = ", ".join(f["filename"] for f in prod_files[:40])
+    hunk_stats = {"hunks_total": len(hunks), "dropped": 0, "capped": 0}
     valid = {c["id"] for c in cases}
+    case_index = {c["id"]: c for c in cases}
 
     # Deterministic cross-file dependency evidence (app/contracts.py). Local imports:
     # contracts.py and grounding.py both import from this module (`is_test_file`), so a
@@ -1277,21 +1281,26 @@ def verify_pr_implementation(llm, pr, prod_files, cases, batch_size=10, repo_fil
         batch = cases[i:i + batch_size]
         briefs = [{"id": c["id"], "title": c["title"], "type": c["type"],
                    "steps": c.get("steps", [])[:6]} for c in batch]
+        shown = hunk_evidence.select_hunks(hunks, batch, endpoints=endpoints)
+        shown_by_id = {h["id"]: h for h in shown}
         prompt = (
-            f"PULL REQUEST #{pr.get('number')}: {pr.get('title', '')}\n\n"
-            f"CHANGED PRODUCTION CODE (diff; test/spec files excluded):\n{diff}"
+            f"PULL REQUEST #{pr.get('number')}: {pr.get('title', '')}\n"
+            f"Files changed (production code; test/spec files excluded): {changed_files}\n\n"
+            f"{hunk_evidence.render_hunks(shown)}"
             f"{evidence_block}\n\n"
             f"TEST CASES TO JUDGE ({len(briefs)}):\n{json.dumps(briefs)[:5000]}\n\n"
-            "For each case, judge whether THIS diff's PRODUCTION code IMPLEMENTS the SPECIFIC behaviour:\n"
+            "For each case, judge whether the changed code above IMPLEMENTS the SPECIFIC behaviour:\n"
             "- 'covered' = the changed code clearly implements this exact behaviour.\n"
-            "- 'partial' = the diff touches the relevant area but does not fully implement this behaviour.\n"
-            "Omit a case entirely if the diff does not implement or touch it. IMPORTANT: touching the same "
-            "endpoint/route/function is NOT enough for 'covered' — the case's specific behaviour must be "
-            "implemented in the diff, otherwise use 'partial' or omit.\n"
-            "Cite the changed file(s) you relied on in `files`, exactly as named in the diff above, and "
-            "name the actual function/route in `rationale` so both can be verified.\n"
+            "- 'partial' = the code touches the relevant area but does not fully implement this behaviour.\n"
+            "Omit a case entirely if none of the code above implements or touches it. IMPORTANT: touching the "
+            "same endpoint/route/function is NOT enough for 'covered' — the case's specific behaviour must be "
+            "implemented in the code, otherwise use 'partial' or omit. Do not assume behaviour that is not in "
+            "the hunks shown.\n"
+            "Put in `hunks` the numbers of the 1 to 3 hunks that show the behaviour (for example [\"H3\"]). "
+            "The program checks every citation against the test case: a verdict that cites no hunk showing "
+            "the behaviour cannot be 'covered'. Name the actual function/route in `rationale`.\n"
             "Return JSON: {\"covered\":[{\"test_case_id\":\"<id>\",\"status\":\"covered|partial\","
-            "\"confidence\":0.0-1.0,\"rationale\":\"short\",\"files\":[\"path\"]}]}."
+            "\"confidence\":0.0-1.0,\"rationale\":\"short\",\"hunks\":[\"H<number>\"]}]}."
         )
         try:
             data = llm.chat_json(_PRIMPL_SYS, prompt, temperature=0.1)
@@ -1307,10 +1316,24 @@ def verify_pr_implementation(llm, pr, prod_files, cases, batch_size=10, repo_fil
                 # floor='partial': this result only reports cases the PR touches, so a
                 # weakly-evidenced claim is downgraded but never dropped — dropping it
                 # would look identical to the model never having mentioned the case.
-                v = _ground_verdict(st, x.get("rationale", ""), x.get("files") or [], idx,
+                # The hunks it cites, which must be among those shown for this batch. Its
+                # citations are checked against only that code, not against whole files.
+                cited, unknown = hunk_evidence.cited_hunks(x, shown_by_id)
+                cited_idx = citation_index([{"repo": "", "path": h["file"], "text": h["code"]} for h in cited])
+                v = _ground_verdict(st, x.get("rationale", ""), sorted({h["file"] for h in cited}), cited_idx,
                                     model_confidence=x.get("confidence"), floor="partial")
-                status = v["status"]
-                needs_review = v["needs_review"]
+                case_by_id = case_index[cid]
+                hv = hunk_evidence.verify_verdict(
+                    case_by_id, v["status"], cited,
+                    hunk_evidence.endpoint_status(case_by_id, endpoints), case_df, len(cases),
+                    route_hit=hunk_evidence.cites_route(case_by_id, endpoints, cited))
+                if hv["status"] is None:
+                    hunk_stats["dropped"] += 1
+                    continue
+                status = hv["status"]
+                needs_review = v["needs_review"] or status != v["status"] or bool(unknown)
+                if status != v["status"]:
+                    hunk_stats["capped"] += 1
                 contract_cap = None
                 # Deterministic cap: an unresolved contract break relevant to this case means
                 # a real downstream consumer, outside this PR's diff, still reads the OLD
@@ -1332,6 +1355,9 @@ def verify_pr_implementation(llm, pr, prod_files, cases, batch_size=10, repo_fil
                 out.append({"test_case_id": cid, "status": status,
                             "confidence": v["confidence"], "needs_review": needs_review,
                             "rationale": str(x.get("rationale", ""))[:300],
+                            "hunks": [h["id"] for h in cited],
+                            **({"hunks_rejected": unknown} if unknown else {}),
+                            **({"hunk_notes": hv["notes"]} if hv["notes"] else {}),
                             "files": v["files"], "files_rejected": v["files_rejected"],
                             "files_ineligible": v["files_ineligible"],
                             "grounding": v["grounding"],
@@ -1340,7 +1366,8 @@ def verify_pr_implementation(llm, pr, prod_files, cases, batch_size=10, repo_fil
                             **({"contract_break_cap": contract_cap} if contract_cap else {})})
     res = {"covered": out,
            "grounding": {"needs_review_count": sum(1 for c in out if c.get("needs_review")),
-                         "confidence_threshold": REVIEW_CONFIDENCE_THRESHOLD}}
+                         "confidence_threshold": REVIEW_CONFIDENCE_THRESHOLD,
+                         "hunks": hunk_stats}}
     if contract_breaks:
         res["contract_breaks_considered"] = len(contract_breaks)
     if errored:
@@ -1518,22 +1545,49 @@ def compute_unmapped_changes(files: list, covered: list) -> list:
     return out[:30]
 
 
+def is_confirmed(entry: dict) -> bool:
+    """True when a stored PR-coverage entry is a confirmed `covered` verdict.
+
+    A "partial" entry means the PR touched code relevant to the case but the model did
+    not confirm the behaviour is implemented, so it must not count as covered. Entries
+    saved before `status` existed were all full coverage, so a missing status counts as
+    covered. This is the same rule as CodeCoverageMixin.feature_coverage_report (#288).
+    """
+    return entry.get("status", "covered") == "covered"
+
+
+def coverage_counts(covered: list, total: int) -> dict:
+    """Headline numbers for one PR coverage run, from its stored `covered` entries.
+
+    `tests_covered` counts distinct cases with a confirmed verdict only. `tests_partial`
+    counts the cases that are partial and not also confirmed. `gaps_found` is every case
+    without a confirmed verdict (so partial cases remain gaps until confirmed).
+    """
+    confirmed = {c["test_case_id"] for c in covered
+                 if c.get("test_case_id") and is_confirmed(c)}
+    partial = {c["test_case_id"] for c in covered
+               if c.get("test_case_id") and c.get("status") == "partial"} - confirmed
+    return {"tests_covered": len(confirmed), "tests_partial": len(partial),
+            "gaps_found": max(0, total - len(confirmed))}
+
+
 def diff_runs(prev_run: dict | None, this_covered: list) -> dict:
     """Compute newly_covered / no_longer_covered relative to a prior run.
 
     `prev_run` is a code_coverage_runs document (or None if there is no prior).
     `this_covered` is the list of covered/partial items just produced by
-    review_coverage (each having `test_case_id` + status).
+    review_coverage (each having `test_case_id` + status). Only confirmed `covered`
+    verdicts take part in the comparison: a partial match was never confirmed, so
+    gaining or losing one is not a change in coverage (#291).
     """
-    this_ids = {c.get("test_case_id") for c in this_covered if c.get("test_case_id")
-                and c.get("status") in ("covered", "partial")}
+    this_ids = {c.get("test_case_id") for c in this_covered
+                if c.get("test_case_id") and is_confirmed(c)}
     if not prev_run:
         return {"prev_run_id": None, "newly_covered": sorted(this_ids),
                 "no_longer_covered": []}
     prev_result = prev_run.get("result") or {}
     prev_ids = {c.get("test_case_id") for c in (prev_result.get("covered") or [])
-                if c.get("test_case_id")
-                and c.get("status") in ("covered", "partial")}
+                if c.get("test_case_id") and is_confirmed(c)}
     return {
         "prev_run_id": prev_run.get("id"),
         "prev_pr_number": prev_run.get("pr_number"),

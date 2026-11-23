@@ -22,41 +22,36 @@ import os
 import time
 import uuid
 
+import crypto
 import pytest
+from bson import ObjectId
 from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
+from store import Store
 
 pytestmark = pytest.mark.dbintegration
 
 MONGO_TEST_URI = os.getenv("MONGO_TEST_URI", "mongodb://localhost:27017")
 
 
-def _server_reachable() -> bool:
+@pytest.fixture(scope="module", autouse=True)
+def _require_mongo():
+    """Skip this module's tests when no MongoDB is reachable.
+
+    This runs when the module's tests are about to run, not at import time, so a run that
+    deselects the dbintegration marker neither waits out the 1.5 s server selection timeout
+    nor opens a MongoClient, and the client used for the check is always closed.
+    """
     client = None
     try:
         client = MongoClient(MONGO_TEST_URI, serverSelectionTimeoutMS=1500)
         client.admin.command("ping")
-        return True
     except Exception:  # noqa: BLE001
-        return False
+        pytest.skip(f"no MongoDB reachable at {MONGO_TEST_URI!r} (set MONGO_TEST_URI to run "
+                    "db-integration tests)")
     finally:
-        # An unclosed client keeps its background monitor threads alive for the whole session.
         if client is not None:
             client.close()
-
-
-if not _server_reachable():
-    pytest.skip(
-        f"no MongoDB reachable at {MONGO_TEST_URI!r} (set MONGO_TEST_URI to run "
-        "db-integration tests)",
-        allow_module_level=True,
-    )
-
-# Import after the reachability check so a module without a live Mongo never
-# pays the cost of importing store.py for nothing.
-import crypto  # noqa: E402
-from bson import ObjectId  # noqa: E402
-from store import Store  # noqa: E402
 
 
 @pytest.fixture()
@@ -96,6 +91,39 @@ def test_ensure_indexes_creates_core_collections(store):
     # search/vector indexes further down ensure_indexes() couldn't be created.
     idx_names = {i["name"] for i in store.users.list_indexes()}
     assert any("email" in n for n in idx_names)
+
+
+def test_ensure_indexes_creates_hot_query_indexes(store):
+    expected = {
+        "associations": [
+            [("test_case_id", 1)],
+        ],
+        "feature_chunks": [
+            [("feature_id", 1)],
+        ],
+        "features": [
+            [("project_id", 1)],
+            [("group_id", 1)],
+        ],
+        "code_chunks": [
+            [("repo_id", 1)],
+        ],
+        "jobs": [
+            [("project_id", 1), ("type", 1)],
+        ],
+    }
+
+    for collection_name, expected_indexes in expected.items():
+        collection = store.db[collection_name]
+        actual_indexes = [
+            list(index["key"].items())
+            for index in collection.list_indexes()
+        ]
+
+        for expected_index in expected_indexes:
+            assert expected_index in actual_indexes, (
+                f"Missing index on {collection_name}: {expected_index}"
+            )
 
 
 # --------------------------------------------------------------- projects

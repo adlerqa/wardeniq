@@ -410,6 +410,10 @@ counts and rates then describe the timeout, not the model.
 > app makes, so a slow but working local model is no longer cut off. Unset, the built-in
 > defaults above apply. A smaller or faster model also helps; see
 > [Which model should I use?](#which-model-should-i-use).
+>
+> The same timeout also applies to the active provider check used by **Configuration →
+> Save/Test**. If the endpoint is unreachable rather than refusing the connection, that
+> check can wait for the full configured timeout.
 
 - **In the benchmark, `--call-timeout` is the setting to use.** `--call-timeout SECONDS`
   replaces the timeout of every model call in the runner's own client only, and takes
@@ -418,15 +422,20 @@ counts and rates then describe the timeout, not the model.
   defaults), which is useful for seeing what a first run on that hardware looks like, but is
   not a model comparison. On CPU-only hardware start with something like
   `--call-timeout 1800`.
-- **Runaway generations and the output cap.** The app's Ollama client never sends an output
-  limit, so a model that falls into a repetition loop can keep generating until the client
-  times out: in one observed run a 3B call generated roughly 20,000 tokens in 30 minutes,
-  where every other call stopped at about 5,400 tokens or fewer. A longer timeout cannot fix that. The pipeline already asks for a limit
-  on every call (3,000 to 10,000 tokens, and the Anthropic and Bedrock paths enforce it), so
-  the runner's own client sends that limit to Ollama as `num_predict`.
-  `--max-output-tokens pipeline` (the default) sends each call's own limit, `N` sends one
-  fixed cap on every call, and `none` sends no cap, as the app behaves. The mode and the
-  tokens are recorded in the result; the application's own client is not changed.
+- **Runaway generations and the output cap.** A model that falls into a repetition loop can
+  keep generating until the client times out: in one observed run a 3B call generated roughly
+  20,000 tokens in 30 minutes, where every other call stopped at about 5,400 tokens or fewer.
+  A longer timeout cannot fix that. The pipeline asks for a limit on every call (3,000 to
+  10,000 tokens), and the application now sends a limit that a caller chose to Ollama as
+  `num_predict`, as the Anthropic and Bedrock paths always did. A call that chose no limit
+  (for example the code generator behind *Start Developing*) is still unbounded, and
+  OpenAI-compatible providers are unchanged. A reply cut off at its limit is usually salvaged:
+  the entries completed before the cut are kept, and the log says that the limit was hit. The
+  Mind Map reviewer's limit is `MINDMAP_REVIEW_MAX_TOKENS` (default 2000); raise it if reviews
+  are being cut off. The runner's own client sends the same limit:
+  `--max-output-tokens pipeline` (the default) sends each call's own limit, `N` sends one fixed
+  cap on every call, and `none` sends no cap, which is how the application behaved before it
+  enforced limits. The mode and the tokens are recorded in the result.
 - **A reply cut off at the cap is reported, never `ok`.** Ollama says so with
   `done_reason: length`, and the call is recorded as `length_limited`. Truncated JSON can
   still parse, so it is classified by how it ended, not by whether it parses. It is the

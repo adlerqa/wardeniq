@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<report name="example">
+  <sessioninfo id="example" start="2024-01-01T00:00:00Z"/>
+  <package name="src">
+    <sourcefile name="math_utils.py">
+      <line nr="1" ci="1" mi="0" mb="0" cb="0"/>
+      <line nr="2" ci="1" mi="0" mb="1" cb="1"/>
+      <line nr="3" ci="0" mi="1" mb="0" cb="0"/>
+      <line nr="4" ci="1" mi="0" mb="0" cb="0"/>
+    </sourcefile>
+    <sourcefile name="greet.py">
+      <line nr="1" ci="1" mi="0" mb="0" cb="0"/>
+      <line nr="2" ci="1" mi="0" mb="0" cb="2"/>
+      <line nr="3" ci="1" mi="0" mb="0" cb="0"/>
+      <line nr="4" ci="1" mi="0" mb="0" cb="0"/>
+    </sourcefile>
+  </package>
+  <counter type="INSTRUCTION" missed="1" covered="15"/>
+  <counter type="LINE" missed="1" covered="7"/>
+  <counter type="BRANCH" missed="1" covered="3"/>
+</report>

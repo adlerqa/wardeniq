@@ -140,8 +140,8 @@ def test_unknown_account_cannot_bootstrap_itself_with_the_default(routes, monkey
     with pytest.raises(routes.HTTPException) as exc:
         _login(routes, monkeypatch, store, "attacker@example.com",
                routes.DEFAULT_ADMIN_PASSWORD)
-    assert exc.value.status_code == 503
-    assert "No user accounts exist" in exc.value.detail
+    assert exc.value.status_code == 401
+    assert exc.value.detail == "Invalid username or password"
     assert store.users == {}
 
 
