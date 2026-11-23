@@ -27,7 +27,9 @@ from testgen.service import (  # noqa: E402
     _unsupported_numeric_claims,
     generate_fresh_testcases_pipeline,
 )
-from tests.test_generation_pipeline import FakeEmbedder, FakeLLM, FakeStore  # noqa: E402
+from tests.test_generation_pipeline import (  # noqa: E402
+    FakeEmbedder, FakeLLM, FakeStore, ui_cases_with_citations,
+)
 
 
 # --------------------------------------------------------------------------------
@@ -247,10 +249,12 @@ class GroundingGuardFakeLLM(FakeLLM):
             })
             return result
         if "Generate UI validations" in user:
-            return {"ui_validations": [
+            return {"ui_validations": ui_cases_with_citations(user, [
                 {
                     "title": "Quantity field is required to submit an order",
                     "field": "Quantity",
+                    "intent": "The Quantity field must be a positive integer.",
+                    "cite": "Quantity field",
                     "steps": [{
                         "content": "Submit the order form with no quantity",
                         "expectedResult": "Submission is blocked",
@@ -259,13 +263,14 @@ class GroundingGuardFakeLLM(FakeLLM):
                 {
                     "title": "Quantity field must not exceed 9999 units",
                     "field": "Quantity",
+                    "cite": "Quantity field",
                     "intent": "fabricated -- no such limit anywhere in the evidence",
                     "steps": [{
                         "content": "Enter a quantity above 9999",
                         "expectedResult": "The value is rejected",
                     }],
                 },
-            ]}
+            ])}
         return super().chat_json(system, user, **kwargs)
 
 

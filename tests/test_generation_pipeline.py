@@ -233,6 +233,23 @@ class FakeEmbedder:
         return [float(len(text) % 17), 1.0, 0.5]
 
 
+def ui_cases_with_citations(user_prompt, cases):
+    """What a model does with the numbered evidence block in the UI prompt: a case written
+    as {..., "cite": "some words"} gets "evidence": [<number of the [E..] line that
+    contains those words>]. Cases without "cite" are returned as they are."""
+    import re
+    out = []
+    for case in cases:
+        case = dict(case)
+        phrase = case.pop("cite", None)
+        if phrase:
+            found = re.search(r"\[(E\d+)\][^\n]*" + re.escape(phrase), user_prompt)
+            assert found, f"no evidence line contains {phrase!r}"
+            case["evidence"] = [found.group(1)]
+        out.append(case)
+    return out
+
+
 class FakeLLM:
     def _raw_chat(self, system, user, num_ctx, temperature, max_tokens):
         import json

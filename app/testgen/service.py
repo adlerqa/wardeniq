@@ -21,6 +21,7 @@ from testgen.prompt_builder import (
     build_raw_api_spec_from_documents,
     build_repair_prompt,
     build_ui_agent_prompt,
+    collect_evidence_lines,
     filter_hallucinated_entities,
     filter_prompt_exemplar_copies_with_reasons,
     is_few_shot_leak,
@@ -28,6 +29,7 @@ from testgen.prompt_builder import (
     REASON_DUPLICATE,
     REASON_EDGE_SUPPRESSED,
     REASON_NO_SOURCE_GROUNDING,
+    REASON_UI_RULE_NOT_IN_DOCUMENTS,
 )
 from testgen.lineage import (
     REUSE_SIMILARITY_API,
@@ -796,6 +798,113 @@ def _filter_ungrounded_suite_cases(cases: list[dict], corpus: str) -> list[dict]
     return kept
 
 
+# --- UI rule evidence check ---------------------------------------------------------
+# A UI validation is a claim about the product: "this field is required", "this one takes
+# at most 100 characters". _filter_ui_tests() only proves the FIELD exists in the
+# documents, and _case_has_source_grounding() passes on one shared word, so a model asked
+# for UI validations on a document that names a field but states no rule for it (a "Sort
+# by" dropdown, a brand filter) invented the usual rules and every one was kept (a real
+# run: "Sort by is required", "Other brands must be unchecked", "select at least one
+# brand"; none are in the documents).
+#
+# The prompt now shows the documents as numbered lines ([E1] [E2] ...; see
+# collect_evidence_lines) and every validation must cite the numbers of the lines that
+# state its rule. Citing a number is something every model can do; copying a sentence
+# exactly is not. This check then compares the validation with the lines it cites, by
+# plain text comparison (no model call, same on every provider). It is kept only when:
+#   1. it cites at least one line, and every cited number is a real line;
+#   2. the cited lines mention the field the validation is about;
+#   3. every number in its intent / expected behaviour is in the cited lines;
+#   4. nearly all the words of its intent (apart from the field's own words) are in the
+#      cited lines: at most a quarter may be missing, and one word may always be missing,
+#      so a line that only NAMES the field cannot back a rule it never states ("must be
+#      selected" is not in a line that says "Sort by price/relevance").
+# Not checked: the wording of an error message, and whether the rule was understood
+# correctly; only that the cited lines say something that supports it.
+_UI_CLAIM_UNSUPPORTED_SHARE = 0.25  # of the intent's words; one word may always be missing
+_UI_MAX_CITATIONS = 3
+_UI_CHECK_STOP = _SOURCE_GROUNDING_STOP | {
+    "the", "and", "for", "are", "was", "can", "not", "any", "all", "its", "has", "but",
+    "you", "your", "should", "would", "could", "may", "might", "user", "users", "than",
+    "less", "more", "field", "value", "input", "page", "form",
+}
+_UI_CHECK_WORD = re.compile(r"[a-z0-9]+")
+_UI_CITATION = re.compile(r"[Ee]?\s*(\d+)")
+
+
+def _ui_check_words(text: str) -> set[str]:
+    """Lowercase content words and numbers of a text, plural 's' removed; small words and
+    filler dropped. Numbers stay: they are the most checkable part of a rule."""
+    words = set()
+    for word in _UI_CHECK_WORD.findall(str(text or "").lower()):
+        if word in _UI_CHECK_STOP or (len(word) < 3 and not word.isdigit()):
+            continue
+        words.add(word if word.isdigit() else _stem(word))
+    return words
+
+
+def _cited_lines(case: dict, lines_by_id: dict[str, str]) -> tuple[list[str], list[str]]:
+    """(texts of the cited lines that exist, cited ids that do not exist)."""
+    raw = case.get("evidence")
+    parts = raw if isinstance(raw, (list, tuple)) else [raw]
+    ids = []
+    for part in parts:
+        ids.extend(f"E{n}" for n in _UI_CITATION.findall(str(part or "")))
+    ids = list(dict.fromkeys(ids))[:_UI_MAX_CITATIONS]
+    return [lines_by_id[i] for i in ids if i in lines_by_id], [i for i in ids if i not in lines_by_id]
+
+
+def _ui_rule_evidence_problem(case: dict, lines_by_id: dict[str, str]) -> str | None:
+    """None when the cited lines back the validation, else a short plain reason (logged,
+    so a dropped case can be explained)."""
+    cited, unknown = _cited_lines(case, lines_by_id)
+    if unknown:
+        return "cites a line that does not exist: " + ", ".join(unknown)
+    if not cited:
+        return "no evidence cited"
+    cited_words = _ui_check_words(" ".join(cited))
+    field_words = _ui_check_words(case.get("field") or case.get("element") or "")
+    if field_words and len(field_words & cited_words) / len(field_words) < 0.5:
+        return "the cited lines do not mention the field"
+    claimed = _NUMBER_TOKEN.findall(
+        f"{case.get('intent') or ''} {case.get('expected_behavior') or ''}"
+    )
+    # "2.5" is two tokens in the lines ("2", "5"), so compare digit groups.
+    missing = sorted({n for n in claimed if not set(re.findall(r"\d+", n)) <= cited_words})
+    if missing:
+        return "number not in the cited lines: " + ", ".join(missing)
+    claim_words = _ui_check_words(case.get("intent") or "") - field_words
+    unsupported = claim_words - cited_words
+    if len(unsupported) > max(1, int(len(claim_words) * _UI_CLAIM_UNSUPPORTED_SHARE)):
+        return "the cited lines do not state this rule"
+    return None
+
+
+def _filter_ui_rules_with_reasons(
+    cases: list[dict], evidence_lines: list[dict]
+) -> tuple[list[dict], list[tuple[dict, str]]]:
+    lines_by_id = {line["id"]: line["text"] for line in evidence_lines or []}
+    kept, rejected = [], []
+    for case in cases or []:
+        if not isinstance(case, dict):
+            continue
+        problem = _ui_rule_evidence_problem(case, lines_by_id)
+        if problem is None:
+            # Some models put angle brackets around a real label (they copy the example's
+            # placeholder style): "<Search box>" is the field "Search box".
+            case = dict(case)
+            for key in ("field", "element"):
+                value = case.get(key)
+                if isinstance(value, str) and value.strip().startswith("<") and value.strip().endswith(">"):
+                    case[key] = value.strip()[1:-1].strip()
+            kept.append(case)
+        else:
+            log.info('[TestGen][ui-rule] dropped field="%s": %s',
+                     case.get("field") or case.get("element") or "?", problem)
+            rejected.append((case, REASON_UI_RULE_NOT_IN_DOCUMENTS))
+    return kept, rejected
+
+
 # --- Category evidence sufficiency (deterministic, pre-generation) -------------------
 # The grounding filters above are all POST-generation: they drop what the model already
 # invented. That is the right shape for "this case's content isn't backed", but it is
@@ -1460,6 +1569,14 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     # every grounding comparison keeps using the lowercased form exactly as before.
     evidence_text = _evidence_corpus(context, rag_context)
     corpus = evidence_text.lower()
+    # The documents as numbered lines: shown to the UI/repair prompts, and used to check
+    # the citations in what they return (one list, so both sides agree on the numbers).
+    ui_evidence_lines = collect_evidence_lines([
+        raw_text,
+        context.get("featureDescription"),
+        *(item.get("text") for item in chunks),
+        (context.get("summaries") or {}).get("figma"),
+    ])
     entities = [
         item for item in filter_hallucinated_entities(
             _as_list(grounded.get("grounded_entities")), corpus
@@ -1735,7 +1852,8 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     def run_ui_worker(chunk):
         usage.bind(_parent_rec)
         prompt = build_ui_agent_prompt(
-            context, chunk, ui_rag_context, top_k=_category_top_k("ui", is_ollama)
+            context, chunk, ui_rag_context, top_k=_category_top_k("ui", is_ollama),
+            evidence_lines=ui_evidence_lines,
         )
         return call_llm_json_with_repair(
             llm,
@@ -1948,6 +2066,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                     # `e2e_rag_context`, matching the explicit "E2E/fallback/repair -> E2E
                     # retrieval context" grouping in the approved architecture.
                     "ragContext": e2e_rag_context,
+                    "evidenceLines": ui_evidence_lines,
                     "topK": _category_top_k("e2e", is_ollama),
                     "currentResult": hashed,
                     "ragValidation": {
@@ -1986,6 +2105,11 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         kept, rejected = filter_prompt_exemplar_copies_with_reasons(cases, corpus)
         suites[name] = kept
         filter_rejections.extend(rejected)
+    # A UI validation must cite the numbered document lines that state its rule; the
+    # citation is checked against the validation (see _filter_ui_rules_with_reasons).
+    kept, rejected = _filter_ui_rules_with_reasons(suites["ui_validations"], ui_evidence_lines)
+    suites["ui_validations"] = kept
+    filter_rejections.extend(rejected)
     # e2e / nfr must have some source overlap. Category-level "feature has a
     # description" was enough to let an ungrounded E2E exemplar ship.
     for suite_name in ("e2e_tests", "edge_cases"):
