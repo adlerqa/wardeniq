@@ -41,6 +41,7 @@ NOT_PROJECT_SCOPED = {
     ("GET", "/api/atlassian/accessible-jira-projects"): "instance Jira config",
     ("GET", "/api/atlassian/accessible-confluence-spaces"): "instance Confluence config",
     ("GET", "/api/ollama/models"): "instance model list",
+    ("GET", "/api/documents/storage-status"): "instance storage config (bool only)",
 }
 # Collection/aggregate routes: they filter to the user's projects instead of
 # refusing (asserted by the dedicated tests further down).

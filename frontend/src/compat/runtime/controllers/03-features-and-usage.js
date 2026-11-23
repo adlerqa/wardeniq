@@ -55,8 +55,20 @@ async function showFeatureCreate() {
   if ($("#f-cost-estimate")) $("#f-cost-estimate").textContent = "";
   scheduleCostEstimate(); // lets a "runs on CPU" warning show before any document is added
   if ($("#f-match-key")) $("#f-match-key").value = "";
+  refreshStorageNote(); // fire-and-forget; shows the notice before a file is picked
   await loadFeatureTicketOptions();
   updateBackbar();
+}
+// Issue #283: tell the user up-front when uploaded originals won't be stored.
+async function refreshStorageNote() {
+  const note = $("#f-storage-note");
+  if (!note) return;
+  try {
+    const r = await api("/api/documents/storage-status");
+    note.style.display = r && r.configured ? "none" : "block";
+  } catch {
+    note.style.display = "none";
+  }
 }
 if ($("#feature-new-btn"))
   $("#feature-new-btn").onclick = () => showFeatureCreate();

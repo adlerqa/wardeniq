@@ -1,9 +1,17 @@
-"""AWS S3 Storage backend for persisting, retrieving, and managing uploaded documents."""
+"""S3 storage backend for persisting, retrieving, and managing uploaded documents.
+
+Works with AWS S3 and any S3-compatible store (MinIO, LocalStack, Garage,
+Cloudflare R2, ...) when an endpoint URL is configured.
+"""
 import os
 import re
 import time
 import uuid
 from typing import Optional, Dict, Any
+
+
+def _truthy(v: Optional[str]) -> bool:
+    return str(v or "").strip().lower() in ("1", "true", "yes", "on")
 
 
 class S3StorageManager:
@@ -18,7 +26,11 @@ class S3StorageManager:
         session_token: Optional[str] = None,
         prefix: Optional[str] = None,
         enabled: Optional[bool] = None,
+        endpoint_url: Optional[str] = None,
+        force_path_style: Optional[bool] = None,
     ):
+        self._endpoint_url = endpoint_url
+        self._force_path_style = force_path_style
         self._bucket = bucket
         self._region = region
         self._access_key_id = access_key_id
@@ -79,9 +91,27 @@ class S3StorageManager:
             or "documents"
         ).strip("/")
 
+        endpoint_url = (
+            self._endpoint_url
+            if self._endpoint_url is not None
+            else (s.get("s3_endpoint_url") or os.getenv("AWS_S3_ENDPOINT_URL", ""))
+        ).strip()
+
+        if self._force_path_style is not None:
+            force_path_style = bool(self._force_path_style)
+        elif s.get("s3_force_path_style") is not None:
+            force_path_style = bool(s.get("s3_force_path_style"))
+        elif os.getenv("AWS_S3_FORCE_PATH_STYLE", "").strip():
+            force_path_style = _truthy(os.getenv("AWS_S3_FORCE_PATH_STYLE"))
+        else:
+            # Most self-hosted stores (MinIO, LocalStack, Garage) need path-style.
+            force_path_style = bool(endpoint_url)
+
         return {
             "bucket": bucket,
             "region": region,
+            "endpoint_url": endpoint_url,
+            "force_path_style": force_path_style,
             "access_key_id": access_key,
             "secret_access_key": secret_key,
             "session_token": session_token,
@@ -109,7 +139,16 @@ class S3StorageManager:
                 kw["aws_session_token"] = cfg["session_token"]
 
         session = boto3.session.Session(**kw)
-        return session.client("s3")
+        client_kw = {}
+        if cfg.get("endpoint_url"):
+            # S3-compatible stores (MinIO, LocalStack, Garage, R2, ...).
+            client_kw["endpoint_url"] = cfg["endpoint_url"]
+        if cfg.get("force_path_style"):
+            from botocore.config import Config
+            client_kw["config"] = Config(
+                signature_version="s3v4", s3={"addressing_style": "path"}
+            )
+        return session.client("s3", **client_kw)
 
     def test_connection(
         self,
@@ -117,9 +156,18 @@ class S3StorageManager:
         region: Optional[str] = None,
         access_key_id: Optional[str] = None,
         secret_access_key: Optional[str] = None,
+        endpoint_url: Optional[str] = None,
+        force_path_style: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """Tests accessibility and permissions of the specified S3 bucket."""
         cfg = self._get_config()
+        if endpoint_url is not None:
+            cfg["endpoint_url"] = endpoint_url.strip()
+            cfg["force_path_style"] = (
+                bool(cfg["endpoint_url"]) if force_path_style is None else bool(force_path_style)
+            )
+        elif force_path_style is not None:
+            cfg["force_path_style"] = bool(force_path_style)
         if bucket is not None:
             cfg["bucket"] = bucket.strip()
         if region is not None:
@@ -138,7 +186,11 @@ class S3StorageManager:
             client.head_bucket(Bucket=cfg["bucket"])
             return {
                 "ok": True,
-                "message": f"Successfully connected to AWS S3 bucket '{cfg['bucket']}' in region '{cfg['region']}'",
+                "message": (
+                    f"Successfully connected to S3 bucket '{cfg['bucket']}' at {cfg['endpoint_url']}"
+                    if cfg.get("endpoint_url")
+                    else f"Successfully connected to AWS S3 bucket '{cfg['bucket']}' in region '{cfg['region']}'"
+                ),
                 "bucket": cfg["bucket"],
                 "region": cfg["region"],
             }

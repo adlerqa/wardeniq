@@ -213,6 +213,13 @@ async function loadConfig() {
       if ($("#cfg-s3-key")) $("#cfg-s3-key").value = s.s3_access_key_id || "";
       if ($("#cfg-s3-prefix"))
         $("#cfg-s3-prefix").value = s.s3_prefix || "documents";
+      if ($("#cfg-s3-endpoint"))
+        $("#cfg-s3-endpoint").value = s.s3_endpoint_url || "";
+      if ($("#cfg-s3-path-style"))
+        $("#cfg-s3-path-style").checked =
+          s.s3_force_path_style == null
+            ? !!s.s3_endpoint_url
+            : !!s.s3_force_path_style;
       if ($("#cfg-s3-enabled"))
         $("#cfg-s3-enabled").checked = s.s3_enabled !== false && !!s.s3_bucket;
       if ($("#cfg-s3-status")) {
@@ -881,6 +888,12 @@ if ($("#cfg-s3-save")) {
       s3_access_key_id: $("#cfg-s3-key").value.trim(),
       s3_prefix: $("#cfg-s3-prefix").value.trim(),
       s3_enabled: $("#cfg-s3-enabled").checked,
+      ...($("#cfg-s3-endpoint")
+        ? { s3_endpoint_url: $("#cfg-s3-endpoint").value.trim() }
+        : {}),
+      ...($("#cfg-s3-path-style")
+        ? { s3_force_path_style: $("#cfg-s3-path-style").checked }
+        : {}),
     };
     const sec = $("#cfg-s3-secret").value.trim();
     if (sec) b.s3_secret_access_key = sec;
@@ -910,6 +923,12 @@ if ($("#cfg-s3-test")) {
     const region = $("#cfg-s3-region").value.trim();
     const access_key_id = $("#cfg-s3-key").value.trim();
     const secret_access_key = $("#cfg-s3-secret").value.trim();
+    const endpoint_url = $("#cfg-s3-endpoint")
+      ? $("#cfg-s3-endpoint").value.trim()
+      : undefined;
+    const force_path_style = $("#cfg-s3-path-style")
+      ? $("#cfg-s3-path-style").checked
+      : undefined;
     if (!bucket) {
       if (st)
         st.innerHTML = `<span class="err">Enter an S3 bucket name to test connection</span>`;
@@ -933,6 +952,8 @@ if ($("#cfg-s3-test")) {
           region,
           access_key_id,
           secret_access_key,
+          endpoint_url,
+          force_path_style,
         }),
       });
       if (st) {

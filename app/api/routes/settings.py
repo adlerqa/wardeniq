@@ -17,6 +17,7 @@ exactly one router would force those other routes to import from this router, wh
 the plan explicitly forbids).
 """
 import os
+import re
 import secrets
 import time
 
@@ -159,6 +160,8 @@ def get_settings():
         "s3_access_key_id": s.get("s3_access_key_id", ""),
         "s3_secret_access_key_set": bool(s.get("s3_secret_access_key_enc")),
         "s3_prefix": s.get("s3_prefix", "documents"),
+        "s3_endpoint_url": s.get("s3_endpoint_url", ""),
+        "s3_force_path_style": s.get("s3_force_path_style"),
         "s3_configured": bool(s.get("s3_bucket")),
     }
 
@@ -189,7 +192,18 @@ class SettingsIn(BaseModel):
     s3_access_key_id: str | None = None
     s3_secret_access_key: str | None = None
     s3_prefix: str | None = None
+    s3_endpoint_url: str | None = None
+    s3_force_path_style: bool | None = None
 
+
+def _clean_s3_endpoint(v: str | None) -> str | None:
+    """Normalise an optional S3-compatible endpoint URL ('' clears it)."""
+    if v is None:
+        return None
+    v = v.strip().rstrip("/")
+    if v and not re.match(r"^https?://[^\s/]+", v, re.I):
+        raise HTTPException(400, "S3 endpoint must be an http:// or https:// URL")
+    return v
 
 def _changed(new, stored) -> bool:
     """True when a submitted value differs from the stored one (None = not sent)."""
@@ -432,6 +446,14 @@ def put_settings(body: SettingsIn, request: Request):
             upd["s3_secret_access_key_enc"] = ""
     if body.s3_prefix is not None:
         upd["s3_prefix"] = body.s3_prefix.strip()
+    if body.s3_endpoint_url is not None:
+        ep = _clean_s3_endpoint(body.s3_endpoint_url)
+        if ep != (s.get("s3_endpoint_url") or "") and not (body.s3_secret_access_key or "").strip():
+            # Never send a stored secret to a new destination it wasn't saved for.
+            upd["s3_secret_access_key_enc"] = ""
+        upd["s3_endpoint_url"] = ep
+    if body.s3_force_path_style is not None:
+        upd["s3_force_path_style"] = body.s3_force_path_style
     if body.poll_interval_s is not None:
         # Floor to MIN_POLL_INTERVAL so a stray small value can't hammer the GitHub API.
         # Applies to the poller on its next loop — no restart needed.
@@ -964,14 +986,18 @@ class S3TestIn(BaseModel):
     region: str | None = None
     access_key_id: str | None = None
     secret_access_key: str | None = None
+    endpoint_url: str | None = None
+    force_path_style: bool | None = None
 
 
 @router.post("/api/settings/s3/test")
 def s3_test(body: S3TestIn):
     from s3_storage import s3_storage
+    endpoint = _clean_s3_endpoint(body.endpoint_url)
+    s = store.get_settings()
     secret_key = body.secret_access_key
-    if not secret_key:
-        s = store.get_settings()
+    same_target = endpoint is None or endpoint == (s.get("s3_endpoint_url") or "")
+    if not secret_key and same_target:
         if s.get("s3_secret_access_key_enc"):
             secret_key = crypto.decrypt(s.get("s3_secret_access_key_enc"))
     res = s3_storage.test_connection(
@@ -979,6 +1005,8 @@ def s3_test(body: S3TestIn):
         region=body.region,
         access_key_id=body.access_key_id,
         secret_access_key=secret_key,
+        endpoint_url=endpoint,
+        force_path_style=body.force_path_style,
     )
     if not res.get("ok"):
         raise HTTPException(400, detail=res.get("error", "AWS S3 connection test failed"))

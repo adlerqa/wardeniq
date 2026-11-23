@@ -163,6 +163,23 @@ Then open **http://localhost:8001**.
 > See [Troubleshooting](docs/troubleshooting.md) if you're already running the
 > affected stack and need to recover admin access.
 
+> **Document storage (optional — S3 or S3-compatible).** Uploaded requirement
+> documents are always parsed into features and test cases. Keeping the
+> *original files* (and the `/api/documents/*` store/download API) needs AWS S3
+> **or any S3-compatible store** such as MinIO, LocalStack, Garage or Cloudflare R2 —
+> no AWS account required. For a local MinIO:
+>
+> ```bash
+> docker run -d -p 9000:9000 -p 9001:9001 -e MINIO_ROOT_USER=minio -e MINIO_ROOT_PASSWORD=minio123 minio/minio server /data --console-address :9001
+> ```
+>
+> Create a bucket in the MinIO console (http://localhost:9001), then in
+> **Configuration → AWS S3 Document Storage** set *S3 Endpoint* `http://localhost:9000`,
+> the bucket name, region `us-east-1`, keys `minio` / `minio123`, and click
+> **Test S3 Connection**. (Or use `AWS_S3_ENDPOINT_URL` and friends in `.env`.)
+> When running wardenIQ in Docker, use an endpoint the container can reach (e.g.
+> `http://host.docker.internal:9000`).
+
 ### Signing in the very first time
 
 wardenIQ always requires a login. When SMTP (email delivery) is not yet set up, there's
