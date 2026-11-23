@@ -16,6 +16,7 @@ Libraries leveraged (the "why Python" of the stack):
   * tree-sitter (bundled grammars) -> accurate symbol/structure extraction; tolerates fragments.
   * numpy    -> fast vectorized cosine over the in-memory code index.
 """
+import bisect
 import os
 import re
 
@@ -204,19 +205,36 @@ def extract_endpoints(patch: str, path: str, removed: bool = False) -> list:
     Returns [{method, path, file, line, removed}] with real line numbers from unidiff.
     """
     out, seen = [], set()
-    for line_no, text in parse_added_lines(patch, path):
+    added = parse_added_lines(patch, path)
+
+    def _add(m, mg, pg, line_no):
+        p = m.group(pg)
+        if not p or not p.startswith("/"):   # kills obj.get('key') style false hits
+            return
+        method = _norm_method(m.group(mg) if mg else None)
+        key = (method, p)
+        if key in seen:
+            return
+        seen.add(key)
+        out.append({"method": method, "path": p, "file": path,
+                    "line": line_no, "removed": removed})
+
+    for line_no, text in added:
         for mg, pg, rx in _ENDPOINT_RX:
             for m in rx.finditer(text):
-                p = m.group(pg)
-                if not p or not p.startswith("/"):   # kills obj.get('key') style false hits
-                    continue
-                method = _norm_method(m.group(mg) if mg else None)
-                key = (method, p)
-                if key in seen:
-                    continue
-                seen.add(key)
-                out.append({"method": method, "path": p, "file": path,
-                            "line": line_no, "removed": removed})
+                _add(m, mg, pg, line_no)
+    # A route is often written over several lines (the formatter puts the path on the line
+    # after `router.get(`), which the line-by-line pass above cannot see. Search the added
+    # lines joined together as well; a route already found above is skipped by `seen`.
+    if len(added) > 1:
+        joined = "\n".join(text for _, text in added)
+        starts, offset = [], 0
+        for _, text in added:
+            starts.append(offset)
+            offset += len(text) + 1
+        for mg, pg, rx in _ENDPOINT_RX:
+            for m in rx.finditer(joined):
+                _add(m, mg, pg, added[bisect.bisect_right(starts, m.start()) - 1][0])
     return out
 
 

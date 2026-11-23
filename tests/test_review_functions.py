@@ -292,13 +292,14 @@ class TestVerifyPRImplementation:
 
     def _files(self):
         return [{"filename": "app/auth.py", "status": "added",
-                 "additions": 3, "deletions": 0, "patch": "+def login(): ..."}]
+                 "additions": 3, "deletions": 0, "patch": "@@ -0,0 +1,3 @@\n+def login(): ..."}]
 
     def test_maps_and_filters_unknown_ids(self):
-        # Cites the file the PR actually changed -> confidence preserved as reported.
+        # Cites the hunk the PR actually changed (H1, in app/auth.py) -> confidence preserved
+        # as reported, and the file comes from the cited hunk.
         llm = FakeLLM(response={"covered": [
             {"test_case_id": "c1", "status": "covered", "confidence": 0.9,
-             "rationale": "`login` added", "files": ["app/auth.py"]},
+             "rationale": "`login` added", "hunks": ["H1"]},
             {"test_case_id": "ghost", "status": "covered"}]})
         out = cov.verify_pr_implementation(llm, {"number": 1, "title": "x"}, self._files(), self.cases)
         assert [c["test_case_id"] for c in out["covered"]] == ["c1"]
@@ -317,11 +318,13 @@ class TestVerifyPRImplementation:
         assert out["covered"][0]["needs_review"] is True
 
     def test_citation_outside_the_diff_is_rejected(self):
+        # H99 is not a hunk of this PR: it is reported as rejected and the claim, which then
+        # cites nothing real, cannot stay 'covered'.
         llm = FakeLLM(response={"covered": [
             {"test_case_id": "c1", "status": "covered", "confidence": 0.9,
-             "rationale": "impl", "files": ["app/somewhere_else.py"]}]})
+             "rationale": "impl", "hunks": ["H99"]}]})
         out = cov.verify_pr_implementation(llm, {"number": 1}, self._files(), self.cases)
-        assert out["covered"][0]["files_rejected"] == ["app/somewhere_else.py"]
+        assert out["covered"][0]["hunks_rejected"] == ["H99"]
         assert out["covered"][0]["status"] == "partial"
 
     def test_invalid_status_coerced_to_partial(self):
