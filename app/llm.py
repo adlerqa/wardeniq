@@ -3,6 +3,7 @@ Mistral / any OpenAI-compatible endpoint). One `chat_json` entrypoint; the rest 
 the app never cares which provider is configured.
 """
 import json
+import math
 import os
 
 import httpx
@@ -27,7 +28,7 @@ DEFAULT_MAX_TOKENS = 4000
 
 
 def _timeout_from_env(raw: str | None) -> float | None:
-    """Parse LLM_TIMEOUT_SECONDS. Blank, invalid or non-positive means "unset"."""
+    """Parse LLM_TIMEOUT_SECONDS. Blank, invalid or non-finite/non-positive means "unset"."""
     value = (raw or "").strip()
     if not value:
         return None
@@ -36,8 +37,10 @@ def _timeout_from_env(raw: str | None) -> float | None:
     except ValueError:
         log.warning("Ignoring LLM_TIMEOUT_SECONDS=%r: not a number", value)
         return None
-    if seconds <= 0:
-        log.warning("Ignoring LLM_TIMEOUT_SECONDS=%r: must be greater than 0", value)
+    if not math.isfinite(seconds) or seconds <= 0:
+        log.warning(
+            "Ignoring LLM_TIMEOUT_SECONDS=%r: must be finite and greater than 0", value
+        )
         return None
     return seconds
 
@@ -174,8 +177,10 @@ class LLM:
         if self.provider == "bedrock":
             # Bedrock never honoured the per-call timeouts: unset LLM_TIMEOUT_SECONDS keeps
             # botocore's own 60 s connect/read timeout, which retries a timed-out call.
-            timeout = (timeout_seconds or LLM_TIMEOUT_SECONDS
-                       if LLM_TIMEOUT_SECONDS is not None else None)
+            if LLM_TIMEOUT_SECONDS is None:
+                timeout = None
+            else:
+                timeout = timeout_seconds or LLM_TIMEOUT_SECONDS
             return self._bedrock_chat(system, user, temperature, max_tokens,
                                       timeout_seconds=timeout)
         if self.provider == "ollama":
