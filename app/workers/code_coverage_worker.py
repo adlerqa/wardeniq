@@ -25,6 +25,7 @@ import github
 import gitlab as gitlab_mod
 import coverage as cov
 import grounding
+import hunk_evidence
 
 from core.config import GITHUB_API
 from core.deps import (
@@ -81,8 +82,17 @@ def _pr_coverage(pr_id, pr_doc, files, fid):
                                            repo_files=repo_files)
         llm_v = {x["test_case_id"]: x for x in res.get("covered", [])}
     by_id = {c["id"]: c for c in cases}
+    # A case that names `GET /api/v2/search` is not implemented by a PR whose route is
+    # `GET /v1/search`: another API version is another endpoint. The function-name tiers of
+    # the grounded matching can still pair them ("searchProducts" is in both), so a case in
+    # this position is left out here, whatever matched or the model said.
+    pr_endpoints = hunk_evidence.diff_endpoints(prod_files)
+    other_version = {cid for cid, case in by_id.items()
+                     if hunk_evidence.endpoint_status(case, pr_endpoints) == "conflict"}
     covered = []
     for cid in by_id:
+        if cid in other_version:
+            continue
         m = gm["matches"].get(cid)     # grounded scope hit (endpoint/symbol) or None
         v = llm_v.get(cid)             # LLM verdict or None
         if v and v.get("status") == "covered":
@@ -100,6 +110,10 @@ def _pr_coverage(pr_id, pr_doc, files, fid):
             "evidence": (m.get("evidence") if m else []),
             "rationale": (v.get("rationale") if v else
                           "PR changes touch code relevant to this case; specific implementation not confirmed"),
+            # the numbered hunks the verdict rests on (hunk_evidence.py), so a reviewer can
+            # open exactly that code; empty when the status comes from the grounded match alone
+            "hunks": (v.get("hunks") or []) if v else [],
+            **({"hunk_notes": v["hunk_notes"]} if v and v.get("hunk_notes") else {}),
             "by_dev_test": False})
     dev_ids = grounding.dev_tested_cases(dev_test_files, cases)
     for c in covered:

@@ -54,6 +54,29 @@
 
 ### Fixed
 
+- **PR coverage verdicts must now cite numbered code hunks that show the behaviour.** A real run
+  on a product-search feature (seven tests written for `GET /api/v2/search`, `/api/v2/suggest`, a
+  brand filter and a sort control) marked tests covered that the pull request does not implement:
+  against a PR that only has the v1 search (`GET /v1/search`), qwen2.5:3b marked five tests covered
+  and llama3.2:3b marked all seven. Four things caused it: the model was shown only the first
+  6,000 characters of the diff (about 12% of a 1,200-line PR, and the route file was not in it);
+  "covered" was the model's word, checked only as "a file that is in the diff"; a test for
+  `/api/v2/search` was paired with a PR that defines `/v1/search` by function name; and a route
+  written over several lines (`router.get(` then the path on the next line) was not recognised as
+  a route at all. Now the diff is split into numbered hunks, each batch of tests is shown the hunks
+  that match its own tests (a test's own route first; seed data, config, type files and tests are
+  not offered), and a verdict must cite the numbers of the hunks that show the behaviour. The app
+  checks that by text comparison with no model call: a verdict that cites no real hunk cannot be
+  covered, a claim whose cited hunks share almost nothing with the test is dropped, a test for an
+  endpoint the PR does not define cannot be covered, and a test for an endpoint the PR only defines
+  under another API version is left out. Multi-line routes are now found. The saved record lists
+  the hunks each verdict rests on. Replayed on qwen2.5 3b and 7b, gemma3 4b and llama3.2 3b against
+  both PRs (one run per model and PR, 56 verdicts), tests wrongly marked covered went from 14 to 0,
+  and tests correctly marked covered did not go down (4 to 5). Trade-offs: a function-name match
+  can still report a test as partial ("the PR touches related code"), which is not the same as
+  implemented; many tests the code really does implement are reported partial rather than covered
+  (most models cite the right route but rarely carry the rest); and whether the code does what the
+  test says beyond the words it shares with it is not checked (part of #249).
 - **UI tests must now cite the document lines that state their rule.** A real run on a
   product-search feature kept three UI validations the documents never state ("Sort by is
   required", "Other brands must be unchecked", "select at least one brand"): the documents
