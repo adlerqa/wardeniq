@@ -74,7 +74,9 @@ async function showLogin() {
 function applyRole() {
   const role = (ME && ME.role) || "viewer";
   $("#usermenu").hidden = false;
-  $("#user-email").textContent = ME.email;
+  const emailEl = $("#user-email");
+  emailEl.textContent = ME.email;
+  emailEl.title = ME.email;
   const rb = $("#user-role");
   rb.textContent = role;
   rb.className = "rolebadge " + role;

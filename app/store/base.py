@@ -139,6 +139,13 @@ class BaseStore:
                 self.db.create_collection(name)
         self.documents.create_index([("project_id", 1), ("created_at", -1)])
         self.documents.create_index([("feature_id", 1)])
+        # Hot-path lookup indexes.
+        self.assoc.create_index([("test_case_id", 1)])
+        self.fchunks.create_index([("feature_id", 1)])
+        self.features.create_index([("project_id", 1)])
+        self.features.create_index([("group_id", 1)])
+        self.code_chunks.create_index([("repo_id", 1)])
+        self.db["jobs"].create_index([("project_id", 1), ("type", 1)])
         self.users.create_index([("email", 1)], unique=True)
         self.api_tokens.create_index([("token_hash", 1)], unique=True)
         # Rate-limit bookkeeping expires on its own (TTL indexes).

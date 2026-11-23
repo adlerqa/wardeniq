@@ -36,15 +36,16 @@ TIMEOUTS, COMPLETENESS AND EVIDENCE
   model. --call-timeout SECONDS replaces the timeout of every model call, in this runner's
   client only (the app is untouched); without it the pipeline's own timeouts apply. It is
   recorded in the result.
-  OUTPUT CAP. The app's Ollama client never sends an output limit, so a model that falls into
-  a repetition loop can generate until the client times out (one 3B call produced 19,902
-  tokens in 30 minutes, against at most ~5,400 for normal calls). The pipeline already asks
-  for a limit on every call (3,000-10,000 tokens, and Anthropic and Bedrock enforce it).
+  OUTPUT CAP. A model that falls into a repetition loop can generate until the client times
+  out (one 3B call produced 19,902 tokens in 30 minutes, against at most ~5,400 for normal
+  calls). The pipeline asks for a limit on every call (3,000-10,000 tokens), and the app now
+  sends a limit a caller chose to Ollama as num_predict. This runner decides the cap itself and
+  never lets the app's own value through:
   --max-output-tokens controls what THIS runner's client sends to Ollama as num_predict:
     pipeline  (default) each call's own max_tokens, i.e. the limit the pipeline asked for
     <N>       one fixed cap of N tokens on every call
-    none      no cap, exactly as the app behaves
-  The app itself is untouched. The mode and the tokens are recorded in the result.
+    none      no cap, which is how the app behaved before it enforced limits
+  The mode and the tokens are recorded in the result.
   Every model call is classified: ok, length_limited, timeout, http_error, parse_error or
   other. length_limited means the reply was cut off at the cap; it is never reported as ok.
   A repeat is COMPLETE only if no call hit an infrastructure failure (timeout, http_error,
@@ -123,7 +124,8 @@ class EvalConfig:
         # the timeout of every model call, in this runner's client only.
         self.call_timeout = call_timeout
         # "pipeline" = send each call's own max_tokens to Ollama as num_predict; an int = one
-        # fixed cap for every call; "none" = send no cap (the app's own behaviour).
+        # fixed cap for every call; "none" = send no cap (how the app behaved before it
+        # enforced the limits its callers choose).
         self.output_cap = output_cap
 
     def seed_for(self, repeat: int) -> int:
@@ -284,13 +286,24 @@ class RecordingLLM(llm_module.LLM):
     def _raw_chat(self, system, user, num_ctx=8192, temperature=0.2, max_tokens=4000,
                   timeout_seconds=None):
         effective = self.call_timeout if self.call_timeout else timeout_seconds
+        # A call that chose no limit now reaches the app's client as None. The benchmark has
+        # always treated such a call as asking for the old default (chat_json used to default to
+        # 4000), so it still records that limit and "pipeline" mode still caps it there. Keeping
+        # that makes results comparable with earlier runs; only the app's own client changed.
+        if max_tokens is None:
+            max_tokens = llm_module.DEFAULT_MAX_TOKENS
         cap = effective_output_cap(self.output_cap, max_tokens)
         _RESPONSE_META.value = None
         _REQUEST_OPTIONS.value = {"num_predict": cap} if cap else None
         started = time.perf_counter()
         outcome, text, status, error_type, parse_ok = "ok", "", None, None, None
         try:
-            text = super()._raw_chat(system, user, num_ctx, temperature, max_tokens,
+            # The app's own client now sends a call's max_tokens to Ollama as num_predict. This
+            # runner chooses the cap itself (the modes below) and applies it through the shim,
+            # so it must not also let the app's value through: "none" would still send a cap,
+            # and a fixed N would lose to the call's own limit, while the result recorded
+            # something else. The call's own limit is still recorded as max_tokens_requested.
+            text = super()._raw_chat(system, user, num_ctx, temperature, None,
                                      timeout_seconds=effective)
             parsed = classify_response(text)
             if is_length_limited(response_stats(getattr(_RESPONSE_META, "value", None), 0.0), cap):
@@ -336,7 +349,7 @@ def task_label(prompt: str) -> str:
 OUTPUT_CAP_RULES = {
     "pipeline": "each call's own max_tokens is sent to Ollama as num_predict",
     "fixed": "one fixed cap is sent to Ollama as num_predict on every call",
-    "none": "no output cap is sent to Ollama (as the app behaves)",
+    "none": "no output cap is sent to Ollama (as the app behaved before it enforced limits)",
 }
 
 
@@ -720,8 +733,8 @@ def parse_args(argv):
                     help="the output cap THIS runner sends to Ollama (num_predict). "
                          "'pipeline' (default): each call's own max_tokens, the limit the "
                          "pipeline already asks for. N: one fixed cap on every call. 'none': "
-                         "no cap, as the app behaves. The app itself is unchanged. Recorded in "
-                         "the result.")
+                         "no cap, as the app behaved before it enforced limits. The runner "
+                         "never lets the app's own limit through. Recorded in the result.")
     ap.add_argument("--mongo-uri", default=os.getenv("EVAL_MONGO_URI", ""),
                     help="a MongoDB it may create throwaway wardeniq_eval_* databases on "
                          "(or set EVAL_MONGO_URI); never printed or written to results")

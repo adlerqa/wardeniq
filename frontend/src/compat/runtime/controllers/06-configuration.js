@@ -1,5 +1,6 @@
 // ---- configuration ----
 let LLM_SETTINGS = {};
+let EMBED_SETTINGS = {};
 
 function updateLlmFieldPlaceholders(provider, settings = LLM_SETTINGS) {
   const key = $("#cfg-llm-key");
@@ -34,9 +35,47 @@ function updateLlmFieldPlaceholders(provider, settings = LLM_SETTINGS) {
   }
 }
 
+function updateEmbeddingFieldPlaceholders(provider, settings = EMBED_SETTINGS) {
+  const key = $("#cfg-embed-key");
+  const endpoint = $("#cfg-embed-base");
+  const sameProvider = (settings.embed_provider || "ollama") === provider;
+  const keyIsRequired = !["ollama", "bedrock"].includes(provider);
+
+  if (key) {
+    key.placeholder = sameProvider && settings.embed_api_key_set
+      ? "Leave blank to keep current"
+      : keyIsRequired
+        ? "API key is required"
+        : provider === "ollama"
+          ? "Optional — no key needed for bundled Ollama"
+          : "Optional — use an AWS IAM role or access keys";
+  }
+
+  if (endpoint) {
+    const hasEndpoint = sameProvider && settings.embed_base_url;
+    endpoint.placeholder = hasEndpoint
+      ? "Leave blank to keep current"
+      : provider === "openai-compatible"
+        ? "Custom endpoint URL is required"
+        : provider === "ollama"
+          ? "Not used with Ollama"
+          : "Optional — uses the provider default";
+  }
+}
+
+function updateSmtpPasswordPlaceholder(settings = {}) {
+  const password = $("#cfg-smtp-pass");
+  if (password) {
+    password.placeholder = settings.smtp_pass_set
+      ? "Leave blank to keep current"
+      : "SMTP password or app password";
+  }
+}
+
 async function loadConfig() {
   try {
     const s = await api("/api/settings");
+    EMBED_SETTINGS = s;
     const llmProv = s.llm_provider || "ollama";
     LLM_SETTINGS = s;
     $("#cfg-llm-provider").value = llmProv;
@@ -150,17 +189,7 @@ async function loadConfig() {
 
     // Requirements and placeholders depend on the selected provider.
     updateLlmFieldPlaceholders(llmProv, s);
-    if ($("#cfg-embed-key")) {
-      $("#cfg-embed-key").placeholder = s.embed_api_key_set
-        ? "Leave blank to keep current"
-        : "API token is required";
-    }
-    if ($("#cfg-embed-base")) {
-      const hasEmbedEndpointConfig = s.embed_base_url || s.configured;
-      $("#cfg-embed-base").placeholder = hasEmbedEndpointConfig
-        ? "Leave blank to keep current"
-        : "Endpoint URL is required";
-    }
+    updateEmbeddingFieldPlaceholders($("#cfg-embed-provider")?.value || s.embed_provider || "ollama", s);
     if ($("#cfg-jira-token")) {
       // Gate on jira_token_readable, not jira_token_set: a stored-but-
       // undecryptable token must NOT claim "leave blank to keep current" --
@@ -177,11 +206,7 @@ async function loadConfig() {
         ? "Leave blank to keep current"
         : "API token is required";
     }
-    if ($("#cfg-smtp-pass")) {
-      $("#cfg-smtp-pass").placeholder = s.smtp_pass_set
-        ? "Leave blank to keep current"
-        : "API token is required";
-    }
+    updateSmtpPasswordPlaceholder(s);
     if ($("#cfg-s3-bucket")) {
       $("#cfg-s3-bucket").value = s.s3_bucket || "";
       if ($("#cfg-s3-region")) $("#cfg-s3-region").value = s.s3_region || "";
@@ -420,8 +445,11 @@ function updateEmbedModelOptions(provider, selected) {
   inp.value = sel.value;
 }
 if ($("#cfg-embed-provider"))
-  $("#cfg-embed-provider").onchange = () =>
-    updateEmbedModelOptions($("#cfg-embed-provider").value, "");
+  $("#cfg-embed-provider").onchange = () => {
+    const provider = $("#cfg-embed-provider").value;
+    updateEmbedModelOptions(provider, "");
+    updateEmbeddingFieldPlaceholders(provider);
+  };
 if ($("#cfg-embed-model-select"))
   $("#cfg-embed-model-select").onchange = () => {
     const inp = $("#cfg-embed-model");

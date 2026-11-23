@@ -22,6 +22,9 @@ def feature_report(fid: str):
     if project and project.get("name"):
         f["project_name"] = project["name"]
     cov_rep = store.feature_coverage_report(fid)
+    # Same automation figure the feature page shows (test-repo scan snapshot).
+    snap = store.get_automation_coverage(fid, version=f.get("version", 1)) or {}
+    cov_rep["automation_pct"] = snap.get("coverage_pct", 0)
     cases = store.get_feature_cases(fid)
     prs = store.list_prs(feature_id=fid)
     pdf = report.build_feature_pdf(f, cov_rep, cases, prs)

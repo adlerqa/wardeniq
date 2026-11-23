@@ -120,6 +120,9 @@ async function loadGapPrRuns(opts) {
           `<span class="badge">${esc(run.status || "")}</span>`;
         const total = run.tests_total ?? 0;
         const covered = run.tests_covered ?? 0;
+        // Partial = PR touches relevant code but the implementation was not confirmed.
+        // It is shown here but is not part of `covered` or the percentage (#291).
+        const partial = run.tests_partial ?? 0;
         const pct = total ? Math.round((100 * covered) / total) : 0;
         const ts = run.completed_at || run.created_at;
         const when = ts ? new Date(ts * 1000).toLocaleString() : "";
@@ -141,7 +144,7 @@ async function loadGapPrRuns(opts) {
         </div>
         <div style="text-align:right">
           <div><b>${covered}/${total}</b> covered</div>
-          <div class="muted" style="font-size:11px">${pct}% · ${run.source || "webhook"}</div>
+          <div class="muted" style="font-size:11px">${pct}%${partial ? ` · ${partial} partial, not counted` : ""} · ${run.source || "webhook"}</div>
           ${exclBtn}
         </div>
       </div>`;
@@ -239,6 +242,10 @@ window.openGapPrRun = async (rid) => {
     const newlySet = new Set(cmp.newly_covered || []);
     const lostSet = new Set(cmp.no_longer_covered || []);
 
+    // An entry saved before `status` existed was full coverage; "partial" was never
+    // confirmed, so it is shown as a gap with a note instead of as covered (#291).
+    const isConfirmed = (c) => (c.status ?? "covered") === "covered";
+
     // Group feature test cases
     const coveredById = {};
     for (const c of covered) coveredById[c.test_case_id] = c;
@@ -248,12 +255,14 @@ window.openGapPrRun = async (rid) => {
       const t = (c.type || "other").toLowerCase();
       sections[t] = sections[t] || { covered: [], missing: [] };
       const ev = coveredById[c.id];
-      if (ev)
+      if (ev && isConfirmed(ev))
         sections[t].covered.push({
           ...c,
           rationale: ev.rationale,
           by_dev_test: !!ev.by_dev_test,
         });
+      else if (ev)
+        sections[t].missing.push({ ...c, partial: true, rationale: ev.rationale });
       else sections[t].missing.push(c);
     }
 
@@ -338,9 +347,8 @@ window.openGapPrRun = async (rid) => {
       );
 
     const total = allCases.length || (r.tests_total ?? 0);
-    const cov = covered.filter(
-      (c) => c.status === "covered" || c.status === "partial",
-    ).length;
+    const cov = covered.filter(isConfirmed).length;
+    const partialCount = covered.filter((c) => c.status === "partial").length;
     const gaps = Math.max(0, total - cov);
     const newlyCount = cmp.newly_covered_detail
       ? cmp.newly_covered_detail.length
@@ -363,6 +371,7 @@ window.openGapPrRun = async (rid) => {
       .map((t) => {
         const sec = sections[t];
         const secTotal = sec.covered.length + sec.missing.length;
+        const secPartial = sec.missing.filter((c) => c.partial).length;
         const defaultMode = sec.covered.length ? "covered" : "missing";
         const isCovActive = defaultMode === "covered";
 
@@ -415,6 +424,7 @@ window.openGapPrRun = async (rid) => {
               ${prioBadgeHtml}
             </div>
             <div style="font-size:13.5px;font-weight:500;color:#e2e8f0;line-height:1.4;margin-bottom:8px">${esc(c.title)}</div>
+            ${c.partial ? `<div style="font-size:11.5px;color:var(--amber);margin-bottom:8px">⚠ Partial match, not confirmed${c.rationale ? ` — ${esc(c.rationale)}` : ""}</div>` : ""}
             ${stepsHtml(c.steps)}
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               ${commitBadgeHtml}
@@ -428,7 +438,7 @@ window.openGapPrRun = async (rid) => {
         <summary style="color:var(--text);font-size:13px;text-transform:none;letter-spacing:normal;font-weight:600">
           <div style="display:flex;align-items:center;gap:8px">
             <span>${esc(TYPE_TITLES[t] || t.toUpperCase())}</span>
-            <span class="badge" style="border-radius:999px;background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--muted);padding:2px 7px;font-size:10px">${sec.covered.length} covered · ${sec.missing.length} missing</span>
+            <span class="badge" style="border-radius:999px;background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--muted);padding:2px 7px;font-size:10px">${sec.covered.length} covered · ${sec.missing.length} missing${secPartial ? ` (${secPartial} partial)` : ""}</span>
           </div>
         </summary>
         <div class="case-group-body" style="padding:10px 14px 14px">
@@ -458,7 +468,7 @@ window.openGapPrRun = async (rid) => {
       <div class="sub" style="margin:8px 0">${esc(r.pr_title || "")} · branch <b>${esc(r.pr_branch || "")}</b></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">${headerLinks.join("")}</div>
       <div style="display:flex;gap:0;padding:14px 18px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;margin-bottom:14px">
-        <div style="flex:1;min-width:140px"><div style="font-size:18px;font-weight:700;line-height:1">${cov} / ${total}</div><div class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;margin-top:5px">Tests covered</div></div>
+        <div style="flex:1;min-width:140px"><div style="font-size:18px;font-weight:700;line-height:1">${cov} / ${total}</div><div class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;margin-top:5px">Tests covered</div>${partialCount ? `<div class="muted" style="font-size:11px;margin-top:3px">+ ${partialCount} partial, not counted</div>` : ""}</div>
         <div style="flex:1;min-width:140px;border-left:1px solid var(--line);padding-left:18px"><div style="font-size:18px;font-weight:700;line-height:1">${newlyCount}</div><div class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;margin-top:5px">New tests found</div></div>
         <div style="flex:1;min-width:140px;border-left:1px solid var(--line);padding-left:18px"><div style="font-size:18px;font-weight:700;line-height:1">${gaps}</div><div class="muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;margin-top:5px">Gaps</div></div>
       </div>

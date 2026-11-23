@@ -600,6 +600,9 @@
     color 0.15s,
     box-shadow 0.15s;
 }
+.sidebar nav button[hidden] {
+  display: none !important;
+}
 .sidebar nav button > svg {
   width: 20px;
   height: 20px;
