@@ -39,3 +39,11 @@ MIGRATION_IN_PROGRESS_MSG = ("a database migration is in progress -- try again o
 
 async def migration_in_progress_handler(request: Request, exc: MigrationInProgress):  # noqa: ARG001
     return JSONResponse({"detail": str(exc) or MIGRATION_IN_PROGRESS_MSG}, status_code=409)
+
+
+async def embedding_timeout_handler(request: Request, exc):  # noqa: ARG001
+    """The embedding model took longer than the embedding timeout (embeddings.EmbeddingTimeout).
+    Many routes embed text while handling the request (creating a feature, searching, Jira
+    import). Without a handler the timeout surfaced as a bare HTTP 500; this answers 504 with
+    the message, which says which setting to raise."""
+    return JSONResponse({"detail": str(exc)}, status_code=504)

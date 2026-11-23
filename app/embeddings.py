@@ -9,10 +9,12 @@ store.rebuild_vector_indexes / store.reembed_all and the `reembed` job. This
 client never mixes dimensions; it just produces vectors for the active model.
 """
 import json
+import os
 
 import httpx
 
 import usage
+from llm import LLM_TIMEOUT_SECONDS, _timeout_from_env
 
 DOC_PREFIX = "search_document: "
 QUERY_PREFIX = "search_query: "
@@ -23,6 +25,29 @@ DEFAULT_BASE = {
     "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
     "voyage": "https://api.voyageai.com",
 }
+
+
+# How long one embedding call may take, in seconds. It used to be a fixed 120 s that
+# LLM_TIMEOUT_SECONDS did not reach, so a CPU-only machine whose first embedding call takes
+# several minutes failed at 2 minutes whatever the user set (POST /api/features answered 500
+# before any job existed). Now: EMBED_TIMEOUT_SECONDS if set, else LLM_TIMEOUT_SECONDS if
+# set (so the advice "raise LLM_TIMEOUT_SECONDS on a slow machine" covers embeddings too),
+# else the old 120 s. AWS Bedrock keeps botocore's own timeout, as it does for generation.
+DEFAULT_EMBED_TIMEOUT = 120.0
+EMBED_TIMEOUT_SECONDS = _timeout_from_env(os.getenv("EMBED_TIMEOUT_SECONDS"), "EMBED_TIMEOUT_SECONDS")
+
+
+def embed_timeout() -> float:
+    """The timeout for one embedding call (read each call, so a change is picked up)."""
+    for value in (EMBED_TIMEOUT_SECONDS, LLM_TIMEOUT_SECONDS):
+        if value is not None:
+            return value
+    return DEFAULT_EMBED_TIMEOUT
+
+
+class EmbeddingTimeout(RuntimeError):
+    """The embedding model did not answer in time. The message says what to do, because the
+    API turns it into a readable error instead of a bare HTTP 500."""
 
 
 class Embedder:
@@ -102,11 +127,25 @@ class Embedder:
         return data["embedding"]
 
     # ---- providers -----------------------------------------------------------
+    def _post(self, url: str, **kwargs):
+        """httpx.post with the configured embedding timeout; a timeout becomes an
+        EmbeddingTimeout that says how to fix it."""
+        seconds = embed_timeout()
+        try:
+            return httpx.post(url, timeout=seconds, **kwargs)
+        except httpx.TimeoutException as exc:
+            raise EmbeddingTimeout(
+                f"The embedding model '{self.model}' did not answer within {seconds:g} s. "
+                "On a slow machine, for example a CPU-only Ollama, raise EMBED_TIMEOUT_SECONDS "
+                "(or LLM_TIMEOUT_SECONDS) in .env, for example to 600, and restart. "
+                "Or choose a hosted embedding provider under Configuration → Embeddings."
+            ) from exc
+
     def _embed_ollama(self, text: str, task: str) -> list[float]:
         payload = (QUERY_PREFIX if task == "query" else DOC_PREFIX) + text
-        r = httpx.post(f"{self.ollama_url}/api/embeddings",
+        r = self._post(f"{self.ollama_url}/api/embeddings",
                        headers=self._ollama_headers(),
-                       json={"model": self.model, "prompt": payload}, timeout=120.0)
+                       json={"model": self.model, "prompt": payload})
         if r.status_code == 404:
             raise RuntimeError(
                 f"the embedding model '{self.model}' isn't downloaded in Ollama yet. Download it with: "
@@ -129,7 +168,7 @@ class Embedder:
         # text-embedding-3 (and Gemini's compat endpoint) accept an output dimension.
         if self.provider in ("openai", "gemini") and self.dim:
             body["dimensions"] = self.dim
-        r = httpx.post(url, timeout=120.0,
+        r = self._post(url,
                        headers={"Authorization": f"Bearer {self.api_key}",
                                 "Content-Type": "application/json"}, json=body)
         r.raise_for_status()
@@ -141,7 +180,7 @@ class Embedder:
 
     def _embed_voyage(self, text: str, task: str) -> list[float]:
         base = self.base_url or DEFAULT_BASE["voyage"]
-        r = httpx.post(f"{base}/v1/embeddings", timeout=120.0,
+        r = self._post(f"{base}/v1/embeddings",
                        headers={"Authorization": f"Bearer {self.api_key}",
                                 "Content-Type": "application/json"},
                        json={"model": self.model, "input": [text],
