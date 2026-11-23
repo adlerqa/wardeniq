@@ -5,6 +5,7 @@ import os
 import re
 import time
 
+import carry_gate
 import usage
 from core.logging_setup import get_logger
 from llm import resolve_timeout
@@ -1719,6 +1720,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
             29,
         )
     inherited_reused = inherited_rebuilt = 0
+    inherited_rejected = []
     errors = []
     fusion = {}
     if project_tests or previous_cases:
@@ -1762,6 +1764,17 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                 original = store.get_case(original["id"]) or original
         if not original:
             continue
+        # A test from this feature's own previous version is the same feature and is
+        # carried as before. A test from another feature is carried only when this
+        # feature's documents are about what it checks (see carry_gate.py): the model's
+        # pick alone attached nine Google-login tests to a product-search feature.
+        from_previous_version = any(case.get("id") == original.get("id") for case in previous_cases)
+        if not from_previous_version:
+            problem = carry_gate.relevance_problem(original, evidence_text)
+            if problem:
+                inherited_rejected.append({"title": original.get("title") or original.get("id"),
+                                           "reason": problem})
+                continue
         mode = str(reference.get("mode") or "").upper()
         if mode == "INHERIT_EXACT":
             store.associate(feature_id, original["id"], "carried", None)
@@ -1808,6 +1821,21 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                 inherited_rebuilt += 1
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"Inherited test repair failed: {exc}")
+    if inherited_rejected:
+        log_progress(
+            update_job_fn,
+            f"Fusion: {len(inherited_rejected)} test(s) of other features not carried over "
+            "because this feature's documents are not about them",
+            34,
+        )
+        for item in inherited_rejected:
+            log.info('[TestGen][fusion] not carried "%s": %s', item["title"], item["reason"])
+    # "Already covered, do not write tests for X" is handed to the agents that write this
+    # feature's tests. It is only true of tests that are in this feature's suite, so with
+    # nothing carried over the model's summary describes coverage this feature does not have
+    # (in the real run it claimed this feature's own endpoints were "fully covered").
+    if not (inherited_reused + inherited_rebuilt):
+        context["summaries"]["alreadyCovered"] = ""
     _mark("fusion")
 
     log_progress(update_job_fn, "DAG layer 1: generating API and UI tests", 38)
@@ -2189,6 +2217,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         "by_type": by_type,
         "inherited_reused": inherited_reused,
         "inherited_rebuilt": inherited_rebuilt,
+        "inherited_rejected": inherited_rejected,
         "discovered_api_count": len(api_surface),
         "rag_gap_count": len(gaps),
         "errors": errors,

@@ -970,7 +970,7 @@ RULES:
 - VERSION LINEAGE: Treat previous-version reuse as internal lineage. Keep visible labels version-neutral unless the current feature is explicitly cross-feature reuse.
 - METHOD INTEGRITY: A GET and a POST on the same endpoint are usually different actions. Only inherit across different methods if the intent is IDENTICAL.
 - DELTA RULE: If the "Current Feature" introduces a NEW PARAMETER, NEW ROLE, or NEW STATE to an existing endpoint, DO NOT reuse the old test blindly. You must identify that a new test is needed for this delta.
-- The "already_covered_summary" should be a message to subsequent agents: "DO NOT write tests for X, Y, Z as they are already in the library. Focus only on the new deltas A, B."
+- The "already_covered_summary" is a message to the agents that write the other tests: what the tests you inherited cover, and what is new. Write it ONLY about tests you inherited above. If you inherited none, it must be an empty string.
 
 OUTPUT SCHEMA:
 {{
@@ -992,13 +992,12 @@ OUTPUT SCHEMA:
      }}
   ],
   "covered_endpoints": [
-     {{ "method": "POST", "path": "/api/v1/auth/otp" }}
+     {{ "method": "<HTTP method>", "path": "<path of an endpoint whose inherited tests cover it>" }}
   ],
   "covered_flows": [
-     "User login journey",
-     "Token validation"
+     "<a flow your inherited tests already cover>"
   ],
-  "already_covered_summary": "Endpoints A and B are fully covered. Focus only on the new Discovery logic."
+  "already_covered_summary": "<what the inherited tests cover and what is new; empty string if you inherited none>"
 }}""".strip()
 
 def build_api_agent_task_prompt(

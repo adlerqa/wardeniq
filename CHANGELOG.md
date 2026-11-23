@@ -54,6 +54,28 @@
 
 ### Fixed
 
+- **A test from another feature is no longer carried over unless this feature's documents are about
+  it.** A real run on a product-search feature (Elasticsearch, brand filters, sort, suggestions), in a
+  project whose Login feature already had Google-login tests, attached nine of those login tests to the
+  search feature. The Fusion step shows a model every test already in the project and attached
+  whatever it named (`INHERIT_EXACT`) with no check, and its prompt pushed it ("you MUST inherit",
+  "aim to inherit ~90%"). Replaying the real step with the 16 login tests, qwen2.5:3b carried over 14
+  of them, qwen2.5:7b none, gemma3:4b 3 and llama3.2:3b 8; the right answer is none. Now a test of
+  another feature is carried over (exact or adapted) only when this feature's own documents are about
+  it, by plain text comparison with no model call: if the test names an endpoint and the documents
+  name endpoints, one must be the same endpoint (another API version is another endpoint); otherwise
+  at least two of its words, and 30% of them, must occur in the documents. Tests from the feature's
+  own previous version are carried as before. A test that is not carried is listed in the job result
+  as `inherited_rejected` with the reason. The model's `already_covered_summary` (handed to the
+  agents that write the feature's tests as "do not write tests for X") is now used only when a test
+  was really carried over; in the replay two models had copied the prompt's placeholder text and two
+  had claimed the feature's own endpoints were already covered. The prompt's placeholder example for
+  that summary is neutral now. With the gate, all four models carried over none of the unrelated
+  tests, and on a control feature that really is a variation of Login (V4: Apple sign in on the same
+  OAuth flow) 29 of the 33 tests they picked were kept. Trade-offs: a test that is truly reusable but
+  whose words are not in the new documents (shared infrastructure the documents never mention) is
+  no longer reused, and a project's reuse now depends on the documents naming what it reuses
+  (part of #249).
 - **PR coverage verdicts must now cite numbered code hunks that show the behaviour.** A real run
   on a product-search feature (seven tests written for `GET /api/v2/search`, `/api/v2/suggest`, a
   brand filter and a sort control) marked tests covered that the pull request does not implement:
