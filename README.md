@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/adlerqa/wardeniq/actions/workflows/ci.yml/badge.svg)](https://github.com/adlerqa/wardeniq/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Docker pulls](https://img.shields.io/docker/pulls/adlerqa/wardeniq)](https://hub.docker.com/r/adlerqa/wardeniq)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
@@ -84,9 +85,38 @@ built from atomic steps you can edit once and reuse everywhere:
 ## Quick start (about 5 minutes)
 
 The fastest way to see it work: a fully local trial with a bundled MongoDB and a small
-local model — no cloud accounts, no API keys.
+local model — no cloud accounts, no API keys. There are two ways to start it.
 
-### Clone and build from source
+### Option A — Run the published image from Docker Hub (no clone, no build)
+
+wardenIQ is published on Docker Hub as
+[`adlerqa/wardeniq`](https://hub.docker.com/r/adlerqa/wardeniq) (linux/amd64 and
+linux/arm64). One command pulls it, downloads the few small config files it needs, asks
+whether you want the all-in-one local trial or your own MongoDB, and starts it. All you
+need is Docker Desktop (or Docker with Compose v2).
+
+**macOS / Linux:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.sh | bash
+```
+
+**Windows** (Command Prompt or PowerShell — same command either way):
+
+```bat
+powershell -c "irm https://raw.githubusercontent.com/adlerqa/wardeniq/main/install.ps1 | iex"
+```
+
+Then open **http://localhost:8001**. For the local trial choose the **bundled** mode when
+the installer asks: it adds MongoDB and a local model, so the first start takes a few
+minutes. Choose **bring your own MongoDB** to run just the app container against your
+Atlas or self-managed MongoDB. `latest` always tracks the newest release; pin a version
+with `WARDENIQ_TAG=0.3.0`. The options and the non-interactive variables are in
+[Installation & deployment](docs/installation.md#prefer-a-pre-built-image-skip-the-local-build--recommended).
+The notes below about the first launch and about Linux kernels ≥ 6.19 apply to the
+bundled mode here too.
+
+### Option B — Clone and build from source
 
 ```bash
 git clone https://github.com/adlerqa/wardeniq.git wardenIQ && cd wardenIQ
