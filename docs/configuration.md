@@ -410,6 +410,10 @@ counts and rates then describe the timeout, not the model.
 > app makes, so a slow but working local model is no longer cut off. Unset, the built-in
 > defaults above apply. A smaller or faster model also helps; see
 > [Which model should I use?](#which-model-should-i-use).
+>
+> The same timeout also applies to the active provider check used by **Configuration →
+> Save/Test**. If the endpoint is unreachable rather than refusing the connection, that
+> check can wait for the full configured timeout.
 
 - **In the benchmark, `--call-timeout` is the setting to use.** `--call-timeout SECONDS`
   replaces the timeout of every model call in the runner's own client only, and takes
