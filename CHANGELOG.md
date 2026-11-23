@@ -54,6 +54,28 @@
 
 ### Fixed
 
+- **UI tests must now cite the document lines that state their rule.** A real run on a
+  product-search feature kept three UI validations the documents never state ("Sort by is
+  required", "Other brands must be unchecked", "select at least one brand"): the documents
+  name a Sort by control and a brand filter but give no rule for either. Three things caused
+  it: the UI prompt demanded at least 4 to 8 validations whatever the evidence said, its worked
+  example (an "Event Title" field) leaked into answers, and the only check was whether the
+  field's name appeared in the documents. Now the app splits the feature's own documents into
+  numbered lines ([E1], [E2], ...) and the UI prompt shows them; there is no minimum, an empty
+  list is a correct answer, and the example is placeholders. Every UI validation must cite the
+  numbers of the lines that state its rule. Citing a number works on any model; copying a
+  sentence exactly does not. The app then checks the validation against the lines it cites, by
+  text comparison with no model call: the lines must exist, mention the field, contain every
+  number the case claims, and contain nearly all the words of its intent. A validation that
+  fails is dropped and counted in the job result as `ui-rule-not-in-documents`; a kept one
+  stores the line numbers it cited. The repair pass follows the same rule. Replayed on
+  qwen2.5 3b and 7b, gemma3 4b and llama3.2 3b with the real documents, the invented rules
+  were dropped on all four, and on a document that states its rules every validation the
+  models wrote was kept. Trade-offs: UI validations built only from field labels, with no rule
+  stated in the documents, are no longer generated. A statement the documents do make can
+  still be turned into a UI validation of the wrong kind (a caching sentence as a form rule):
+  the check proves the documents support the claim, not that it belongs to a screen. Error
+  message wording is not checked (part of #249).
 - `LLM_TIMEOUT_SECONDS` now rejects non-finite values such as `nan`, `inf` and
   `1e400`. The setting's use by Configuration Save/Test provider checks is documented,
   and the Bedrock timeout selection is expressed explicitly without changing its

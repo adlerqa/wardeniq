@@ -595,6 +595,7 @@ REASON_HYBRID_SCAFFOLD = "hybrid-scaffold"
 REASON_NO_SOURCE_GROUNDING = "no-source-grounding"
 REASON_EDGE_SUPPRESSED = "edge-suppressed"
 REASON_DUPLICATE = "duplicate"
+REASON_UI_RULE_NOT_IN_DOCUMENTS = "ui-rule-not-in-documents"
 
 
 def prompt_exemplar_copy_reason(case: dict, corpus: str = "") -> str | None:
@@ -1212,11 +1213,109 @@ def build_api_agent_prompt(
         ]
     }
 
+# --- Numbered evidence lines ---------------------------------------------------------
+# A model that is told "only write what the documents state" cannot be trusted to do so,
+# and a model that is told "quote the document" often cannot copy text exactly. What every
+# model can do is point at a number. So the PROGRAM splits the documents into numbered
+# lines, shows them as [E1] [E2] ..., and a generated test must cite the numbers of the
+# lines that state its rule. The program then checks the citation against the test
+# (see _ui_rule_evidence_problem in service.py). The same lines are used to build the
+# prompt and to check the answer, so the numbering must come from one place: this one.
+EVIDENCE_LINE_CAP = 80
+EVIDENCE_LINE_MAX_CHARS = 300
+_EVIDENCE_MIN_WORDS = 3
+_EVIDENCE_BULLET = re.compile(r"^\s*(?:[-*\u2022\u25cf\u25aa\x7f]|\d+[.)])(?:\s|$)")
+_EVIDENCE_CUE = re.compile(
+    r"\b(must|shall|should|required|cannot|only|never|at least|at most|maximum|minimum|"
+    r"reject|prevent|allow|deny|within|before|after|field|input|dropdown|button|form|"
+    r"checkbox|toggle|selector|picker|screen)\b|\d",
+    re.IGNORECASE,
+)
+
+
+def _evidence_strings(value):
+    """Every text leaf of a nested structure (a design file's summary is a dict of lists)."""
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _evidence_strings(item)
+    elif isinstance(value, (list, tuple)):
+        for item in value:
+            yield from _evidence_strings(item)
+
+
+def _evidence_sentences(block: str):
+    """Sentences of one text. Text taken from a PDF is wrapped at the page width, so a
+    line break joins two lines of one sentence unless the next line starts a new item
+    (a bullet or a number) or the previous line already ended a sentence."""
+    lines = [line.strip() for line in str(block or "").splitlines()]
+    merged, current = [], ""
+    for line in lines:
+        if not line:
+            if current:
+                merged.append(current)
+            current = ""
+            continue
+        starts_item = bool(_EVIDENCE_BULLET.match(line))
+        ends_sentence = bool(re.search(r"[.!?;:]$", current))
+        continues = current and not starts_item and not ends_sentence and not line[0].isupper()
+        if continues:
+            current = f"{current} {line}"
+        else:
+            if current:
+                merged.append(current)
+            current = _EVIDENCE_BULLET.sub("", line, count=1).strip()
+    if current:
+        merged.append(current)
+    for piece in merged:
+        for sentence in re.split(r"(?<=[.!?;])\s+(?=[A-Z0-9\"'(\[])", piece):
+            yield sentence.strip()
+
+
+def collect_evidence_lines(sources, cap: int = EVIDENCE_LINE_CAP) -> list[dict]:
+    """The numbered evidence: [{"id": "E1", "text": "..."}, ...], in document order.
+
+    `sources` is the feature's own material only (the uploaded document text, the
+    retrieved document chunks, the design file's text), never a model-written summary.
+    Lines of fewer than 3 words are dropped (headings, page numbers) and repeats are
+    removed. Over `cap` lines, lines that mention a rule word, a number or a UI control
+    are kept first, so a long document keeps the lines that can state a rule."""
+    seen, lines = set(), []
+    for source in sources or []:
+        for text in _evidence_strings(source):
+            for sentence in _evidence_sentences(text):
+                sentence = " ".join(sentence.split())
+                if len(sentence) > EVIDENCE_LINE_MAX_CHARS:
+                    sentence = sentence[:EVIDENCE_LINE_MAX_CHARS].rsplit(" ", 1)[0]
+                key = sentence.lower()
+                if sentence.startswith("#") or len(sentence.split()) < _EVIDENCE_MIN_WORDS or key in seen:
+                    continue
+                seen.add(key)
+                lines.append(sentence)
+    if len(lines) > cap:
+        keep = {i for i, line in enumerate(lines) if _EVIDENCE_CUE.search(line)}
+        chosen = sorted(keep)[:cap]
+        if len(chosen) < cap:
+            rest = [i for i in range(len(lines)) if i not in keep][: cap - len(chosen)]
+            chosen = sorted(chosen + rest)
+        lines = [lines[i] for i in chosen]
+    return [{"id": f"E{n}", "text": text} for n, text in enumerate(lines, 1)]
+
+
+def build_evidence_lines_block(evidence_lines: list[dict] | None) -> str:
+    if not evidence_lines:
+        return "EVIDENCE LINES: none."
+    body = "\n".join(f"[{line['id']}] {line['text']}" for line in evidence_lines)
+    return f"EVIDENCE LINES (numbered by the program; cite these numbers):\n{body}"
+
+
 def build_ui_agent_prompt(
     context: dict,
     target_chunk: list = None,
     rag_context: dict = None,
     top_k: int = 8,
+    evidence_lines: list = None,
 ) -> dict:
     if target_chunk is None:
         target_chunk = []
@@ -1243,11 +1342,8 @@ def build_ui_agent_prompt(
             max_tests = min(max(component_count * 2, 10), 50)
         else:
             max_tests = min(max(math.ceil(available_field_count * 0.45), 12), 80)
-            
-        min_tests = min(max_tests, max(4, math.ceil(component_count * 0.5)) if component_count > 0 else max(8, math.ceil(max_tests * 0.45)))
     else:
         max_tests = 0
-        min_tests = 0
         
     if not has_field_evidence:
         component_instruction = 'No interactive form fields are supported by the current feature evidence. Output exactly {"ui_validations":[]}.'
@@ -1260,6 +1356,7 @@ def build_ui_agent_prompt(
     sibling_avoid = f"\n⛔ DO NOT GENERATE TESTS FOR THE FOLLOWING CONCEPTS (Already Covered by Sibling Features):\n{already_covered}\nAny test overlapping with the above will be automatically rejected and invalidate your response.\n" if already_covered else ""
 
     no_field_notice = '\nNo field evidence exists in the current feature. Output no UI validations.' if not has_field_evidence else ''
+    evidence_block = build_evidence_lines_block(evidence_lines)
 
     user_content = f"""TASK: Generate UI field validation test cases
 
@@ -1288,29 +1385,35 @@ FIELD VALUE RULES — violations make the entire response invalid:
 - {enum_constraint('validation_type', ['required', 'minLength', 'maxLength', 'format', 'state'])}
 - The "field" value must be the exact label string of the interactive element as it appears in Figma or the documents. A generic name such as "text input" or "field" makes the response invalid.
 - The "expected_behavior" value must describe what the user sees on screen when the validation triggers. Describing a server action makes the response invalid.
+- The "intent" value states the rule in the words of the cited evidence line(s). Do not add a rule the line does not say.
+- The "evidence" value is a list of 1 to 3 evidence line numbers, for example ["E4"] or ["E4","E9"]. Cite only lines that STATE the rule. A line that only names the field does not state a rule. The program checks every citation against your validation, and a validation without a valid citation is deleted.
 
 OUTPUT TARGET:
-- Generate at least {min_tests} validations when the evidence contains enough distinct fields.
+- There is NO minimum. Write a validation only when an evidence line states its rule. A field with no stated rule gets no validation: do not add the rules a form usually has (required, length limits, formats, error messages) from general knowledge.
+- Returning {{"ui_validations": []}} is a correct answer when no evidence line states a UI rule.
 - Output at most {max_tests} validations. Outputting more makes the response invalid.
 - Cover distinct field labels first. Repeating the same field and validation_type combination makes the response invalid.
 
 {component_instruction}
 
+{evidence_block}
+
 OUTPUT SCHEMA:
 The JSON object has exactly one key: "ui_validations".
-The values below are examples — replace each one with a real value from the evidence.
+Every value in angle brackets below is a placeholder: replace it with a real value from the evidence, or leave the validation out.
 
 {{
   "ui_validations": [
     {{
       "id": "UI-1",
-      "field": "Event Title",
-      "intent": "Event titles must be between 5 and 100 characters to prevent empty or excessively long listings.",
-      "test_suite": "Smoke",
-      "priority": "High",
-      "confidence": 0.90,
-      "validation_type": "maxLength",
-      "expected_behavior": "When the user types more than 100 characters into the Event Title field, the field border turns red and an inline error appears below: Title must be 100 characters or fewer"
+      "field": "<exact label of the control, as written in the evidence>",
+      "intent": "<the rule, in the words of the cited evidence line>",
+      "evidence": ["E<line number>"],
+      "test_suite": "Smoke or Regression",
+      "priority": "High, Medium or Low",
+      "confidence": 0.9,
+      "validation_type": "<one of the allowed validation_type values>",
+      "expected_behavior": "<what the user sees on screen when the rule is broken>"
     }}
   ]
 }}""".strip()
@@ -1758,7 +1861,10 @@ FIELD VALUE RULES for all new tests — violations make the response invalid:
 - {enum_constraint('priority', ['High', 'Medium', 'Low'])}
 - {enum_constraint('method', ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])}
 - The "expected_result" in api_tests_delta items must be a JSON object, not a plain string.
+- Every new test in ui_validations_delta must have an "evidence" list of 1 to 3 line numbers from the EVIDENCE LINES block, for example ["E4"], citing only lines that state the rule it checks, and an "intent" in the words of those lines. A UI validation without a valid citation is deleted.
 - New tests must reference endpoints or fields that exist in the EVIDENCE POOL below. Inventing an endpoint not found in the evidence makes the response invalid.{api_forbidden_notice}
+
+{build_evidence_lines_block(params.get("evidenceLines"))}
 
 EVIDENCE POOL (source for all new tests):
 REQUIREMENT EVIDENCE: {prd}

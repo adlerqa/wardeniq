@@ -32,7 +32,9 @@ from testgen.service import (  # noqa: E402
     _category_evidence_sufficiency,
     generate_fresh_testcases_pipeline,
 )
-from tests.test_generation_pipeline import FakeEmbedder, FakeLLM, FakeStore  # noqa: E402
+from tests.test_generation_pipeline import (  # noqa: E402
+    FakeEmbedder, FakeLLM, FakeStore, ui_cases_with_citations,
+)
 
 
 # --------------------------------------------------------------------------------
@@ -124,7 +126,7 @@ class ScenarioLLM(FakeLLM):
                 return {"api_tests": list(self._api_tests)}
             return super().chat_json(system, user, **kwargs)
         if "Generate UI validations" in user:
-            return {"ui_validations": list(self._ui_validations)}
+            return {"ui_validations": ui_cases_with_citations(user, self._ui_validations)}
         if "Generate E2E flows, edge cases, and business rule tests" in user:
             return {key: list(value) for key, value in self._e2e_payload.items()}
         if "Generate focused E2E flow test cases" in user:
@@ -341,9 +343,12 @@ class UiWithEvidenceTests(unittest.TestCase):
             }],
             ui_validations=[
                 {"title": GROUNDED_UI_TITLE, "field": "Delivery notes",
+                 "intent": "The Delivery notes field accepts at most 240 characters.",
+                 "cite": "Delivery notes field",
                  "steps": [{"content": "Enter 241 characters",
                             "expectedResult": "The value is rejected"}]},
                 {"title": FABRICATED_UI_TITLE, "field": "Delivery notes",
+                 "cite": "Delivery notes field",
                  "steps": [{"content": "Enter 13 characters",
                             "expectedResult": "The value is rejected"}]},
             ],
