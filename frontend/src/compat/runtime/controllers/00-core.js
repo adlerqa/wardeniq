@@ -536,6 +536,14 @@ function uiPrompt(title, label, value) {
     };
   });
 }
+function createRuntimeModal(labelledBy) {
+  const modal = document.createElement("div");
+  modal.className = "modal show";
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  if (labelledBy) modal.setAttribute("aria-labelledby", labelledBy);
+  return modal;
+}
 function uiConfirm(
   msg,
   title = "Confirm Action",
@@ -568,6 +576,9 @@ function uiModalHTML(title, bodyHTML, confirmLabel = "Save") {
       m = document.createElement("div");
       m.className = "modal";
       m.id = "html-modal";
+      m.setAttribute("role", "dialog");
+      m.setAttribute("aria-modal", "true");
+      m.setAttribute("aria-labelledby", "hm-title");
       m.innerHTML = `<div class="box" style="max-width:520px;width:92vw">
         <div class="editor-head"><h2 id="hm-title" style="margin:0;font-size:17px"></h2><button class="ghost" id="hm-x">close</button></div>
         <div id="hm-body" style="padding:16px 20px"></div>

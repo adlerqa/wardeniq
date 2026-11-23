@@ -106,7 +106,7 @@ function renderUsers() {
             : `${manageAccess}<button class="u-action" onclick="toggleUser('${u.id}',${u.active ? "false" : "true"})" title="${u.active ? "Disable this user" : "Enable this user"}">${u.active ? ICON.disable + "Disable" : ICON.enable + "Enable"}</button>
            ${self ? "" : `<button class="u-action danger" onclick="delUser('${u.id}','${esc(u.email)}')" title="Delete this user">${ICON.del}Delete</button>`}`;
         return `<tr><td>${esc(u.email)}${self ? ' <span class="muted">(you)</span>' : ""}</td><td>${esc(u.name || "")}</td>
-        <td><select onchange="setUserRole('${u.id}',this.value)" style="width:auto">${["viewer", "editor", "admin"].map((x) => `<option ${x === u.role ? "selected" : ""}>${x}</option>`).join("")}</select></td>
+        <td><select aria-label="Role for ${escAttr(u.email)}" onchange="setUserRole('${u.id}',this.value)" style="width:auto">${["viewer", "editor", "admin"].map((x) => `<option ${x === u.role ? "selected" : ""}>${x}</option>`).join("")}</select></td>
         <td>${accessCell(u)}</td>
         <td>${status}</td>
         <td class="muted">${u.last_login ? new Date(u.last_login * 1000).toLocaleString() : pending ? "awaiting first sign-in" : "never"}</td>

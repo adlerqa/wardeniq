@@ -1,11 +1,11 @@
 /** Shared export-modal overlay. */
 export default function ExportModal() {
   return (
-    <div className="modal" id="export-modal">
+    <div className="modal" id="export-modal" role="dialog" aria-modal="true" aria-labelledby="export-title">
       <div className="box" style={{ maxWidth: "820px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
           <div>
-            <h2 style={{ margin: "0" }}>Export test-case report</h2>
+            <h2 id="export-title" style={{ margin: "0" }}>Export test-case report</h2>
             <div className="muted" id="export-sub" style={{ marginTop: "4px" }}></div>
           </div>
           <button className="ghost" id="export-close">Close</button>

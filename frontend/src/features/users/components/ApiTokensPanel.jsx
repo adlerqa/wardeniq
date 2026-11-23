@@ -10,18 +10,18 @@ export default function ApiTokensPanel() {
       </div>
       <div className="row" style={{ alignItems: "flex-end" }}>
         <div style={{ flex: "2" }}>
-          <label>Name</label>
+          <label htmlFor="at-name">Name</label>
           <input id="at-name" placeholder="e.g. GitHub Actions — coverage check" />
         </div>
         <div style={{ flex: "0 0 140px" }}>
-          <label>Role</label>
-          <select id="at-role" aria-label="Filter by Role">
+          <label htmlFor="at-role">Role</label>
+          <select id="at-role">
             <option value="viewer">Viewer</option>
             <option value="editor">Editor</option>
           </select>
         </div>
         <div style={{ flex: "0 0 140px" }}>
-          <label>Expires (days)</label>
+          <label htmlFor="at-expires-days">Expires (days)</label>
           <input id="at-expires-days" type="number" min="1" placeholder="never" />
         </div>
         <button className="go" id="at-create" style={{ margin: "0" }}>Create token</button>

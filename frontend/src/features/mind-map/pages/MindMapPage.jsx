@@ -681,8 +681,8 @@ const handleResetInteraction = () => {
 
           <div className="mindmap-controls">
             <div className="mindmap-control-project">
-              <label aria-label="mind-map-project">Project</label>
-              <select id="mm-proj" aria-label="Filter by Mind Map"></select>
+              <label htmlFor="mm-proj">Project</label>
+              <select id="mm-proj"></select>
             </div>
 
             <button
@@ -829,6 +829,7 @@ const handleResetInteraction = () => {
               ref={graphStageRef}
               id="mm-graph"
               className={`mm-stage ${isDragging ? "is-grabbing" : ""}`}
+              role="region"
               aria-label="Implementation coverage graph. Scroll to zoom, drag empty space to move, and click a branch to open."
               title="Scroll to zoom • Drag empty space to move • Click a branch to open"
               style={{

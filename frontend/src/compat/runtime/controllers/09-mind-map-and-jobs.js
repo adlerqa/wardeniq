@@ -18,7 +18,7 @@ function repoBranchRows(repos, cls) {
           rp,
         ) => `<div style="display:flex;gap:8px;align-items:center;font-size:12.5px">
     <label style="display:flex;gap:6px;align-items:center;margin:0;flex:1"><input type="checkbox" class="${cls}-chk" value="${rp.id}"${repoAnalysisDefaultChecked(rp.kind) ? " checked" : ""} style="width:auto"/> ${esc(rp.full_name)} <span class="pill ${repoKindClass(rp.kind)}">${esc(repoKindLabel(rp.kind))}</span></label>
-    <select class="${cls}-branch" data-rid="${rp.id}" title="branch to analyze" style="flex:0 0 220px;font-size:12px;padding:5px 8px"><option value="">${esc(rp.default_branch || "default")} (default)</option></select>
+    <select class="${cls}-branch" data-rid="${rp.id}" aria-label="Branch for ${escAttr(rp.full_name)}" title="Branch to analyze" style="flex:0 0 220px;font-size:12px;padding:5px 8px"><option value="">${esc(rp.default_branch || "default")} (default)</option></select>
   </div>`,
       )
       .join("") ||
@@ -92,13 +92,13 @@ async function openGitRepoPicker(pid, reload) {
     );
     return;
   }
-  const ov = document.createElement("div");
+  const ov = createRuntimeModal("gitrepo-title");
   ov.style.cssText =
     "position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9999";
   ov.innerHTML = `<div style="background:#0d151f;border:1px solid var(--line);border-radius:14px;max-width:680px;width:92%;max-height:82vh;display:flex;flex-direction:column;padding:18px">
-    <div style="font-weight:700;font-size:15px;margin-bottom:4px">Add a repo from GitHub</div>
+    <div id="gitrepo-title" style="font-weight:700;font-size:15px;margin-bottom:4px">Add a repo from GitHub</div>
     <div class="muted" style="font-size:12px;margin-bottom:10px">Any repository your GitHub token can access. Selected repos are added to the project and become available to analyze here.</div>
-    <input id="gitrepo-q" placeholder="Filter repositories…" style="margin-bottom:10px"/>
+    <input id="gitrepo-q" aria-label="Filter accessible repositories" placeholder="Filter repositories…" style="margin-bottom:10px"/>
     <div id="gitrepo-list" style="overflow:auto;flex:1;border:1px solid var(--line);border-radius:8px;padding:8px"></div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="ghost" id="gitrepo-cancel">Cancel</button><button class="go" id="gitrepo-add">Add selected</button></div></div>`;
   document.body.appendChild(ov);

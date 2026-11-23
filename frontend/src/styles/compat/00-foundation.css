@@ -1057,7 +1057,13 @@ main {
 .fi:focus {
   color: var(--accent);
   border-color: var(--accent);
+}
+.fi:focus:not(:focus-visible) {
   outline: none;
+}
+.fi:focus-visible {
+  outline: 2px solid var(--accent2);
+  outline-offset: 3px;
 }
 .fi:hover::after,
 .fi:focus::after {

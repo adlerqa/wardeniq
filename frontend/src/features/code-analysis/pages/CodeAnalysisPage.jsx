@@ -92,7 +92,7 @@ export default function CodeAnalysisPage() {
               <label htmlFor="cyc-proj">Project</label>
 
               <div className="ca-select-wrapper">
-                <select id="cyc-proj" aria-label="Filter by Project" />
+                <select id="cyc-proj" />
 
                 <svg
                   viewBox="0 0 24 24"

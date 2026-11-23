@@ -1,7 +1,7 @@
 /** Shared modal overlay. */
 export default function TestCaseEditorModal() {
   return (
-    <div className="modal" id="modal">
+    <div className="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="m-heading">
       <div className="box editor-box">
         <div className="editor-head">
           <div>
@@ -11,11 +11,11 @@ export default function TestCaseEditorModal() {
           <button className="ghost" id="m-close">close</button>
         </div>
         <div className="editor-body">
-          <label>Title</label>
+          <label htmlFor="m-title">Title</label>
           <input id="m-title" />
           <div className="editor-grid">
             <div>
-              <label>Category</label>
+              <label htmlFor="m-type">Category</label>
               <select id="m-type">
                 <option value="functional">Business / functional</option>
                 <option value="e2e">End-to-end</option>
@@ -25,7 +25,7 @@ export default function TestCaseEditorModal() {
               </select>
             </div>
             <div>
-              <label>Priority</label>
+              <label htmlFor="m-prio">Priority</label>
               <select id="m-prio">
                 <option>High</option>
                 <option>Medium</option>
@@ -35,11 +35,11 @@ export default function TestCaseEditorModal() {
           </div>
           <div className="editor-grid">
             <div>
-              <label>Preconditions</label>
+              <label htmlFor="m-pre">Preconditions</label>
               <input id="m-pre" />
             </div>
             <div>
-              <label>Tags (comma separated)</label>
+              <label htmlFor="m-tags">Tags (comma separated)</label>
               <input id="m-tags" />
             </div>
           </div>
