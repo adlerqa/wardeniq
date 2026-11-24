@@ -183,3 +183,36 @@ export function openCaseConfirmation(options) {
   const fn = compatFn("openCaseConfirmation");
   if (fn) return fn(options);
 }
+
+/**
+ * The shared confirm dialog (00-core.js confirmModal):
+ * { title, body, confirmText, danger } → Promise<boolean>.
+ */
+export function confirmModal(options) {
+  const fn = compatFn("confirmModal");
+  return fn ? fn(options) : Promise.resolve(false);
+}
+
+/** The shared one-line prompt dialog (00-core.js uiPrompt) → Promise<string | null>. */
+export function uiPrompt(title, label, value) {
+  const fn = compatFn("uiPrompt");
+  return fn ? fn(title, label, value) : Promise.resolve(null);
+}
+
+/** Write a job's progress log into the element matching `selector` (03 renderJobLog). */
+export function renderJobLog(selector, job) {
+  const fn = compatFn("renderJobLog");
+  if (fn) return fn(selector, job);
+}
+
+/** Refresh the repository sync status panel (02 loadSyncStatus). */
+export function loadSyncStatus() {
+  const fn = compatFn("loadSyncStatus");
+  if (fn) return fn();
+}
+
+/** Startup / database status as { kind, summary, raw } (00-core.js formatBootStatus). */
+export function formatBootStatus(boot) {
+  const fn = compatFn("formatBootStatus");
+  return fn ? fn(boot) : { visible: false, kind: "ok", summary: "", raw: "" };
+}

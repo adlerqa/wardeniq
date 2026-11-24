@@ -84,6 +84,12 @@
   markup and styles. The legacy `15-imports.js` controller is removed, along with its unused
   `implibToggle` helper. In the library dialog, adding or removing a row no longer collapses
   the sheet you are working in.
+- **Configuration screen rebuilt in React (part of #257).** All eight settings cards (LLM,
+  embedding model with the re-embed job, Jira & Confluence, Figma, SMTP with the test email,
+  AWS S3 with the connection test, Database status and switch, Sync & polling) now keep
+  their state in React, with the same markup, placeholders, validation and messages. The
+  legacy `06-configuration.js` controller is removed; the existing Switch-database (#111)
+  and embedding-placeholder tests now run against the React code.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

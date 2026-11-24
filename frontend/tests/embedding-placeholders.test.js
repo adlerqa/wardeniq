@@ -1,40 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import vm from "node:vm";
 
-const source = readFileSync(
-  new URL("../src/compat/runtime/controllers/06-configuration.js", import.meta.url),
-  "utf8",
-);
-const start = source.indexOf("function updateEmbeddingFieldPlaceholders");
-const end = source.indexOf("\nasync function loadConfig()", start);
-assert.notEqual(start, -1);
-assert.notEqual(end, -1);
-const helperSource = source.slice(start, end);
+import { embeddingPlaceholders, smtpPasswordPlaceholder } from "../src/features/configuration/lib/config.js";
 
 function placeholders(provider, settings = {}) {
-  const elements = {
-    "#cfg-embed-key": { placeholder: "" },
-    "#cfg-embed-base": { placeholder: "" },
-    "#cfg-smtp-pass": { placeholder: "" },
-  };
-  const context = vm.createContext({
-    $: (selector) => elements[selector] || null,
-  });
-  vm.runInContext(
-    `${helperSource}; this.updateEmbeddingFieldPlaceholders = updateEmbeddingFieldPlaceholders; this.updateSmtpPasswordPlaceholder = updateSmtpPasswordPlaceholder;`,
-    context,
-  );
-  context.updateEmbeddingFieldPlaceholders(provider, settings);
-  return {
-    key: elements["#cfg-embed-key"].placeholder,
-    endpoint: elements["#cfg-embed-base"].placeholder,
-    smtp: (smtpSettings) => {
-      context.updateSmtpPasswordPlaceholder(smtpSettings);
-      return elements["#cfg-smtp-pass"].placeholder;
-    },
-  };
+  const { key, endpoint } = embeddingPlaceholders(provider, settings);
+  return { key, endpoint, smtp: (smtpSettings) => smtpPasswordPlaceholder(smtpSettings) };
 }
 
 test("Ollama placeholders explain that the key and endpoint are optional", () => {
