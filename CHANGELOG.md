@@ -78,6 +78,12 @@
   the feature workspace and move with it). The list half of `04-test-cases.js` is removed;
   the "Test cases" link in the feature workspace now opens the React screen. A slow,
   older response no longer replaces the results of a newer filter.
+- **Spreadsheet import dialogs rebuilt in React (part of #257).** "Import test cases"
+  (upload, progress, finished summary and row review) and "Reuse imported sheets" (grouped
+  library rows, add / remove, rescore, delete sheet) are now React components with the same
+  markup and styles. The legacy `15-imports.js` controller is removed, along with its unused
+  `implibToggle` helper. In the library dialog, adding or removing a row no longer collapses
+  the sheet you are working in.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

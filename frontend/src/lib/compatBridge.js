@@ -155,3 +155,31 @@ export function updateCaseSelection() {
   const fn = compatFn("updateCaseSelection");
   if (fn) return fn();
 }
+
+/** Id of the project selected in the compat runtime (00-core.js `currentProject`), or null. */
+export function currentProjectId() {
+  const fn = compatFn("getCurrentProject");
+  return fn ? fn() || null : null;
+}
+
+/** Re-open a feature in the workspace so new / removed cases show (03 openFeature). */
+export function openFeature(featureId) {
+  const fn = compatFn("openFeature");
+  if (fn) return fn(featureId);
+}
+
+/** Reload the feature list (03 loadFeatures). */
+export function loadFeatures() {
+  const fn = compatFn("loadFeatures");
+  if (fn) return fn();
+}
+
+/**
+ * The shared case confirmation dialog (04 openCaseConfirmation):
+ * { title, copy, summary (HTML — escape it), confirmLabel, danger, onConfirm }.
+ * An error thrown by onConfirm is shown inside the dialog.
+ */
+export function openCaseConfirmation(options) {
+  const fn = compatFn("openCaseConfirmation");
+  if (fn) return fn(options);
+}

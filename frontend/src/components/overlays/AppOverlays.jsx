@@ -7,8 +7,8 @@ import ExportModal from "./modals/ExportModal.jsx";
 import ProjectAccessModal from "./modals/ProjectAccessModal.jsx";
 import JobLogModal from "./modals/JobLogModal.jsx";
 import ToastHost from "./modals/ToastHost.jsx";
-import ImportSheetModal from "./modals/ImportSheetModal.jsx";
-import ImportLibraryModal from "./modals/ImportLibraryModal.jsx";
+import ImportSheetModal from "../../features/imports/components/ImportSheetModal.jsx";
+import ImportLibraryModal from "../../features/imports/components/ImportLibraryModal.jsx";
 
 export default function AppOverlays() {
   return (

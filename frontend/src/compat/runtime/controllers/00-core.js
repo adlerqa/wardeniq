@@ -827,6 +827,9 @@ const TITLES = {
 let ME = null;
 // Read-only accessor for React screens (src/lib/compatBridge.js) until the
 // navigation state moves out of this file (#257).
+function getCurrentProject() {
+  return currentProject;
+}
 function getCurrentFeatureId() {
   return currentFeature;
 }
