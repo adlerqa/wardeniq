@@ -1175,18 +1175,9 @@ window.openFeature = async (fid) => {
 };
 async function openFeatureTestCases(fid, pid) {
   navigateTo("cases");
-  await initCases();
-  $("#tc-proj").value = pid || currentProject || "";
-  await fillFeatFilter();
-  $("#tc-feat").value = fid;
-  $("#tc-type").value = "";
-  $("#tc-tag").value = "";
-  $("#tc-status").value = "active";
-  $("#tc-result").value = "";
-  $("#tc-lineage").value = "";
-  $("#tc-q").value = "";
-  tcPage = 0;
-  loadCases();
+  // The Test Cases screen is React (src/features/test-cases, #257).
+  if (window.openTestCasesFor)
+    await window.openTestCasesFor(fid, pid || currentProject || "");
 }
 function activeCaseRoot() {
   if (!$("#view-features").hidden && !$("#detail-card").hidden)

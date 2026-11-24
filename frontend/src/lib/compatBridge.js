@@ -119,3 +119,39 @@ export async function openCaseInFeature(caseId, featureId) {
     if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   }, 300);
 }
+
+/**
+ * Refresh the project list in the compat runtime (02-projects.js loadProjects:
+ * fills the other screens' project pickers and sets window.allProjects) and
+ * return the projects. Resolves to [] without the runtime.
+ */
+export async function loadProjects() {
+  const fn = compatFn("loadProjects");
+  if (fn) await fn();
+  const list = typeof window !== "undefined" ? window.allProjects : undefined;
+  return Array.isArray(list) ? list : [];
+}
+
+/** Open / close a test case's detail under its row (04-test-cases.js viewCase). */
+export function viewCase(caseId, sourceEl) {
+  const fn = compatFn("viewCase");
+  if (fn) return fn(caseId, sourceEl);
+}
+
+/** Save a case's latest result from its row <select> (04-test-cases.js setCaseResult). */
+export function setCaseResult(caseId, status, selectEl) {
+  const fn = compatFn("setCaseResult");
+  if (fn) return fn(caseId, status, selectEl);
+}
+
+/** Delete / unlink a test case after confirming (07-library-and-crud.js). */
+export function requestDeleteCase(caseId) {
+  const fn = compatFn("requestDeleteCase");
+  if (fn) return fn(caseId);
+}
+
+/** Sync the bulk-action bars with the row checkboxes (03-features-and-usage.js). */
+export function updateCaseSelection() {
+  const fn = compatFn("updateCaseSelection");
+  if (fn) return fn();
+}

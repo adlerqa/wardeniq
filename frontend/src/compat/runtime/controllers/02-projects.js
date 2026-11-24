@@ -47,9 +47,6 @@ async function loadProjects() {
       $("#dev-proj").innerHTML = opts;
       $("#dev-proj").value = currentProject;
     }
-    if ($("#tc-proj")) {
-      $("#tc-proj").innerHTML = `<option value="">All projects</option>` + opts;
-    }
 
     // Project selection cards: click enters the project's feature list; management lives in the menu.
     if ($("#project-cards-container")) {

@@ -1,13 +1,27 @@
+import { useEffect } from "react";
+
+import { CaseList, CasePager } from "../components/CaseList.jsx";
+import useTestCases from "../hooks/useTestCases.js";
+import { projectOptionLabel } from "../lib/testCases.js";
+import { updateCaseSelection } from "../../../lib/compatBridge.js";
+
 /**
- * TestCasesPage
- *
- * Structural React port of the original static screen markup.
- * Data loading and mutation behavior is currently supplied by the domain
- * compatibility controllers under src/compat/runtime/controllers.
- * Keeping the DOM contract here lets the UI be migrated screen-by-screen
- * without a single monolithic HTML template.
+ * TestCasesPage — filters, list, summary and pager are React (see
+ * useTestCases). The case detail, result select handler, editor, delete and
+ * bulk actions are still compat code (04 / 07 / 03); the rows keep the classes
+ * and data attributes that code works on, and the filter ids (tc-feat, tc-new)
+ * that 03 and 07 read.
  */
 export default function TestCasesPage() {
+  const tc = useTestCases();
+  const { filters, changeFilter } = tc;
+  const onSelect = (key) => (e) => changeFilter(key, e.target.value);
+
+  // A fresh list has no rows ticked: hide the bulk bars, as the old screen did.
+  useEffect(() => {
+    if (tc.list.status === "ready") updateCaseSelection();
+  }, [tc.list.status, tc.list.seq]);
+
   return (
     <section id="view-cases" className="view" hidden>
       <div className="card">
@@ -33,23 +47,33 @@ export default function TestCasesPage() {
             <div className="case-filter-field">
               <label htmlFor="tc-proj">Project</label>
 
-              <select id="tc-proj">
+              <select id="tc-proj" value={filters.project} onChange={onSelect("project")}>
                 <option value="">All projects</option>
+                {tc.projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {projectOptionLabel(p)}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div className="case-filter-field">
               <label htmlFor="tc-feat">Feature</label>
 
-              <select id="tc-feat">
+              <select id="tc-feat" value={filters.feature} onChange={onSelect("feature")}>
                 <option value="">All features</option>
+                {tc.features.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div className="case-filter-field">
               <label htmlFor="tc-type">Category</label>
 
-              <select id="tc-type">
+              <select id="tc-type" value={filters.type} onChange={onSelect("type")}>
                 <option value="">All categories</option>
                 <option value="functional">Business / functional</option>
                 <option value="e2e">End-to-end</option>
@@ -65,16 +89,24 @@ export default function TestCasesPage() {
               <div className="case-search-wrap">
                 
 
-                <input id="tc-q" placeholder="Search by title or ID..." />
+                <input
+                  id="tc-q"
+                  placeholder="Search by title or ID..."
+                  value={filters.q}
+                  onChange={(e) => tc.setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") tc.apply();
+                  }}
+                />
               </div>
             </div>
 
             <div className="filter-actions">
-              <button type="button" className="go" id="tc-apply">
+              <button type="button" className="go" id="tc-apply" onClick={tc.apply}>
                 Apply filters
               </button>
 
-              <button type="button" className="ghost" id="tc-reset">
+              <button type="button" className="ghost" id="tc-reset" onClick={tc.reset}>
                 Reset
               </button>
             </div>
@@ -105,15 +137,20 @@ export default function TestCasesPage() {
               <div className="case-filter-field">
                 <label htmlFor="tc-tag">Tag</label>
 
-                <select id="tc-tag">
+                <select id="tc-tag" value={filters.tag} onChange={onSelect("tag")}>
                   <option value="">Any tag</option>
+                  {tc.tags.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
                 </select>
               </div>
 
               <div className="case-filter-field">
                 <label htmlFor="tc-status">Status</label>
 
-                <select id="tc-status" defaultValue="active">
+                <select id="tc-status" value={filters.status} onChange={onSelect("status")}>
                   <option value="active">Active test cases</option>
 
                   <option value="deprecated">Deprecated only</option>
@@ -125,7 +162,7 @@ export default function TestCasesPage() {
               <div className="case-filter-field">
                 <label htmlFor="tc-result">Execution result</label>
 
-                <select id="tc-result">
+                <select id="tc-result" value={filters.result} onChange={onSelect("result")}>
                   <option value="">Any result</option>
                   <option value="untested">Untested</option>
                   <option value="passed">Passed</option>
@@ -137,7 +174,7 @@ export default function TestCasesPage() {
               <div className="case-filter-field">
                 <label htmlFor="tc-lineage">Reuse</label>
 
-                <select id="tc-lineage">
+                <select id="tc-lineage" value={filters.lineage} onChange={onSelect("lineage")}>
                   <option value="">Generated + reused</option>
 
                   <option value="inherited">Inherited / reused only</option>
@@ -148,7 +185,9 @@ export default function TestCasesPage() {
             </div>
           </details>
         </div>
-        <div className="filter-summary" id="tc-summary"></div>
+        <div className="filter-summary" id="tc-summary">
+          {tc.summary}
+        </div>
         <div className="case-bulk-toolbar" data-bulk-scope="cases">
           <div className="case-bulk-left">
             <span className="case-bulk-count" data-bulk-count="cases">
@@ -188,7 +227,15 @@ export default function TestCasesPage() {
             </button>
           </div>
         </div>
-        <div id="tc-list" style={{ marginTop: "12px" }}></div>
+        <div id="tc-list" style={{ marginTop: "12px" }}>
+          <CaseList
+            status={tc.list.status}
+            items={tc.list.items}
+            error={tc.list.error}
+            seq={tc.list.seq}
+            onRetry={tc.reload}
+          />
+        </div>
         <div
           className="case-bulk-toolbar bulk-floating"
           data-bulk-scope="cases-floating"
@@ -214,7 +261,9 @@ export default function TestCasesPage() {
             </button>
           </div>
         </div>
-        <div className="pager" id="tc-pager"></div>
+        <div className="pager" id="tc-pager">
+          <CasePager pager={tc.pager} onPrev={tc.prevPage} onNext={tc.nextPage} />
+        </div>
       </div>
     </section>
   );

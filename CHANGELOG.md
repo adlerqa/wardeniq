@@ -72,6 +72,12 @@
   test cases by type, project roll-up, loading, empty and error states) is now rendered by
   React with the same markup and styles. The legacy `01-dashboard.js` controller and the
   unused legacy `.dash` scaffold styles are removed.
+- **Test Cases list rebuilt in React (part of #257).** The Test Cases screen's filters,
+  list, summary line and pager are now React, with the same markup and styles. The case
+  detail, result menu, editor, delete and bulk actions are unchanged (they are shared with
+  the feature workspace and move with it). The list half of `04-test-cases.js` is removed;
+  the "Test cases" link in the feature workspace now opens the React screen. A slow,
+  older response no longer replaces the results of a newer filter.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access
