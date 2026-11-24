@@ -12,7 +12,7 @@ from core.config import GITLAB_BASE_URL
 # (GITLAB_BASE_URL) rather than a literal "gitlab.com" — so a self-hosted
 # instance's URLs parse the same way gitlab.com's always have.
 _GITLAB_HOST = urllib.parse.urlparse(GITLAB_BASE_URL).netloc or "gitlab.com"
-_URL_RE = re.compile(rf"{re.escape(_GITLAB_HOST)}[:/]+([^?#\s]+?)(?:\.git)?(?:[/?#]|$)")
+_URL_RE = re.compile(rf"{re.escape(_GITLAB_HOST)}[:/]+([^?#\s]+?)(?:\.git)?(?:[?#]|$)")
 
 
 _SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.+-]{1,255}$")
@@ -38,7 +38,8 @@ def parse_repo_url(url: str):
     url = (url or "").strip().rstrip("/")
     m = _URL_RE.search(url)
     if m:
-        return validate_project_path(m.group(1), min_segments=1)
+        project_path = m.group(1).split("/-/", 1)[0]
+        return validate_project_path(project_path, min_segments=1)
     if "/" in url and " " not in url:
         return validate_project_path(url.removesuffix(".git"), min_segments=1)
     raise ValueError(f"could not parse GitLab project path: {url!r}")

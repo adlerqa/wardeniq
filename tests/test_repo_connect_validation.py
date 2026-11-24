@@ -279,6 +279,82 @@ def test_unparseable_url_is_still_a_400_and_makes_no_github_call(env):
     assert FakeGitHub.calls == [] and env == []
 
 
+@pytest.mark.parametrize("source", [
+    "https://code.example.com/acme/demo",
+    "git@code.example.com:acme/demo.git",
+    "git@code.example.com:acme/demo",
+])
+def test_provider_detection_uses_configured_gitlab_host(monkeypatch, source):
+    monkeypatch.setattr(repos_prs, "GITLAB_BASE_URL", "https://code.example.com")
+
+    provider = repos_prs._resolve_git_provider(source, "github")
+
+    assert provider == "gitlab"
+
+
+@pytest.mark.parametrize("fallback", ["github", "gitlab"])
+def test_bare_path_keeps_selected_provider(fallback):
+    assert repos_prs._resolve_git_provider("acme/demo", fallback) == fallback
+
+
+@pytest.mark.parametrize("source, host", [
+    ("https://bitbucket.org/acme/demo", "bitbucket.org"),
+    ("git@bitbucket.org:acme/demo.git", "bitbucket.org"),
+    ("https://github.com.example.org/acme/demo", "github.com.example.org"),
+])
+@pytest.mark.parametrize("gitlab_host", ["gitlab.com", "code.example.com"])
+def test_unsupported_host_has_readable_error_and_is_not_persisted(
+        env, monkeypatch, source, host, gitlab_host):
+    monkeypatch.setattr(repos_prs, "GITLAB_BASE_URL", f"https://{gitlab_host}")
+
+    r = _connect(_gh(url=source))
+
+    assert r.status_code == 400
+    assert r.json()["detail"] == (
+        f"Unsupported repository host '{host}'. "
+        f"Supported hosts are github.com and {gitlab_host}.")
+    assert FakeGitHub.calls == [] and env == []
+    assert FakeThread.started == []
+
+
+@pytest.mark.parametrize("url, full_name", [
+    ("https://gitlab.com/acme/ghost-repo", "acme/ghost-repo"),
+    ("git@gitlab.com:acme/ghost-repo.git", "acme/ghost-repo"),
+    ("git@gitlab.com:acme/ghost-repo", "acme/ghost-repo"),
+    ("https://gitlab.com/acme/subgroup/ghost-repo/-/merge_requests/5", "acme/subgroup/ghost-repo"),
+])
+def test_url_not_matching_github_provider(env, monkeypatch, url, full_name):
+    class FakeGitLab:
+        def __init__(self, token):
+            pass
+
+        def register_mr_webhook(self, full_name, url, secret):
+            return {"id": 5}
+
+    monkeypatch.setattr(repos_prs, "project_gitlab_token", lambda pid: "glpat-fake")
+    monkeypatch.setattr(repos_prs.gitlab_mod, "GitLab", FakeGitLab)
+
+    r = _connect({"url": url, "git_provider": "github"})
+    assert r.status_code == 200
+    assert r.json()["full_name"] == full_name
+    assert FakeGitHub.calls == []
+    assert len(env) == 1 and env[0][1]["git_provider"] == "gitlab"
+    assert "/".join(env[0][0][1:3]) == full_name
+
+
+@pytest.mark.parametrize("url", [
+    "https://github.com/acme/ghost-repo",
+    "https://www.github.com/acme/ghost-repo",
+    "git@github.com:acme/ghost-repo.git",
+    "git@github.com:acme/ghost-repo",
+])
+def test_url_not_matching_gitlab_provider(env, url):
+    r = _connect({"url": url, "git_provider": "gitlab"})
+    assert r.status_code == 200
+    assert r.json()["full_name"] == "acme/ghost-repo"
+    assert len(env) == 1 and env[0][1]["git_provider"] == "github"
+
+
 def test_missing_pat_still_reports_the_existing_message(env, monkeypatch):
     monkeypatch.setattr(repos_prs, "project_github_token", lambda pid: "")
     r = _connect(_gh())
