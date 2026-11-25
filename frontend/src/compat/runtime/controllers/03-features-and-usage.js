@@ -1573,3 +1573,59 @@ window.syncJira = async (fid) => {
     toast(e.message, true);
   }
 };
+
+// Project list → Features screen glue (moved from 02-projects.js when the
+// Projects screen moved to React, #257).
+window.openProjectFeatures = async (pid) => {
+  currentProject = pid;
+  currentFeature = null;
+  navigateTo("features");
+  await loadFeatures();
+  showFeatureList();
+};
+// Called by the React Projects screen after each project-list load.
+function syncFeatureProjects(projects, cur) {
+  const opts = projects
+    .map(
+      (p) =>
+        `<option value="${p.id}">${esc(p.name)} — ${p.repo_count} repos · ${p.feature_count} features</option>`,
+    )
+    .join("");
+  if ($("#f-project")) {
+    $("#f-project").innerHTML = opts;
+    $("#f-project").value = cur;
+  }
+  const activeProj = projects.find((p) => p.id === cur);
+  if ($("#features-page-title"))
+    $("#features-page-title").textContent = activeProj ? activeProj.name : "";
+  if ($("#features-project-context"))
+    $("#features-project-context").textContent = activeProj
+      ? `${activeProj.feature_count} feature${activeProj.feature_count === 1 ? "" : "s"}`
+      : "";
+}
+if ($("#features-back-project"))
+  $("#features-back-project").onclick = () => {
+    navigateTo("projects");
+    showProjectList();
+    loadProjects();
+  };
+if ($("#f-project"))
+  $("#f-project").onchange = async (e) => {
+    currentProject = e.target.value;
+    loadFeatures();
+    renderBreadcrumbs();
+    await loadFeatureTicketOptions();
+  };
+// Feature card menus close on an outside click or Escape.
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("[data-feature-card]"))
+    document
+      .querySelectorAll("[data-feature-card]")
+      .forEach((card) => card.classList.remove("menu-open"));
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape")
+    document
+      .querySelectorAll("[data-feature-card]")
+      .forEach((card) => card.classList.remove("menu-open"));
+});

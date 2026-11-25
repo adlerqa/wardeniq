@@ -1,29 +1,47 @@
-/** ProjectDetailPanel for projects. */
-export default function ProjectDetailPanel() {
+import { goToProjectFeatures } from "../../../lib/compatBridge.js";
+
+/**
+ * Project settings. The header (name, stats, rename / delete) is React
+ * (useProjects); the repository part below is still driven by
+ * 02-projects.js until it moves (#257).
+ */
+export default function ProjectDetailPanel({ pj }) {
   return (
-    <div id="project-detail-page" className="stage-page stage-shell" hidden>
+    <div id="project-detail-page" className="stage-page stage-shell" hidden={pj.page !== "detail"}>
       <div className="stage-header">
-        <button className="ghost" id="project-detail-back">← All projects</button>
+        <button className="ghost" id="project-detail-back" onClick={pj.showProjectList}>
+          ← All projects
+        </button>
         <div className="stage-header-actions">
-          <button className="go" id="proj-features-btn">View features</button>
-          <button className="ghost" id="proj-rename-btn">Rename</button>
-          <button className="danger" id="proj-del-btn">Delete project</button>
+          <button className="go" id="proj-features-btn" onClick={() => goToProjectFeatures()}>
+            View features
+          </button>
+          <button className="ghost" id="proj-rename-btn" onClick={pj.renameActive}>
+            Rename
+          </button>
+          <button className="danger" id="proj-del-btn" onClick={pj.deleteActive}>
+            Delete project
+          </button>
         </div>
       </div>
       <div className="card">
-        <h2 id="active-proj-title" style={{ fontSize: "21px" }}>Project</h2>
-        <div className="sub" id="active-proj-stats"></div>
+        <h2 id="active-proj-title" style={{ fontSize: "21px" }}>
+          {pj.activeTitle}
+        </h2>
+        <div className="sub" id="active-proj-stats">
+          {pj.activeStats}
+        </div>
         <div className="project-summary">
           <div className="summary-box">
-            <b id="project-feature-count">0</b>
+            <b id="project-feature-count">{pj.active ? pj.active.feature_count : 0}</b>
             <span>Features</span>
           </div>
           <div className="summary-box">
-            <b id="project-repo-count">0</b>
+            <b id="project-repo-count">{pj.active ? pj.active.repo_count : 0}</b>
             <span>Repositories</span>
           </div>
           <div className="summary-box">
-            <b id="project-case-count">—</b>
+            <b id="project-case-count">{pj.caseCount}</b>
             <span>Linked test cases</span>
           </div>
         </div>

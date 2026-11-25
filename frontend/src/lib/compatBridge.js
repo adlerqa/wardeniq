@@ -121,9 +121,10 @@ export async function openCaseInFeature(caseId, featureId) {
 }
 
 /**
- * Refresh the project list in the compat runtime (02-projects.js loadProjects:
- * fills the other screens' project pickers and sets window.allProjects) and
- * return the projects. Resolves to [] without the runtime.
+ * Refresh the project list (window.loadProjects, registered by the React
+ * Projects screen: sets window.allProjects and the runtime project, fills the
+ * Features screen's picker) and return the projects. Resolves to [] when it
+ * is not registered.
  */
 export async function loadProjects() {
   const fn = compatFn("loadProjects");
@@ -239,4 +240,46 @@ export function openNewCaseInCycle(featureId, cycleId) {
 export function openInfoDialog(options) {
   const fn = compatFn("openInfoDialog");
   if (fn) return fn(options);
+}
+
+/** Open a project's feature list (03 openProjectFeatures). */
+export function openProjectFeatures(projectId) {
+  const fn = compatFn("openProjectFeatures");
+  if (fn) return fn(projectId);
+}
+
+/** The project's feature list, from project settings (00-core.js goToProjectFeatures). */
+export function goToProjectFeatures() {
+  const fn = compatFn("goToProjectFeatures");
+  if (fn) return fn();
+}
+
+/** Fill the Features screen's project picker and title from the project list (03 syncFeatureProjects). */
+export function syncFeatureProjects(projects, currentId) {
+  const fn = compatFn("syncFeatureProjects");
+  if (fn) return fn(projects, currentId);
+}
+
+/** Redraw the backbar / breadcrumbs (00-core.js updateBackbar). */
+export function updateBackbar() {
+  const fn = compatFn("updateBackbar");
+  if (fn) return fn();
+}
+
+/** Refresh the header service status chips (00-core.js refreshStatus). */
+export function refreshStatus() {
+  const fn = compatFn("refreshStatus");
+  if (fn) return fn();
+}
+
+/** Project settings: provider toggle and PAT status for the project (02 openProjectRepoSettings). */
+export function openProjectRepoSettings(projectId) {
+  const fn = compatFn("openProjectRepoSettings");
+  if (fn) return fn(projectId);
+}
+
+/** Reload the project settings repository list (02 loadRepos). */
+export function reloadProjectRepos() {
+  const fn = compatFn("loadRepos");
+  if (fn) return fn();
 }

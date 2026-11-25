@@ -117,6 +117,11 @@
   last compat controller for these screens, `08-code-analysis-and-cycles.js`, is removed,
   including the unused "unmapped PRs" code, whose list was not on any page. "Analyze" on a
   Projects repo card opens the screen with only that repo ticked, as before.
+- **Projects screen rebuilt in React, part 1 (part of #257).** The project cards and their
+  menu, the "Create project" wizard (Jira / Confluence, provider and PAT, app and test
+  repositories), rename / delete, and the project settings header are now React, with the
+  same markup. The PAT field's placeholder now follows the selected provider after the
+  wizard is reopened (it could show GitLab's while GitHub was selected).
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access
