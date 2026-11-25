@@ -110,6 +110,13 @@
   now React, with the same markup. Fixes found on the way: a failed item-status save now
   shows its error (it used to fail silently), and saving the editor of a failed / blocked
   item that already has a result no longer clears that result, notes and defect link.
+- **Code Analysis screen rebuilt in React (part of #257).** Change impact analysis (project,
+  lookback, repos and branches, "Add a repo from GitHub", the analysis run and its status,
+  the impacted cases with their evidence, and "create cycle from selection") is now React,
+  with the same markup. It shares the repo rows and GitHub picker with the Mind Map. The
+  last compat controller for these screens, `08-code-analysis-and-cycles.js`, is removed,
+  including the unused "unmapped PRs" code, whose list was not on any page. "Analyze" on a
+  Projects repo card opens the screen with only that repo ticked, as before.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

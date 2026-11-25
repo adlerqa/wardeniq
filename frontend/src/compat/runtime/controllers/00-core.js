@@ -840,7 +840,6 @@ function getCurrentFeatureId() {
 function getCurrentUser() {
   return ME;
 }
-let ANALYSIS_IMPACTED = [];
 
 // ---- nav ----
 function navigateTo(v) {

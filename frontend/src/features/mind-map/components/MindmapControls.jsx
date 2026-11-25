@@ -2,15 +2,15 @@ import { Fragment } from "react";
 
 import { completeText, formatMindmapStage, progressBits, repoKindClass, repoKindLabel } from "../lib/mindmap.js";
 
-/** Repo checkboxes with a branch picker each (#mm-repos rows). */
-export function RepoRows({ repos, onChange }) {
+/** Repo checkboxes with a branch picker each (#mm-repos / #cyc-repos rows; `cls` prefixes the classes). */
+export function RepoRows({ repos, onChange, cls = "mm-repo" }) {
   if (!repos.length) return <span className="muted">no repos yet — connect one under Projects &amp; Repos</span>;
   return repos.map((rp) => (
     <div key={rp.id} style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "12.5px" }}>
       <label style={{ display: "flex", gap: "6px", alignItems: "center", margin: "0", flex: "1" }}>
         <input
           type="checkbox"
-          className="mm-repo-chk"
+          className={`${cls}-chk`}
           value={rp.id}
           checked={rp.checked}
           onChange={(e) => onChange(rp.id, { checked: e.target.checked })}
@@ -19,7 +19,7 @@ export function RepoRows({ repos, onChange }) {
         {rp.full_name} <span className={`pill ${repoKindClass(rp.kind)}`}>{repoKindLabel(rp.kind)}</span>
       </label>
       <select
-        className="mm-repo-branch"
+        className={`${cls}-branch`}
         data-rid={rp.id}
         title="branch to analyze"
         value={rp.branch}

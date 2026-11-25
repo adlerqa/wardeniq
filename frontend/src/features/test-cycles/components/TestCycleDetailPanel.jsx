@@ -6,7 +6,7 @@ import { prioLabel } from "../../test-cases/lib/testCases.js";
 import { ITEM_STATUSES, cycleProgress, dateOnly, needsInlineEditor, normalizeSteps, scheduleBadge } from "../lib/cycles.js";
 
 /** The canonical # / Step / Expected result table (00-core.js stepsHtml). */
-function StepsTable({ steps }) {
+export function StepsTable({ steps }) {
   const rows = normalizeSteps(steps);
   if (!rows.length) return null;
   return (

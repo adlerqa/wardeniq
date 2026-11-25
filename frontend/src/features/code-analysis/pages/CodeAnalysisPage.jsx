@@ -1,14 +1,19 @@
+import GitRepoPicker from "../../mind-map/components/GitRepoPicker.jsx";
+import { RepoRows } from "../../mind-map/components/MindmapControls.jsx";
+import { AnalysisStatus, ImpactResults } from "../components/ImpactResults.jsx";
+import useCodeAnalysis from "../hooks/useCodeAnalysis.js";
 import "../styles/codeAnalysis.css";
 
 /**
  * CodeAnalysisPage
  *
- * Presentation-only React structure.
- * Existing loading, repo/branch selection, analysis, refresh,
- * impacted-case handling and cycle creation remain controlled
- * by the compatibility controller.
+ * Change impact analysis: project / lookback / repo + branch selection,
+ * the analysis run, the impacted cases and "create cycle from selection"
+ * (useCodeAnalysis; was the code analysis half of
+ * compat/runtime/controllers/08-code-analysis-and-cycles.js).
  */
 export default function CodeAnalysisPage() {
+  const ca = useCodeAnalysis();
   return (
     <section id="view-cycles" className="view" hidden>
       <div className="code-analysis-page">
@@ -34,6 +39,7 @@ export default function CodeAnalysisPage() {
               id="cyc-refresh"
               type="button"
               title="Refresh"
+              onClick={ca.refresh}
             >
               <svg
                 viewBox="0 0 24 24"
@@ -92,7 +98,13 @@ export default function CodeAnalysisPage() {
               <label htmlFor="cyc-proj">Project</label>
 
               <div className="ca-select-wrapper">
-                <select id="cyc-proj" />
+                <select id="cyc-proj" value={ca.pid} onChange={(e) => ca.changeProject(e.target.value)}>
+                  {ca.projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {`${p.name} — ${p.repo_count} repos · ${p.feature_count} features`}
+                    </option>
+                  ))}
+                </select>
 
                 <svg
                   viewBox="0 0 24 24"
@@ -119,7 +131,8 @@ export default function CodeAnalysisPage() {
               <input
                 id="cyc-days"
                 type="number"
-                defaultValue="14"
+                value={ca.days}
+                onChange={(e) => ca.setDays(e.target.value)}
                 min="1"
                 max="180"
               />
@@ -130,6 +143,9 @@ export default function CodeAnalysisPage() {
               className="go ca-analyze-btn"
               id="cyc-analyze"
               type="button"
+              disabled={ca.analyzeDisabled}
+              title={ca.analyzeTitle}
+              onClick={ca.analyze}
             >
               <svg
                 viewBox="0 0 24 24"
@@ -171,13 +187,16 @@ export default function CodeAnalysisPage() {
             <div
               id="cyc-repos"
               className="ca-repo-list"
-            />
+            >
+              <RepoRows repos={ca.repos} onChange={ca.updateRepo} cls="cyc-repo" />
+            </div>
 
             <div className="ca-repo-footer">
               <button
                 className="ghost ca-add-repo"
                 id="cyc-add-git"
                 type="button"
+                onClick={ca.openPicker}
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -200,7 +219,9 @@ export default function CodeAnalysisPage() {
               <div
                 id="cyc-status"
                 className="ca-status"
-              />
+              >
+                <AnalysisStatus status={ca.status} />
+              </div>
             </div>
           </div>
         </section>
@@ -244,7 +265,9 @@ export default function CodeAnalysisPage() {
           <div
             id="cyc-impacted"
             className="ca-impacted-content"
-          />
+          >
+            <ImpactResults ca={ca} />
+          </div>
         </section>
 
         {/* =====================================================
@@ -253,7 +276,7 @@ export default function CodeAnalysisPage() {
         <section
           className="ca-cycle-card"
           id="cyc-create"
-          style={{ display: "none" }}
+          style={{ display: ca.impacted && ca.impacted.list.length ? "" : "none" }}
         >
           <div className="ca-cycle-header">
             <div className="ca-section-icon emerald">
@@ -296,6 +319,8 @@ export default function CodeAnalysisPage() {
               <input
                 id="cyc-name"
                 placeholder="For example: Sprint 12 regression"
+                value={ca.name}
+                onChange={(e) => ca.setName(e.target.value)}
               />
             </div>
 
@@ -303,27 +328,40 @@ export default function CodeAnalysisPage() {
               className="go ca-create-btn"
               id="cyc-make"
               type="button"
+              disabled={ca.shownOnce && ca.selected.size === 0}
+              onClick={ca.createCycle}
             >
-              <svg
-                viewBox="0 0 24 24"
-                width="15"
-                height="15"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M12 5v14" />
-                <path d="M5 12h14" />
-              </svg>
+              {ca.shownOnce ? (
+                ca.selected.size > 0 ? (
+                  `Create cycle (${ca.selected.size})`
+                ) : (
+                  "Create cycle"
+                )
+              ) : (
+                <>
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="15"
+                    height="15"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 5v14" />
+                    <path d="M5 12h14" />
+                  </svg>
 
-              <span>Create cycle</span>
+                  <span>Create cycle</span>
+                </>
+              )}
             </button>
           </div>
         </section>
       </div>
+      {ca.picker ? <GitRepoPicker repos={ca.picker.repos} onCancel={ca.closePicker} onAdd={ca.addPicked} /> : null}
     </section>
   );
 }

@@ -31,10 +31,6 @@ async function loadProjects() {
       $("#f-project").innerHTML = opts;
       $("#f-project").value = currentProject;
     }
-    if ($("#cyc-proj")) {
-      $("#cyc-proj").innerHTML = opts;
-      $("#cyc-proj").value = currentProject;
-    }
 
     // Project selection cards: click enters the project's feature list; management lives in the menu.
     if ($("#project-cards-container")) {
@@ -994,12 +990,9 @@ window.gotoAnalyze = async (rid, pid) => {
     .querySelectorAll(".view")
     .forEach((s) => (s.hidden = s.id !== "view-cycles"));
   $("#view-title").textContent = TITLES.cycles;
-  await loadProjects();
-  if ($("#cyc-proj")) $("#cyc-proj").value = pid;
-  await loadCycleRepos();
-  document.querySelectorAll(".cyc-repo-chk").forEach((c) => {
-    c.checked = c.value === rid;
-  });
+  // The Code Analysis screen is React (features/code-analysis, #257): it loads
+  // the projects and this project's repos with only `rid` ticked.
+  if (window.openCodeAnalysisFor) await window.openCodeAnalysisFor(pid, rid);
   loadCycles();
   toast("Repo selected — set days & click Analyze changes");
 };
