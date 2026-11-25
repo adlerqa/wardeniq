@@ -206,7 +206,7 @@ export function renderJobLog(selector, job) {
   if (fn) return fn(selector, job);
 }
 
-/** Refresh the repository sync status panel (02 loadSyncStatus). */
+/** Refresh the project settings sync status line (window.loadSyncStatus, React Projects screen). */
 export function loadSyncStatus() {
   const fn = compatFn("loadSyncStatus");
   if (fn) return fn();
@@ -272,14 +272,8 @@ export function refreshStatus() {
   if (fn) return fn();
 }
 
-/** Project settings: provider toggle and PAT status for the project (02 openProjectRepoSettings). */
-export function openProjectRepoSettings(projectId) {
-  const fn = compatFn("openProjectRepoSettings");
-  if (fn) return fn(projectId);
-}
-
-/** Reload the project settings repository list (02 loadRepos). */
-export function reloadProjectRepos() {
-  const fn = compatFn("loadRepos");
-  if (fn) return fn();
+/** Open Code Analysis on a repo of a project (00-core.js gotoAnalyze). */
+export function gotoAnalyze(repoId, projectId) {
+  const fn = compatFn("gotoAnalyze");
+  if (fn) return fn(repoId, projectId);
 }

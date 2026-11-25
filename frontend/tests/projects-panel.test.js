@@ -33,6 +33,10 @@ const PROJECTS = [
   { id: "pA", name: "Alpha <b>x</b>", repo_count: 1, feature_count: 1 },
   { id: "pB", name: "Beta", repo_count: 2, feature_count: 0 },
 ];
+const REPOS = [
+  { id: "r1", full_name: "o/backend", kind: "BE", pr_count: 3, watch: true },
+  { id: "r2", full_name: "o/web <i>", kind: "infra", pr_count: 0, watch: false },
+];
 const GIT = [
   { full_name: "o/backend", private: true, default_branch: "main" },
   { full_name: "o/web-app_ui", private: false, default_branch: "" },
@@ -41,7 +45,7 @@ const GIT = [
 function harness(t, routes = {}) {
   const container = document.createElement("div");
   document.body.appendChild(container);
-  const calls = { toast: [], project: [], synced: [], features: [], backbar: 0, status: 0, settings: [], repos: 0, prompt: [], cc: [] };
+  const calls = { toast: [], project: [], synced: [], features: [], backbar: 0, status: 0, analyze: [], confirm: [], prompt: [], cc: [] };
   let current = "pA";
   const state = { promptAnswer: null };
   Object.assign(window, {
@@ -55,8 +59,11 @@ function harness(t, routes = {}) {
     goToProjectFeatures: () => calls.features.push("goto"),
     updateBackbar: () => calls.backbar++,
     refreshStatus: () => calls.status++,
-    openProjectRepoSettings: async (p) => calls.settings.push(p),
-    loadRepos: () => calls.repos++,
+    gotoAnalyze: (rid, pid) => calls.analyze.push([rid, pid]),
+    uiConfirm: async (...a) => {
+      calls.confirm.push(a);
+      return state.confirmAnswer;
+    },
     toast: (m, o) => calls.toast.push([m, o === true ? "err" : (o && o.type) || "ok", o && o.title]),
     uiPrompt: async (...a) => {
       calls.prompt.push(a);
@@ -83,14 +90,24 @@ function harness(t, routes = {}) {
                 ? [200, { spaces: [{ key: "SP", name: "Space" }] }]
                 : path.startsWith("/api/git/accessible-repos")
                   ? [200, { repos: path.endsWith("page=1") ? GIT : [] }]
-                  : path.match(/^\/api\/projects\/[^/]+$/) && method === "DELETE"
+                  : path === "/api/sync/status"
+                    ? [200, { poll_interval_s: 300, github_authenticated: true, ingested: 12, mapped: 9, errors: ["old", "boom <b>x</b>"], gitlab_host: "gitlab.acme.io" }]
+                    : path.match(/^\/api\/projects\/[^/]+$/) && method === "GET"
+                      ? [200, { id: "x", default_git_provider: state.provider || "github" }]
+                      : path.match(/\/(github|gitlab)\/pat$/) && method === "GET"
+                        ? [200, { configured: !!state.patOn }]
+                        : path.match(/\/(github|gitlab)\/accessible-repos\?page=1$/)
+                          ? [200, { repos: GIT }]
+                          : path.match(/^\/api\/projects\/[^/]+\/repos$/) && method === "GET"
+                            ? [200, { repos: state.noRepos ? [] : REPOS }]
+                            : path.match(/^\/api\/projects\/[^/]+$/) && method === "DELETE"
                     ? [200, { features: 2, removed_orphan_cases: 3, preserved_shared_cases: 1 }]
                     : [200, {}];
     return { status, ok: status < 300, text: async () => JSON.stringify(body) };
   }
   const module = { exports: {} };
   vm.runInNewContext(bundled.outputFiles[0].text, {
-    module, exports: module.exports, require, window, document, console, fetch: fakeFetch, setTimeout, clearTimeout,
+    module, exports: module.exports, require, window, document, console, fetch: fakeFetch, setTimeout, clearTimeout, URL,
   });
   const root = createRoot(container);
   t.after(async () => {
@@ -138,7 +155,7 @@ test("registers window hooks without fetching; loads cards, header and the Featu
   assert.equal(h.$("#active-proj-title").textContent, "Alpha <b>x</b>");
   assert.equal(h.$("#active-proj-stats").textContent, "1 repositories · 1 features");
   assert.equal(h.$("#project-case-count").textContent, "42");
-  assert.equal(h.calls.repos, 0);
+  assert.equal(h.requests.filter((r) => r[1].endsWith("/repos")).length, 0);
 });
 
 test("card click, menu toggling, outside click and Escape", async (t) => {
@@ -204,8 +221,8 @@ test("project settings: header, rename, delete, back and view features", async (
   assert.equal(h.$("#project-list-page").hidden, true);
   assert.equal(h.$("#project-detail-page").hidden, false);
   assert.equal(h.$("#active-proj-title").textContent, "Beta");
-  assert.deepEqual(h.calls.settings, ["pB"]);
-  assert.equal(h.calls.repos, 1);
+  assert.ok(h.requests.some((r) => r[1] === "/api/projects/pB" && r[0] === "GET"));
+  assert.ok(h.requests.some((r) => r[1] === "/api/projects/pB/repos"));
   assert.ok(h.calls.backbar > 0);
   h.state.promptAnswer = "B2";
   await h.click(h.$("#proj-rename-btn"));
@@ -273,4 +290,111 @@ test("create wizard: create error stays on the form", async (t) => {
   assert.equal(h.$("#proj-create-status").innerHTML, '<span class="err">Name taken</span>');
   assert.equal(h.$("#proj-create-save").disabled, false);
   assert.equal(h.$("#proj-create-card").style.display, "block");
+});
+
+test("settings: provider from the project, PAT status, provider switch, save / clear PAT", async (t) => {
+  const h = harness(t, { "DELETE /api/projects/pA/github/pat": () => [400, { detail: "nope" }] });
+  h.state.provider = "gitlab";
+  h.state.patOn = true;
+  await h.open();
+  await h.flush(() => window.openProjectSettings("pA"));
+  const prov = () => [...h.container.querySelectorAll("[data-pd-provider]")].map((b) => b.classList.contains("active"));
+  assert.deepEqual(prov(), [false, true]);
+  assert.equal(h.$("#pd-pat").placeholder, "glpat-...");
+  assert.equal(h.$("#pd-pat-status").innerHTML, '<span class="ok">GitLab PAT configured</span>');
+  assert.ok(!h.requests.some((r) => r[0] === "PATCH"));
+  h.state.patOn = false;
+  h.requests.length = 0;
+  await h.click(h.$('[data-pd-provider="github"]'));
+  assert.deepEqual(h.requests.map((r) => [r[0], r[1], r[2]]), [
+    ["PATCH", "/api/projects/pA", { default_git_provider: "github" }],
+    ["GET", "/api/projects/pA/github/pat", undefined],
+  ]);
+  assert.equal(h.$("#pd-pat-status").innerHTML, '<span class="muted">No GitHub PAT set for this project</span>');
+  await h.click(h.$("#pd-pat-save"));
+  assert.deepEqual(h.calls.toast.at(-1), ["Enter a PAT first", "err", undefined]);
+  await h.setValue(h.$("#pd-pat"), "  ghp_n  ");
+  h.requests.length = 0;
+  await h.click(h.$("#pd-pat-save"));
+  assert.deepEqual(h.requests[0], ["PUT", "/api/projects/pA/github/pat", { pat: "ghp_n" }, undefined]);
+  assert.equal(h.$("#pd-pat").value, "");
+  assert.deepEqual(h.calls.toast.at(-1), ["PAT saved", "ok", undefined]);
+  await h.click(h.$("#pd-pat-clear"));
+  assert.deepEqual(h.calls.toast.at(-1), ["nope", "err", "Couldn't clear project token"]);
+});
+
+test("settings: repo list, actions, sync status and connect", async (t) => {
+  const h = harness(t);
+  h.state.confirmAnswer = false;
+  await h.open();
+  await h.flush(() => window.loadSyncStatus());
+  assert.equal(h.$("#sync-status").innerHTML, 'poller every 300s · authenticated · ingested 12, mapped 9 · <span class="err">boom &lt;b&gt;x&lt;/b&gt;</span>');
+  await h.flush(() => window.openProjectSettings("pA"));
+  const cards = h.container.querySelectorAll("#repo-list .repo-item-card");
+  assert.equal(cards.length, 2);
+  assert.equal(cards[1].querySelector(".badge").textContent, "Infra");
+  const btn = (i, label) => [...cards[i].querySelectorAll("button")].find((b) => b.textContent === label);
+  await h.click(btn(0, "Analyze"));
+  assert.deepEqual(h.calls.analyze, [["r1", "pA"]]);
+  h.requests.length = 0;
+  await h.click(btn(1, "Resume"));
+  assert.deepEqual(h.requests.map((r) => [r[0], r[1], r[2]]), [["POST", "/api/repos/r2/watch", { watch: true }], ["GET", "/api/projects/pA/repos", undefined]]);
+  await h.click(btn(0, "Remove"));
+  assert.deepEqual(h.calls.confirm[0], ["Remove this repo and its tracked PRs?", "Delete Repository", "Remove", true]);
+  h.requests.length = 0;
+  await h.click(btn(0, "Sync"));
+  assert.deepEqual(h.requests.map((r) => r[1]), ["/api/repos/r1/sync"]);
+  assert.equal(h.$("#sync-status").textContent, "sync started…");
+  await h.click(h.$("#repo-add"));
+  await h.setValue(h.$("#repo-url"), " o/new ");
+  await h.setValue(h.$("#repo-type"), "test", "change");
+  h.requests.length = 0;
+  await h.click(h.$("#repo-add"));
+  assert.deepEqual(h.requests[0], ["POST", "/api/projects/pA/repos", { url: "o/new", kind: "BE", repo_type: "test", git_provider: "github" }, undefined]);
+  assert.equal(h.$("#repo-url").value, "");
+  assert.deepEqual(h.calls.toast.at(-1), ["Repo added & watching", "ok", undefined]);
+  h.state.noRepos = true;
+  await h.flush(() => window.loadProjects());
+  assert.equal(h.$("#repo-list").innerHTML, '<span class="muted">no repos yet</span>');
+});
+
+test("settings: repository suggestions and provider from a pasted URL", async (t) => {
+  const h = harness(t);
+  await h.open();
+  await h.flush(() => window.openProjectSettings("pA"));
+  const box = () => h.$("#repo-url-suggest");
+  await h.flush(() => h.$("#repo-url").dispatchEvent(new window.FocusEvent("focus")));
+  assert.equal(box().hidden, true);
+  await h.click(h.$("#repo-pick"));
+  assert.equal(box().hidden, false);
+  assert.equal(box().querySelectorAll(".repo-suggest-row").length, 2);
+  await h.setValue(h.$("#repo-url"), "WEB");
+  assert.deepEqual([...box().querySelectorAll(".repo-suggest-row")].map((r) => r.dataset.fullName), ["o/web-app_ui"]);
+  await h.setValue(h.$("#repo-url"), "zzz");
+  assert.equal(box().textContent, "No matches.");
+  await h.click(h.$("#repo-url"));
+  assert.equal(box().querySelectorAll(".repo-suggest-row").length, 2);
+  await h.flush(() => box().querySelector(".repo-suggest-row").dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true })));
+  assert.equal(h.$("#repo-url").value, "o/backend");
+  assert.equal(box().hidden, true);
+  await h.click(h.$("#repo-url"));
+  await h.flush(() => document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape" })));
+  assert.equal(box().hidden, true);
+  await h.click(h.$("#repo-url"));
+  await h.flush(() => document.body.dispatchEvent(new window.MouseEvent("mousedown", { bubbles: true })));
+  assert.equal(box().hidden, true);
+  h.requests.length = 0;
+  await h.setValue(h.$("#repo-url"), "https://gitlab.acme.io/g/p");
+  assert.deepEqual(h.requests.map((r) => [r[0], r[1]]), [
+    ["GET", "/api/sync/status"],
+    ["PATCH", "/api/projects/pA"],
+    ["GET", "/api/projects/pA/gitlab/pat"],
+  ]);
+  assert.equal(h.$('[data-pd-provider="gitlab"]').classList.contains("active"), true);
+  h.requests.length = 0;
+  await h.setValue(h.$("#repo-url"), "git@github.com:o/r.git");
+  assert.deepEqual(h.requests.map((r) => r[0] + " " + r[1]), ["PATCH /api/projects/pA", "GET /api/projects/pA/github/pat"]);
+  h.requests.length = 0;
+  await h.setValue(h.$("#repo-url"), "https://bitbucket.org/x");
+  assert.equal(h.requests.length, 0);
 });

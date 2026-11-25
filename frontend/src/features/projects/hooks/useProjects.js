@@ -5,9 +5,7 @@ import {
   currentProjectId,
   openCaseConfirmation,
   openProjectFeatures,
-  openProjectRepoSettings,
   refreshStatus,
-  reloadProjectRepos,
   setCurrentProject,
   syncFeatureProjects,
   toast,
@@ -28,7 +26,7 @@ import { deletedText, pickCurrent, statsText } from "../lib/projects.js";
  *
  * page: "list" | "create" | "detail"
  */
-export default function useProjects() {
+export default function useProjects(settings) {
   const [projects, setProjects] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -39,6 +37,9 @@ export default function useProjects() {
   const pageRef = useRef("list");
   const loadedRef = useRef(false);
   const caseSeq = useRef(0);
+  // Project settings (useProjectSettings): repo list reload and the provider / PAT panel.
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
 
   const setPage = useCallback((p) => {
     pageRef.current = p;
@@ -84,7 +85,7 @@ export default function useProjects() {
         .then((x) => my === caseSeq.current && setCaseCount(x.total))
         .catch(() => my === caseSeq.current && setCaseCount("—"));
     } else setCaseCount("—");
-    if (pageRef.current === "detail") reloadProjectRepos();
+    if (pageRef.current === "detail" && settingsRef.current) settingsRef.current.loadRepos();
     setPageTick((t) => t + 1);
   }, []);
 
@@ -96,7 +97,7 @@ export default function useProjects() {
       setCurrentProject(pid);
       showPage("detail");
       await loadProjects();
-      await openProjectRepoSettings(pid);
+      if (settingsRef.current) await settingsRef.current.open(pid);
     },
     [loadProjects, showPage],
   );

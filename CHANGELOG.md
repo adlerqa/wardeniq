@@ -122,6 +122,11 @@
   repositories), rename / delete, and the project settings header are now React, with the
   same markup. The PAT field's placeholder now follows the selected provider after the
   wizard is reopened (it could show GitLab's while GitHub was selected).
+- **Projects screen rebuilt in React, part 2 (part of #257).** Project settings — the git
+  provider toggle, the project PAT, "Connect repository" with its suggestion list and
+  provider detection from a pasted URL, the repository list (Analyze, Sync, Pause / Resume,
+  Remove) and the sync status line — are now React, with the same markup. The compat
+  controller `02-projects.js` is removed.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

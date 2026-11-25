@@ -939,6 +939,24 @@ window.goToProjects = () => {
   loadProjects();
 };
 
+// "Analyze" on a project settings repo card (moved from 02-projects.js, #257):
+// show Code Analysis with only that repo ticked.
+window.gotoAnalyze = async (rid, pid) => {
+  currentProject = pid;
+  document
+    .querySelectorAll("nav button")
+    .forEach((x) => x.classList.toggle("active", x.dataset.view === "cycles"));
+  document
+    .querySelectorAll(".view")
+    .forEach((s) => (s.hidden = s.id !== "view-cycles"));
+  $("#view-title").textContent = TITLES.cycles;
+  // The Code Analysis screen is React (features/code-analysis): it loads the
+  // projects and this project's repos with only `rid` ticked.
+  if (window.openCodeAnalysisFor) await window.openCodeAnalysisFor(pid, rid);
+  loadCycles();
+  toast("Repo selected — set days & click Analyze changes");
+};
+
 window.goToProjectFeatures = () => {
   currentFeature = null;
   navigateTo("features");

@@ -57,3 +57,18 @@ test("create wizard: pickers, labels and request bodies", () => {
     { repo_full_name: "o/t", label: "T", repo_type: "test", git_provider: "github", kind: "test" },
   ]);
 });
+
+test("settings helpers", async () => {
+  const { patPath, providerForAddress, suggestMatches, syncStatusLine } = await import("../src/features/projects/lib/projects.js");
+  assert.equal(patPath("p", "gitlab"), "/api/projects/p/gitlab/pat");
+  assert.equal(providerForAddress("https://gitlab.acme.io/g/p", "gitlab.acme.io"), "gitlab");
+  assert.equal(providerForAddress("git@github.com:o/r.git", null), "github");
+  assert.equal(providerForAddress("https://www.github.com/o", null), "github");
+  assert.equal(providerForAddress("https://bitbucket.org/x", null), null);
+  assert.equal(providerForAddress("o/r", null), undefined);
+  assert.deepEqual(suggestMatches([{ full_name: "o/Web" }, { full_name: "o/api" }], " web "), [{ full_name: "o/Web" }]);
+  assert.deepEqual(syncStatusLine({ poll_interval_s: 5, github_authenticated: false, ingested: 1, mapped: 0, errors: [] }), {
+    text: "poller every 5s · public-only · ingested 1, mapped 0",
+    error: "",
+  });
+});

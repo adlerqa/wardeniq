@@ -86,3 +86,40 @@ export const connectingText = (n) => `Connecting ${n} repositor${n === 1 ? "y" :
 
 export const deletedText = (r) =>
   `Project deleted · ${r.features} feature(s), ${r.removed_orphan_cases} orphan test case(s) removed, ${r.preserved_shared_cases} shared test case(s) preserved`;
+
+/** Project PAT endpoint for the provider. */
+export const patPath = (pid, provider) => `/api/projects/${pid}/${provider === "gitlab" ? "gitlab" : "github"}/pat`;
+
+export const providerName = (provider) => (provider === "gitlab" ? "GitLab" : "GitHub");
+
+/**
+ * Provider a typed repository address points at: "gitlab" for the configured
+ * GitLab host, "github" for github.com, else null. scp-style SSH addresses
+ * (git@host:owner/repo) count too; anything that isn't a URL gives null.
+ */
+export function providerForAddress(value, gitlabHost) {
+  let hostname;
+  try {
+    const ssh = !value.includes("://") && value.match(/^git@([^/:\s]+):/);
+    const source = ssh ? `ssh://git@${ssh[1]}/${value.slice(ssh[0].length)}` : value;
+    hostname = new URL(source).hostname.toLowerCase();
+  } catch {
+    return undefined;
+  }
+  if (hostname === gitlabHost) return "gitlab";
+  return hostname.replace(/^www\./, "") === "github.com" ? "github" : null;
+}
+
+/** Loaded repos matching a typed filter (case-insensitive, at most 200). */
+export function suggestMatches(cache, q) {
+  const ql = (q || "").trim().toLowerCase();
+  return cache.filter((x) => !ql || (x.full_name || "").toLowerCase().includes(ql)).slice(0, 200);
+}
+
+/** The sync status line: text plus the last poller error, if any. */
+export function syncStatusLine(s) {
+  return {
+    text: `poller every ${s.poll_interval_s}s · ${s.github_authenticated ? "authenticated" : "public-only"} · ingested ${s.ingested}, mapped ${s.mapped}`,
+    error: s.errors && s.errors.length ? s.errors.slice(-1)[0] : "",
+  };
+}

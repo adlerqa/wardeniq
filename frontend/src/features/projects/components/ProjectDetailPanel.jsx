@@ -1,11 +1,66 @@
 import { goToProjectFeatures } from "../../../lib/compatBridge.js";
+import { repoKindClass, repoKindLabel } from "../../mind-map/lib/mindmap.js";
+import { patPlaceholder } from "../lib/projects.js";
+import StatusText from "./StatusText.jsx";
 
-/**
- * Project settings. The header (name, stats, rename / delete) is React
- * (useProjects); the repository part below is still driven by
- * 02-projects.js until it moves (#257).
- */
-export default function ProjectDetailPanel({ pj }) {
+const actionBtn = { padding: "5px 10px", fontSize: "11.5px" };
+
+/** One connected repository (#repo-list). */
+function RepoCard({ rp, pid, ps }) {
+  return (
+    <div className="repo-item-card">
+      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: "13.5px", color: "var(--text)" }}>{rp.full_name}</div>
+          <div style={{ display: "flex", gap: "6px", marginTop: "4px", flexWrap: "wrap" }}>
+            <span className={`badge ${repoKindClass(rp.kind)}`} style={{ fontSize: "10px" }}>
+              {repoKindLabel(rp.kind)}
+            </span>
+            <span className="badge" style={{ fontSize: "10px" }}>{`${rp.pr_count} PRs`}</span>
+            <span style={{ fontSize: "10.5px", display: "flex", alignItems: "center", gap: "4px" }} className="muted">
+              <span
+                className={`dot ${rp.watch ? "ok" : ""}`}
+                style={{ margin: "0", width: "6px", height: "6px" }}
+              ></span>
+              {rp.watch ? "watching" : "paused"}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+        <button
+          className="go"
+          style={{ padding: "6px 12px", fontSize: "12px", display: "flex", alignItems: "center", gap: "4px" }}
+          onClick={() => ps.analyzeRepo(rp.id, pid)}
+        >
+          Analyze
+        </button>
+        <button className="ghost" style={actionBtn} onClick={() => ps.syncRepo(rp.id)}>
+          Sync
+        </button>
+        <button className="ghost" style={actionBtn} onClick={() => ps.toggleWatch(rp.id, !rp.watch)}>
+          {rp.watch ? "Pause" : "Resume"}
+        </button>
+        <button
+          className="danger"
+          style={{
+            padding: "6px 9px",
+            fontSize: "11.5px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+          onClick={() => ps.removeRepo(rp.id)}
+        >
+          Remove
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Project settings: header (useProjects) and repositories (useProjectSettings). */
+export default function ProjectDetailPanel({ pj, ps }) {
   return (
     <div id="project-detail-page" className="stage-page stage-shell" hidden={pj.page !== "detail"}>
       <div className="stage-header">
@@ -51,10 +106,24 @@ export default function ProjectDetailPanel({ pj }) {
           <div style={{ display: "flex", gap: "12px", alignItems: "center", margin: "4px 0 14px", flexWrap: "wrap" }}>
             <label style={{ margin: "0", fontSize: "12px", color: "var(--muted)" }}>Git provider for this project:</label>
             <div className="cp-provider-toggle" style={{ margin: "0" }}>
-              <button type="button" data-pd-provider="github" className="cp-prov active">GitHub</button>
-              <button type="button" data-pd-provider="gitlab" className="cp-prov">GitLab</button>
+              {[
+                ["github", "GitHub"],
+                ["gitlab", "GitLab"],
+              ].map(([v, label]) => (
+                <button
+                  key={v}
+                  type="button"
+                  data-pd-provider={v}
+                  className={`cp-prov${ps.provider === v ? " active" : ""}`}
+                  onClick={() => ps.chooseProvider(v)}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
-            <span className="muted" id="pd-pat-status" style={{ fontSize: "11px" }}></span>
+            <span className="muted" id="pd-pat-status" style={{ fontSize: "11px" }}>
+              <StatusText status={ps.patStatus} />
+            </span>
           </div>
           <div className="row" style={{ marginBottom: "10px" }}>
             <div style={{ flex: "2" }}>
@@ -62,20 +131,38 @@ export default function ProjectDetailPanel({ pj }) {
                 Project PAT
                 <span className="muted" style={{ fontWeight: "400" }}>(saved encrypted; leave blank to keep current)</span>
               </label>
-              <input id="pd-pat" type="password" placeholder="ghp_..." />
+              <input
+                id="pd-pat"
+                type="password"
+                placeholder={patPlaceholder(ps.provider)}
+                value={ps.pat}
+                onChange={(e) => ps.setPat(e.target.value)}
+              />
             </div>
             <div style={{ flex: "0 0 auto", alignSelf: "flex-end", display: "flex", gap: "8px", paddingBottom: "0" }}>
-              <button className="ghost" id="pd-pat-save" type="button">Save PAT</button>
-              <button className="ghost" id="pd-pat-clear" type="button">Clear</button>
+              <button className="ghost" id="pd-pat-save" type="button" onClick={ps.savePat}>
+                Save PAT
+              </button>
+              <button className="ghost" id="pd-pat-clear" type="button" onClick={ps.clearPat}>
+                Clear
+              </button>
             </div>
           </div>
           <div style={{ display: "flex", gap: "10px", alignItems: "flex-end", flexWrap: "wrap" }}>
             <div style={{ flex: "2", minWidth: "220px", position: "relative" }} data-repo-suggest-wrap>
               <label>Repository URL or Owner/Name</label>
-              <input id="repo-url" placeholder="https://github.com/org/backend-api" autoComplete="off" />
+              <input
+                id="repo-url"
+                placeholder="https://github.com/org/backend-api"
+                autoComplete="off"
+                value={ps.repoUrl}
+                onChange={(e) => ps.typeRepoUrl(e.target.value)}
+                onFocus={ps.showAllSuggestions}
+                onClick={ps.showAllSuggestions}
+              />
               <div
                 id="repo-url-suggest"
-                hidden
+                hidden={!ps.suggestOpen}
                 style={{
                   position: "absolute",
                   top: "100%",
@@ -90,33 +177,80 @@ export default function ProjectDetailPanel({ pj }) {
                   marginTop: "4px",
                   boxShadow: "0 8px 20px rgba(0,0,0,.35)",
                 }}
-              ></div>
+              >
+                {ps.suggestOpen && !ps.suggestions.length ? (
+                  <div className="muted" style={{ padding: "8px 10px", fontSize: "12px" }}>
+                    No matches.
+                  </div>
+                ) : null}
+                {ps.suggestOpen
+                  ? ps.suggestions.map((x) => (
+                      <div
+                        key={x.full_name}
+                        className="repo-suggest-row"
+                        data-full-name={x.full_name}
+                        // mousedown (not click) lands before the input's blur
+                        onMouseDown={() => ps.pickSuggestion(x.full_name)}
+                        style={{
+                          padding: "7px 10px",
+                          fontSize: "12.5px",
+                          cursor: "pointer",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: "8px",
+                          borderBottom: "1px solid rgba(255,255,255,.04)",
+                        }}
+                      >
+                        <span>{x.full_name}</span>
+                        <span className="muted" style={{ fontSize: "11px", whiteSpace: "nowrap" }}>
+                          {`${x.private ? "private" : "public"}${x.language ? " · " + x.language : ""}`}
+                        </span>
+                      </div>
+                    ))
+                  : null}
+              </div>
             </div>
             <div style={{ width: "115px" }}>
               <label>Type</label>
-              <select id="repo-type">
+              <select id="repo-type" value={ps.repoType} onChange={(e) => ps.setRepoType(e.target.value)}>
                 <option value="app">App (with webhook)</option>
                 <option value="test">Test (no webhook)</option>
               </select>
             </div>
             <div style={{ width: "135px" }}>
               <label>Kind</label>
-              <select id="repo-kind">
+              <select id="repo-kind" value={ps.repoKind} onChange={(e) => ps.setRepoKind(e.target.value)}>
                 <option value="BE">Backend</option>
                 <option value="FE">Frontend</option>
                 <option value="test">Test</option>
                 <option value="infra">Infrastructure</option>
               </select>
             </div>
-            <button className="go" id="repo-add">Connect</button>
+            <button className="go" id="repo-add" onClick={ps.addRepo}>
+              Connect
+            </button>
           </div>
-          <button className="ghost" id="repo-pick" style={{ marginTop: "10px" }}>Load my repositories</button>
+          <button className="ghost" id="repo-pick" style={{ marginTop: "10px" }} onClick={ps.loadPickList}>
+            Load my repositories
+          </button>
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
           <h3 style={{ margin: "0", fontSize: "14px" }}>Repositories</h3>
-          <div className="muted" id="sync-status"></div>
+          <div className="muted" id="sync-status">
+            {ps.sync && ps.sync.started ? "sync started…" : null}
+            {ps.sync && !ps.sync.started ? (ps.sync.error ? `${ps.sync.text} · ` : ps.sync.text) : null}
+            {ps.sync && !ps.sync.started && ps.sync.error ? <span className="err">{ps.sync.error}</span> : null}
+          </div>
         </div>
-        <div id="repo-list" style={{ display: "flex", flexDirection: "column", gap: "8px" }}></div>
+        <div id="repo-list" style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {ps.repos ? (
+            ps.repos.list.length ? (
+              ps.repos.list.map((rp) => <RepoCard key={rp.id} rp={rp} pid={ps.repos.pid} ps={ps} />)
+            ) : (
+              <span className="muted">no repos yet</span>
+            )
+          ) : null}
+        </div>
       </div>
     </div>
   );
