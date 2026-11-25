@@ -1,3 +1,153 @@
+// ---- repo + branch pickers (shared by Test Cycles; moved here from 09 when the
+// Mind Map screen moved to React, #257) ----
+function repoBranchRows(repos, cls) {
+  return (
+    repos
+      .map(
+        (
+          rp,
+        ) => `<div style="display:flex;gap:8px;align-items:center;font-size:12.5px">
+    <label style="display:flex;gap:6px;align-items:center;margin:0;flex:1"><input type="checkbox" class="${cls}-chk" value="${rp.id}"${repoAnalysisDefaultChecked(rp.kind) ? " checked" : ""} style="width:auto"/> ${esc(rp.full_name)} <span class="pill ${repoKindClass(rp.kind)}">${esc(repoKindLabel(rp.kind))}</span></label>
+    <select class="${cls}-branch" data-rid="${rp.id}" title="branch to analyze" style="flex:0 0 220px;font-size:12px;padding:5px 8px"><option value="">${esc(rp.default_branch || "default")} (default)</option></select>
+  </div>`,
+      )
+      .join("") ||
+    `<span class="muted">no repos yet — connect one under Projects & Repos</span>`
+  );
+}
+// populate each repo's branch <select> from the repo's configured provider
+async function fillBranchDropdowns(cls, repos) {
+  for (const rp of repos || []) {
+    try {
+      const r = await api(`/api/repos/${rp.id}/branches`);
+      const sel = document.querySelector(`.${cls}-branch[data-rid="${rp.id}"]`);
+      if (!sel || !(r.branches || []).length) continue;
+      const def = r.default || rp.default_branch || "";
+      sel.innerHTML =
+        `<option value="">${esc(def || "default")} (default)</option>` +
+        r.branches
+          .filter((b) => b !== def)
+          .map((b) => `<option value="${esc(b)}">${esc(b)}</option>`)
+          .join("");
+    } catch (e) {
+      /* leave the default-only option if branches can't be fetched */
+    }
+  }
+}
+function collectBranches(cls) {
+  const m = {};
+  document.querySelectorAll(`.${cls}-branch`).forEach((i) => {
+    if (i.value.trim()) m[i.dataset.rid] = i.value.trim();
+  });
+  return m;
+}
+// Pick ANY repo the GitHub PAT can access, add it to the project, then it's analyzable here.
+async function openGitRepoPicker(pid, reload) {
+  if (!pid) {
+    toast("Pick a project first", true);
+    return;
+  }
+  let repos = [];
+  try {
+    // Use the PROJECT's PAT (same source the Connect-repo picker uses), not the global token.
+    for (let page = 1; page <= 4; page++) {
+      const r = await api(
+        `/api/projects/${pid}/github/accessible-repos?page=${page}`,
+      );
+      const batch = r.repos || [];
+      repos = repos.concat(batch);
+      if (batch.length < 30) break;
+    }
+  } catch (e) {
+    toast(
+      `Couldn't list repos for this project (${e.message}). Check the project's GitHub PAT under Projects & Repos.`,
+      true,
+    );
+    return;
+  }
+  // drop repos already connected to this project so they don't show up twice
+  try {
+    const pr = await api(`/api/projects/${pid}/repos`);
+    const existing = new Set(
+      (pr.repos || []).map((r) => (r.full_name || "").toLowerCase()),
+    );
+    repos = repos.filter(
+      (r) => !existing.has((r.full_name || "").toLowerCase()),
+    );
+  } catch (e) {}
+  if (!repos.length) {
+    toast(
+      "No new repos to add — all your accessible repos are already in this project",
+      true,
+    );
+    return;
+  }
+  const ov = document.createElement("div");
+  ov.style.cssText =
+    "position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9999";
+  ov.innerHTML = `<div style="background:#0d151f;border:1px solid var(--line);border-radius:14px;max-width:680px;width:92%;max-height:82vh;display:flex;flex-direction:column;padding:18px">
+    <div style="font-weight:700;font-size:15px;margin-bottom:4px">Add a repo from GitHub</div>
+    <div class="muted" style="font-size:12px;margin-bottom:10px">Any repository your GitHub token can access. Selected repos are added to the project and become available to analyze here.</div>
+    <input id="gitrepo-q" placeholder="Filter repositories…" style="margin-bottom:10px"/>
+    <div id="gitrepo-list" style="overflow:auto;flex:1;border:1px solid var(--line);border-radius:8px;padding:8px"></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="ghost" id="gitrepo-cancel">Cancel</button><button class="go" id="gitrepo-add">Add selected</button></div></div>`;
+  document.body.appendChild(ov);
+  const render = (q) => {
+    const ql = (q || "").toLowerCase();
+    document.getElementById("gitrepo-list").innerHTML =
+      repos
+        .filter((r) => !ql || (r.full_name || "").toLowerCase().includes(ql))
+        .slice(0, 300)
+        .map(
+          (r) =>
+            `<label style="display:flex;gap:8px;align-items:center;padding:6px 4px;font-size:12.5px;border-bottom:1px solid rgba(255,255,255,.04)"><input type="checkbox" class="gitrepo-chk" value="${esc(r.full_name)}" data-def="${esc(r.default_branch || "main")}" style="width:auto"/><span style="flex:1">${esc(r.full_name)}</span>${r.private ? `<span class="pill">private</span>` : ""}${r.language ? `<span class="badge">${esc(r.language)}</span>` : ""}</label>`,
+        )
+        .join("") || `<div class="muted" style="padding:8px">No matches.</div>`;
+  };
+  render("");
+  document.getElementById("gitrepo-q").oninput = (e) => render(e.target.value);
+  const close = () => ov.remove();
+  ov.onclick = (e) => {
+    if (e.target === ov) close();
+  };
+  document.getElementById("gitrepo-cancel").onclick = close;
+  document.getElementById("gitrepo-add").onclick = async () => {
+    const picks = [...ov.querySelectorAll(".gitrepo-chk")].filter(
+      (x) => x.checked,
+    );
+    if (!picks.length) {
+      toast("Select at least one repo", true);
+      return;
+    }
+    let ok = 0,
+      fail = 0;
+    for (const p of picks) {
+      try {
+        await api(`/api/projects/${pid}/repos`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repo_full_name: p.value,
+            default_branch: p.dataset.def || "main",
+            repo_type: "app",
+          }),
+        });
+        ok++;
+      } catch (e) {
+        fail++;
+      }
+    }
+    close();
+    toast(
+      `${ok} repo(s) added${fail ? ` · ${fail} skipped (already added or inaccessible)` : ""}`,
+    );
+    if (reload) reload();
+  };
+}
+if ($("#cyc-add-git"))
+  $("#cyc-add-git").onclick = () =>
+    openGitRepoPicker($("#cyc-proj").value || currentProject, loadCycleRepos);
+
 // ---- test cycles + code analysis ----
 // Lookback (days) bounds — kept in sync with the declared min/max on
 // #cyc-days (CodeAnalysisPage.jsx) and with AnalyzeIn's server-side

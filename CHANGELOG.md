@@ -90,6 +90,14 @@
   their state in React, with the same markup, placeholders, validation and messages. The
   legacy `06-configuration.js` controller is removed; the existing Switch-database (#111)
   and embedding-placeholder tests now run against the React code.
+- **Mind Map controls rebuilt in React (part of #257).** The project picker, repo and
+  branch selection, "Add a repo from GitHub", Analyze codebase (progress and result line),
+  the indexed-code diagnostics and the per-feature coverage list are now React, with the
+  same markup and styles; the coverage graph itself is unchanged for now. The repo / branch
+  helpers Test Cycles uses moved into `08-code-analysis-and-cycles.js`. Removed UI code
+  that never ran because its screens were never part of the app: the Jobs list, Start
+  Developing and the feature Regenerate button handler (the backend endpoints are
+  unchanged).
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

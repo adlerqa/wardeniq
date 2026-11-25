@@ -830,6 +830,9 @@ let ME = null;
 function getCurrentProject() {
   return currentProject;
 }
+function setCurrentProject(id) {
+  currentProject = id;
+}
 function getCurrentFeatureId() {
   return currentFeature;
 }
@@ -871,9 +874,7 @@ function navigateTo(v) {
   if (v === "cycles") initCycles();
   if (v === "testcycles") initTestCycles();
   if (v === "mindmap") initMindmap();
-  if (v === "develop") initDevelop();
   if (v === "config") loadConfig();
-  if (v === "jobs") initJobs();
   if (v === "users") {
     loadProjectPicker();
     loadUsers();

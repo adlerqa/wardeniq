@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 
+import { CoverageList } from "../components/CoverageList.jsx";
+import GitRepoPicker from "../components/GitRepoPicker.jsx";
+import { AnalysisStatus, IndexedCodeDiag, RepoRows } from "../components/MindmapControls.jsx";
+import useMindmap from "../hooks/useMindmap.js";
+
 /**
  * MindMapPage
  *
  * React structure for the implementation coverage mind map.
  *
- * Existing graph rendering / analysis logic is still handled by the
- * mind-map compatibility controller.
+ * Project / repo controls, the analysis run, diagnostics and the coverage
+ * list are React (useMindmap). The SVG graph inside #mm-graph is still drawn
+ * by the mind-map compatibility controller.
  *
  * Additional interactions handled here:
  * - Mouse wheel zoom
@@ -14,6 +20,7 @@ import { useEffect, useRef, useState } from "react";
  * - Fullscreen mode
  */
 export default function MindMapPage() {
+  const mm = useMindmap();
   const graphCardRef = useRef(null);
   const graphStageRef = useRef(null);
 
@@ -672,6 +679,7 @@ const handleResetInteraction = () => {
                 type="button"
                 className="ghost mindmap-refresh-btn"
                 id="mm-refresh"
+                onClick={() => mm.refresh()}
               >
                 <span className="icon">↻</span>
                 <span>Refresh</span>
@@ -682,13 +690,22 @@ const handleResetInteraction = () => {
           <div className="mindmap-controls">
             <div className="mindmap-control-project">
               <label>Project</label>
-              <select id="mm-proj"></select>
+              <select id="mm-proj" value={mm.pid} onChange={(e) => mm.changeProject(e.target.value)}>
+                {mm.projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {`${p.name} — ${p.repo_count} repos · ${p.feature_count} features`}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <button
               type="button"
               className="go mindmap-primary-btn"
               id="mm-analyze"
+              disabled={mm.analyzing}
+              aria-busy={mm.analyzing ? "true" : undefined}
+              onClick={mm.analyze}
             >
               Analyze codebase
             </button>
@@ -710,12 +727,15 @@ const handleResetInteraction = () => {
               flexDirection: "column",
               gap: "8px",
             }}
-          ></div>
+          >
+            <RepoRows repos={mm.repos} onChange={mm.updateRepo} />
+          </div>
 
           <button
             type="button"
             className="ghost"
             id="mm-add-git"
+            onClick={mm.openPicker}
             style={{
               marginTop: "8px",
               padding: "5px 12px",
@@ -729,10 +749,14 @@ const handleResetInteraction = () => {
             className="muted"
             id="mm-status"
             style={{ marginTop: "8px" }}
-          ></div>
+          >
+            <AnalysisStatus status={mm.status} />
+          </div>
         </div>
 
-        <div id="mm-diag"></div>
+        <div id="mm-diag">
+          <IndexedCodeDiag key={mm.diag.key} perRepo={mm.diag.rows} />
+        </div>
 
         <div
           ref={graphCardRef}
@@ -851,7 +875,12 @@ const handleResetInteraction = () => {
           <div className="mm-graph-tip" id="mm-graph-tip" hidden></div>
         </div>
 
-        <div id="mm-map"></div>
+        <div id="mm-map">
+          <CoverageList map={mm.map} />
+        </div>
+        {mm.picker ? (
+          <GitRepoPicker repos={mm.picker.repos} onCancel={mm.closePicker} onAdd={mm.addPicked} />
+        ) : null}
       </div>
     </section>
   );
