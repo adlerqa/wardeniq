@@ -489,7 +489,10 @@ function updateCaseSelection() {
     .querySelectorAll(`[data-bulk-scope="${scope}-floating"]`)
     .forEach((bar) => bar.classList.toggle("show", selected.length > 0));
 }
+// The Test Cases screen manages its own selection (React, useCaseList); this
+// listener only serves the feature workspace rows.
 document.addEventListener("change", (e) => {
+  if (e.target.closest("#view-cases")) return;
   if (e.target.matches(".case-select-all"))
     setVisibleCaseSelection(e.target.checked);
   if (e.target.matches(".case-select[data-case-id]")) updateCaseSelection();

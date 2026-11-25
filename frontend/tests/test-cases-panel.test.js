@@ -154,8 +154,6 @@ test("initCases loads projects, tags, features and the first page", async (t) =>
   assert.equal(rows[0].querySelector(".testcase-sub").textContent, "API · 3 steps");
   assert.equal(rows[0].querySelector(".result-select").className, "result-select needs-editor passed");
   assert.equal(rows[0].querySelector(".result-select").value, "passed");
-  // setCaseResult (04) reverts to the defaultSelected option when saving fails.
-  assert.equal([...rows[0].querySelector(".result-select").options].find((o) => o.defaultSelected)?.value, "passed");
   assert.equal(rows[0].querySelector(".testcase-priority").textContent, "High");
   assert.equal(rows[1].style.opacity, "0.6");
   assert.equal(rows[1].querySelector(".testcase-sub").textContent, "End-to-end · 1 step · deprecated");
@@ -164,7 +162,6 @@ test("initCases loads projects, tags, features and the first page", async (t) =>
   assert.equal(h.$("#tc-summary").textContent, "2 matching test cases");
   assert.equal(h.$("#tc-pager").textContent, "‹ Prev2 cases · page 1 of 1Next ›");
   assert.ok(h.$("#tcp").disabled && h.$("#tcn").disabled);
-  assert.ok(h.calls.updateCaseSelection >= 1);
 });
 
 test("filters reload page 0; project reloads features and clears the feature", async (t) => {
@@ -216,29 +213,37 @@ test("pager moves between pages", async (t) => {
   assert.equal(h.caseRequests().at(-1), "/api/test-cases?type=e2e&status=active&limit=25&skip=0");
 });
 
-test("row actions go to the compat case handlers", async (t) => {
-  const h = harness(t);
+test("row actions: detail, result, selection, bulk bars and delete", async (t) => {
+  const h = harness(t, {
+    "/api/test-cases/c1": () => [200, { id: "c1", title: "Reset <b>", type: "api", priority: "High", tags: ["t"], steps: [{ action: "Go", expected: "" }], metadata: { expected_result: { status_code: 200 } } }],
+    "/api/test-cases/c1/execution": () => [200, {}],
+  });
+  window.toast = () => {};
   await h.mount();
   await h.run(() => window.initCases());
-  const row = h.container.querySelector("[data-case-item='c1'] .testcase-row");
+  const item = h.container.querySelector("[data-case-item='c1']");
+  const row = item.querySelector(".testcase-row");
   await h.click(row);
-  assert.deepEqual(h.calls.viewCase.map((a) => a[0]), ["c1"]);
-  assert.equal(h.calls.viewCase[0][1], row);
-
+  assert.ok(item.classList.contains("open"));
+  assert.match(item.querySelector("[data-case-detail='c1']").textContent, /Reset <b>.*Status code200.*1\.GoNo separate expected result/);
   await h.click(row.querySelector(".case-select"));
   await h.click(row.querySelector(".result-select"));
-  assert.equal(h.calls.viewCase.length, 1, "checkbox and select do not open the case");
+  assert.ok(item.classList.contains("open"), "checkbox and select do not toggle the case");
+  assert.equal(h.$(".case-bulk-toolbar").className, "case-bulk-toolbar show");
+  assert.equal(h.container.querySelector("[data-bulk-count='cases']").textContent, "1 selected");
+  assert.equal(h.container.querySelector(".case-select-all").indeterminate, true);
   const sel = row.querySelector(".result-select");
   await act(async () => {
     sel.value = "failed";
     sel.dispatchEvent(new window.Event("change", { bubbles: true }));
   });
-  assert.deepEqual(h.calls.setCaseResult.map((a) => a.slice(0, 2)), [["c1", "failed"]]);
-  assert.equal(h.calls.setCaseResult[0][2], sel);
-
+  await h.run(async () => {});
+  assert.ok(h.requests.includes("/api/test-cases/c1/execution"));
+  assert.equal(sel.className, "result-select failed");
   await h.click(row.querySelector(".testcase-delete"));
   assert.deepEqual(h.calls.requestDeleteCase.map((a) => a[0]), ["c1"]);
-  assert.equal(h.calls.viewCase.length, 1);
+  await h.click(item.querySelector("[data-case-detail='c1'] button.ghost:not(.needs-editor)"));
+  assert.ok(!item.classList.contains("open"));
 });
 
 test("a reload remounts the rows (detail closed, boxes cleared)", async (t) => {
@@ -305,4 +310,40 @@ test("opening the screen again resets project, feature and tag but keeps other f
     ["", "", "", "e2e", "deprecated"],
   );
   assert.equal(h.caseRequests().at(-1), "/api/test-cases?type=e2e&status=deprecated&limit=25&skip=0");
+});
+
+test("bulk actions: results, export (needs a feature) and delete", async (t) => {
+  const h = harness(t, {
+    "/api/test-cases/c1/execution": () => [200, {}],
+    "/api/test-cases/c2/execution": () => [200, {}],
+    "/api/features/f1/test-cases/c1": () => [200, {}],
+    "/api/features/f1/test-cases/c2": () => [200, {}],
+  });
+  const toasts = [];
+  window.toast = (m, e) => toasts.push([m, !!e]);
+  window.uiConfirm = async (...a) => {
+    toasts.push(["confirm", a[0]]);
+    return true;
+  };
+  await h.mount();
+  await h.run(() => window.initCases());
+  const bulk = (label) => [...h.container.querySelectorAll(".case-bulk-toolbar[data-bulk-scope='cases'] button")].find((b) => b.textContent.includes(label));
+  await h.click(bulk("Pass"));
+  assert.deepEqual(toasts.at(-1), ["Select test cases first", true]);
+  await h.click(h.container.querySelector(".case-select-all"));
+  assert.equal(h.container.querySelector("[data-bulk-count='cases-floating']").textContent, "2");
+  await h.click(bulk("Pass"));
+  assert.deepEqual(toasts.at(-1), ["2 test cases marked passed", false]);
+  assert.deepEqual([...h.container.querySelectorAll(".result-select")].map((s) => s.className), [
+    "result-select needs-editor passed",
+    "result-select needs-editor passed",
+  ]);
+  await h.click(bulk("Export"));
+  assert.deepEqual(toasts.at(-1), ["Choose one feature before exporting selected test cases", true]);
+  await h.select("tc-feat", "f1");
+  await h.click(h.container.querySelector(".case-select-all"));
+  await h.click(bulk("Delete"));
+  assert.match(toasts.at(-2)[1], /^Delete 2 selected test cases\?/);
+  assert.deepEqual(toasts.at(-1), ["2 selected test cases removed", false]);
+  assert.ok(h.requests.includes("/api/features/f1/test-cases/c2"));
 });

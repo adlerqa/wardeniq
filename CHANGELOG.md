@@ -145,6 +145,10 @@
   from Test Cases, new case in a test cycle; fields, steps with add / remove / drag to
   reorder, review and save) and case delete / remove-from-feature are now React, with the
   same markup.
+- **Test Cases rows rebuilt in React (part of #257).** On the Test Cases screen, the case
+  detail under a row, the result select, row selection and the bulk actions (pass / fail /
+  clear, export, delete) are now React, with the same markup. Exporting with no feature
+  filter now shows only the "Choose one feature" error (it also showed a success toast).
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

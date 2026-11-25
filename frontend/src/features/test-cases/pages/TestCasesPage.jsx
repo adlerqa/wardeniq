@@ -1,26 +1,27 @@
-import { useEffect } from "react";
+import { useRef } from "react";
 
 import { CaseList, CasePager } from "../components/CaseList.jsx";
+import useCaseList from "../hooks/useCaseList.js";
 import useTestCases from "../hooks/useTestCases.js";
 import { projectOptionLabel } from "../lib/testCases.js";
-import { openNewCase, toast, updateCaseSelection } from "../../../lib/compatBridge.js";
+import { openNewCase, toast } from "../../../lib/compatBridge.js";
 
 /**
  * TestCasesPage — filters, list, summary and pager are React (see
- * useTestCases); "+ New test case" opens the React case editor. The case
- * detail, result select handler and bulk actions are still compat code
- * (04 / 03); the rows keep the classes and data attributes that code works
- * on, and the filter id tc-feat that 03 and the case delete read.
+ * useTestCases); row detail, results, selection and bulk actions come from
+ * useCaseList; "+ New test case" opens the React case editor. The filter id
+ * tc-feat is still read by the case delete dialog.
  */
 export default function TestCasesPage() {
   const tc = useTestCases();
   const { filters, changeFilter } = tc;
   const onSelect = (key) => (e) => changeFilter(key, e.target.value);
 
-  // A fresh list has no rows ticked: hide the bulk bars, as the old screen did.
-  useEffect(() => {
-    if (tc.list.status === "ready") updateCaseSelection();
-  }, [tc.list.status, tc.list.seq]);
+  const featureRef = useRef("");
+  featureRef.current = filters.feature;
+  // Row detail, results, ticked rows and bulk actions; a reload clears them.
+  const cl = useCaseList(tc.list.items, tc.list.seq, { feature: () => featureRef.current, reload: tc.reload });
+  const bar = (scope) => `case-bulk-toolbar${scope}${cl.count ? " show" : ""}`;
 
   return (
     <section id="view-cases" className="view" hidden>
@@ -196,40 +197,40 @@ export default function TestCasesPage() {
         <div className="filter-summary" id="tc-summary">
           {tc.summary}
         </div>
-        <div className="case-bulk-toolbar" data-bulk-scope="cases">
+        <div className={bar("")} data-bulk-scope="cases">
           <div className="case-bulk-left">
             <span className="case-bulk-count" data-bulk-count="cases">
-              0 selected
+              {`${cl.count} selected`}
             </span>
           </div>
           <div className="case-bulk-actions">
             <button
               className="ghost bulk-pass"
-              onClick={() => window.bulkSetCaseResult?.("passed")}
+              onClick={() => cl.bulkSetResult("passed")}
             >
               Pass selected
             </button>
             <button
               className="ghost bulk-fail"
-              onClick={() => window.bulkSetCaseResult?.("failed")}
+              onClick={() => cl.bulkSetResult("failed")}
             >
               Fail selected
             </button>
             <button
               className="ghost"
-              onClick={() => window.bulkSetCaseResult?.("untested")}
+              onClick={() => cl.bulkSetResult("untested")}
             >
               Clear status
             </button>
             <button
               className="ghost"
-              onClick={() => window.bulkExportSelected?.("pdf")}
+              onClick={() => cl.bulkExport("pdf")}
             >
               Export selected
             </button>
             <button
               className="testcase-delete"
-              onClick={() => window.bulkDeleteSelected?.()}
+              onClick={() => cl.bulkDelete()}
             >
               Delete selected
             </button>
@@ -242,28 +243,26 @@ export default function TestCasesPage() {
             error={tc.list.error}
             seq={tc.list.seq}
             onRetry={tc.reload}
+            cl={cl}
           />
         </div>
-        <div
-          className="case-bulk-toolbar bulk-floating"
-          data-bulk-scope="cases-floating"
-        >
+        <div className={bar(" bulk-floating")} data-bulk-scope="cases-floating">
           <div className="case-bulk-left">
             <span className="badge" data-bulk-count="cases-floating">
-              0
+              {cl.count}
             </span>
             <span className="case-bulk-count">selected</span>
           </div>
           <div className="case-bulk-actions">
             <button
               className="ghost"
-              onClick={() => window.bulkExportSelected?.("pdf")}
+              onClick={() => cl.bulkExport("pdf")}
             >
               Export selected
             </button>
             <button
               className="testcase-delete"
-              onClick={() => window.bulkDeleteSelected?.()}
+              onClick={() => cl.bulkDelete()}
             >
               Delete selected
             </button>
