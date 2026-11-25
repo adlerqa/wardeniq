@@ -35,10 +35,6 @@ async function loadProjects() {
       $("#cyc-proj").innerHTML = opts;
       $("#cyc-proj").value = currentProject;
     }
-    if ($("#tcy-proj")) {
-      $("#tcy-proj").innerHTML = opts;
-      $("#tcy-proj").value = currentProject;
-    }
 
     // Project selection cards: click enters the project's feature list; management lives in the menu.
     if ($("#project-cards-container")) {

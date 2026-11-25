@@ -222,3 +222,21 @@ export function setCurrentProject(projectId) {
   const fn = compatFn("setCurrentProject");
   if (fn) fn(projectId);
 }
+
+/** Open the shared case editor on a case (04-test-cases.js editCase). */
+export function editCase(caseId) {
+  const fn = compatFn("editCase");
+  if (fn) return fn(caseId);
+}
+
+/** Open the case editor for a new case in a feature that also joins a test cycle (04). */
+export function openNewCaseInCycle(featureId, cycleId) {
+  const fn = compatFn("openNewCaseInCycle");
+  if (fn) return fn(featureId, cycleId);
+}
+
+/** Read-only info dialog (04 openInfoDialog): { title, copy, summary (HTML — escape it) }. */
+export function openInfoDialog(options) {
+  const fn = compatFn("openInfoDialog");
+  if (fn) return fn(options);
+}

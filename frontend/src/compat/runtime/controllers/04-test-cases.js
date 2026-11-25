@@ -371,6 +371,29 @@ function openCaseConfirmation({
       }
     : null;
 }
+// Open the case editor for a new case in `featureId` that is also added to
+// test cycle `cycleId` (used by the React Test Cycles screen, #257).
+window.openNewCaseInCycle = (featureId, cycleId) => {
+  editing = {
+    id: null,
+    feature_id: featureId,
+    cycle_id: cycleId,
+    shared_with_features: 0,
+    steps: [{ action: "", expected: "" }],
+  };
+  $("#m-heading").textContent = "Create test case (adds to this cycle)";
+  $("#m-title").value = "";
+  $("#m-type").value = "functional";
+  $("#m-prio").value = "Medium";
+  $("#m-pre").value = "";
+  $("#m-tags").value = "from-test-cycle";
+  $("#m-warn").textContent =
+    "Gets a new project ID, is linked to the selected feature, tagged “from-test-cycle”, and added to this cycle.";
+  $("#m-del").style.display = "none";
+  renderSteps();
+  $("#m-msg").textContent = "";
+  $("#modal").classList.add("show");
+};
 function openInfoDialog({ title, copy, summary, closeLabel = "Close" }) {
   $("#cc-title").textContent = title;
   $("#cc-copy").textContent = copy;

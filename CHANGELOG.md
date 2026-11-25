@@ -104,6 +104,12 @@
   zoom and fullscreen work as before. `09-mind-map-and-jobs.js` is removed (`syncJira`
   moved to `03`). The legend is now cleared, instead of left from the previous project,
   when a project has no features.
+- **Test Cycles screen rebuilt in React (part of #257).** Creating cycles, templates, the
+  cycle list and the cycle detail (progress, schedule, item statuses with the inline
+  result editor, description, rename, delete, summary, add existing or new test cases) are
+  now React, with the same markup. Fixes found on the way: a failed item-status save now
+  shows its error (it used to fail silently), and saving the editor of a failed / blocked
+  item that already has a result no longer clears that result, notes and defect link.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access
