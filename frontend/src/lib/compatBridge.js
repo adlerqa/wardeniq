@@ -169,7 +169,7 @@ export function openFeature(featureId) {
   if (fn) return fn(featureId);
 }
 
-/** Reload the feature list (03 loadFeatures). */
+/** Reload the feature list (window.loadFeatures, React Features). */
 export function loadFeatures() {
   const fn = compatFn("loadFeatures");
   if (fn) return fn();
@@ -254,7 +254,7 @@ export function goToProjectFeatures() {
   if (fn) return fn();
 }
 
-/** Fill the Features screen's project picker and title from the project list (03 syncFeatureProjects). */
+/** Give the Features screen the project list and current project (window.syncFeatureProjects, React Features). */
 export function syncFeatureProjects(projects, currentId) {
   const fn = compatFn("syncFeatureProjects");
   if (fn) return fn(projects, currentId);
@@ -276,4 +276,22 @@ export function refreshStatus() {
 export function gotoAnalyze(repoId, projectId) {
   const fn = compatFn("gotoAnalyze");
   if (fn) return fn(repoId, projectId);
+}
+
+/** Select a feature in the compat runtime (00-core.js `currentFeature`); null clears it. */
+export function setCurrentFeature(featureId) {
+  const fn = compatFn("setCurrentFeature");
+  if (fn) fn(featureId);
+}
+
+/** The Projects screen, reloaded (00-core.js goToProjects). */
+export function goToProjects() {
+  const fn = compatFn("goToProjects");
+  if (fn) return fn();
+}
+
+/** The import-sheet dialog for a feature (window.importSheetForFeature, React Imports). */
+export function importSheetForFeature(featureId, projectId) {
+  const fn = compatFn("importSheetForFeature");
+  if (fn) return fn(featureId, projectId);
 }

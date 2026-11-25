@@ -131,6 +131,13 @@
   processes, the per-model and per-project tables and their filters are now React, with
   the same markup. The unused model-pricing editor code, whose controls were not on any
   page, is removed.
+- **Feature list and "New feature" page rebuilt in React (part of #257).** The feature
+  cards and their menu (rename, import sheet, delete), the project title, and the "New
+  feature" page (Jira epics, files with per-file remove, pasted text, Confluence / Figma
+  links, test sheet, the test type mix, the cost estimate, and generation with its live
+  status and log) are now React, with the same markup. The feature workspace is
+  unchanged. The `feature-upload-file-remove` and `cpu-warning-estimate` tests now run
+  against the React page.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

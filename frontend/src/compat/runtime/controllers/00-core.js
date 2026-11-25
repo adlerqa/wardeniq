@@ -836,6 +836,9 @@ function setCurrentProject(id) {
 function getCurrentFeatureId() {
   return currentFeature;
 }
+function setCurrentFeature(id) {
+  currentFeature = id;
+}
 // Signed-in user (or null), for React screens until identity moves to React (#257).
 function getCurrentUser() {
   return ME;
