@@ -321,56 +321,8 @@ function editorBody() {
       ),
   };
 }
-function openCaseConfirmation({
-  title,
-  copy,
-  summary,
-  confirmLabel,
-  danger = false,
-  onConfirm,
-  secondaryLabel = null,
-  onSecondary = null,
-}) {
-  $("#cc-title").textContent = title;
-  $("#cc-copy").textContent = copy;
-  // Only show the summary box when there's actual summary content — otherwise it
-  // renders as a stray empty input-looking box (role-change / delete confirmations).
-  $("#cc-summary").innerHTML = summary || "";
-  $("#cc-summary").style.display = summary ? "" : "none";
-  $("#cc-error").textContent = "";
-  $("#cc-confirm").textContent = confirmLabel;
-  $("#cc-confirm").className = danger ? "danger" : "go";
-  $("#cc-cancel").style.display = "";
-  $("#cc-cancel").textContent = "Cancel";
-  $("#cc-secondary").style.display = secondaryLabel ? "" : "none";
-  $("#cc-secondary").textContent = secondaryLabel || "";
-  $("#case-confirm").classList.add("show");
-  $("#cc-cancel").onclick = () => $("#case-confirm").classList.remove("show");
-  $("#cc-confirm").onclick = async () => {
-    try {
-      $("#cc-confirm").disabled = true;
-      await onConfirm();
-      $("#case-confirm").classList.remove("show");
-    } catch (e) {
-      $("#cc-error").textContent = e.message;
-    } finally {
-      $("#cc-confirm").disabled = false;
-    }
-  };
-  $("#cc-secondary").onclick = secondaryLabel
-    ? async () => {
-        try {
-          $("#cc-secondary").disabled = true;
-          await onSecondary();
-          $("#case-confirm").classList.remove("show");
-        } catch (e) {
-          $("#cc-error").textContent = e.message;
-        } finally {
-          $("#cc-secondary").disabled = false;
-        }
-      }
-    : null;
-}
+// The shared confirm / info dialogs are React (components/overlays/modals/
+// CaseConfirmationModal.jsx, #257): window.openCaseConfirmation / openInfoDialog.
 // Open the case editor for a new case in `featureId` that is also added to
 // test cycle `cycleId` (used by the React Test Cycles screen, #257).
 window.openNewCaseInCycle = (featureId, cycleId) => {
@@ -394,19 +346,6 @@ window.openNewCaseInCycle = (featureId, cycleId) => {
   $("#m-msg").textContent = "";
   $("#modal").classList.add("show");
 };
-function openInfoDialog({ title, copy, summary, closeLabel = "Close" }) {
-  $("#cc-title").textContent = title;
-  $("#cc-copy").textContent = copy;
-  $("#cc-summary").innerHTML = summary || "";
-  $("#cc-summary").style.display = summary ? "" : "none";
-  $("#cc-error").textContent = "";
-  $("#cc-secondary").style.display = "none";
-  $("#cc-cancel").style.display = "none";
-  $("#cc-confirm").textContent = closeLabel;
-  $("#cc-confirm").className = "go";
-  $("#case-confirm").classList.add("show");
-  $("#cc-confirm").onclick = () => $("#case-confirm").classList.remove("show");
-}
 $("#m-save").onclick = () => {
   const body = editorBody();
   if (!body.title) {

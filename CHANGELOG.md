@@ -138,6 +138,9 @@
   status and log) are now React, with the same markup. The feature workspace is
   unchanged. The `feature-upload-file-remove` and `cpu-warning-estimate` tests now run
   against the React page.
+- **Shared confirm dialog rebuilt in React (part of #257).** The confirm / info dialog used
+  across the app (delete and remove confirmations, case save confirmation, `uiConfirm`) is
+  now a React component with the same markup.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

@@ -28,7 +28,7 @@ export function toast(message, options) {
   (isErr ? console.error : console.info)(String(message));
 }
 
-/** Resolves true when confirmed, false when cancelled (00-core.js uiConfirm). */
+/** Resolves true when confirmed, false when cancelled (window.uiConfirm, React CaseConfirmationModal). */
 export function uiConfirm(message, title, confirmLabel, danger) {
   const fn = compatFn("uiConfirm");
   if (fn) return fn(message, title, confirmLabel, danger);
@@ -176,7 +176,7 @@ export function loadFeatures() {
 }
 
 /**
- * The shared case confirmation dialog (04 openCaseConfirmation):
+ * The shared case confirmation dialog (window.openCaseConfirmation, React CaseConfirmationModal):
  * { title, copy, summary (HTML — escape it), confirmLabel, danger, onConfirm }.
  * An error thrown by onConfirm is shown inside the dialog.
  */
@@ -236,7 +236,7 @@ export function openNewCaseInCycle(featureId, cycleId) {
   if (fn) return fn(featureId, cycleId);
 }
 
-/** Read-only info dialog (04 openInfoDialog): { title, copy, summary (HTML — escape it) }. */
+/** Read-only info dialog (window.openInfoDialog, React CaseConfirmationModal): { title, copy, summary (HTML — escape it) }. */
 export function openInfoDialog(options) {
   const fn = compatFn("openInfoDialog");
   if (fn) return fn(options);

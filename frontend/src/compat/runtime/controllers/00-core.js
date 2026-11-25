@@ -539,29 +539,8 @@ function uiPrompt(title, label, value) {
     };
   });
 }
-function uiConfirm(
-  msg,
-  title = "Confirm Action",
-  confirmLabel = "Confirm",
-  danger = false,
-) {
-  return new Promise((res) => {
-    openCaseConfirmation({
-      title: title,
-      copy: msg,
-      summary: "",
-      confirmLabel: confirmLabel,
-      danger: danger,
-      onConfirm: () => {
-        res(true);
-      },
-    });
-    $("#cc-cancel").onclick = () => {
-      $("#case-confirm").classList.remove("show");
-      res(false);
-    };
-  });
-}
+// uiConfirm(msg, title, confirmLabel, danger) is registered by the React
+// CaseConfirmationModal (#257).
 // Generic HTML modal → resolves true (confirm) / false (cancel). Body HTML stays in
 // the DOM while open so callers can read its inputs after resolve.
 function uiModalHTML(title, bodyHTML, confirmLabel = "Save") {
