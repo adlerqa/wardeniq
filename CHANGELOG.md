@@ -141,6 +141,10 @@
 - **Shared confirm dialog rebuilt in React (part of #257).** The confirm / info dialog used
   across the app (delete and remove confirmations, case save confirmation, `uiConfirm`) is
   now a React component with the same markup.
+- **Test case editor rebuilt in React (part of #257).** The editor dialog (edit, new case
+  from Test Cases, new case in a test cycle; fields, steps with add / remove / drag to
+  reorder, review and save) and case delete / remove-from-feature are now React, with the
+  same markup.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

@@ -3,14 +3,14 @@ import { useEffect } from "react";
 import { CaseList, CasePager } from "../components/CaseList.jsx";
 import useTestCases from "../hooks/useTestCases.js";
 import { projectOptionLabel } from "../lib/testCases.js";
-import { updateCaseSelection } from "../../../lib/compatBridge.js";
+import { openNewCase, toast, updateCaseSelection } from "../../../lib/compatBridge.js";
 
 /**
  * TestCasesPage — filters, list, summary and pager are React (see
- * useTestCases). The case detail, result select handler, editor, delete and
- * bulk actions are still compat code (04 / 07 / 03); the rows keep the classes
- * and data attributes that code works on, and the filter ids (tc-feat, tc-new)
- * that 03 and 07 read.
+ * useTestCases); "+ New test case" opens the React case editor. The case
+ * detail, result select handler and bulk actions are still compat code
+ * (04 / 03); the rows keep the classes and data attributes that code works
+ * on, and the filter id tc-feat that 03 and the case delete read.
  */
 export default function TestCasesPage() {
   const tc = useTestCases();
@@ -33,7 +33,15 @@ export default function TestCasesPage() {
           }}
         >
           <h2 style={{ margin: "0" }}>Test Cases</h2>
-          <button className="go" id="tc-new">
+          <button
+            className="go"
+            id="tc-new"
+            onClick={() =>
+              filters.feature
+                ? openNewCase(filters.feature)
+                : toast("Pick a Feature filter first, so the new case is added to it", true)
+            }
+          >
             + New test case
           </button>
         </div>

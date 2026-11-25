@@ -145,7 +145,7 @@ export function setCaseResult(caseId, status, selectEl) {
   if (fn) return fn(caseId, status, selectEl);
 }
 
-/** Delete / unlink a test case after confirming (07-library-and-crud.js). */
+/** Delete / unlink a test case after confirming (window.requestDeleteCase, React case editor). */
 export function requestDeleteCase(caseId) {
   const fn = compatFn("requestDeleteCase");
   if (fn) return fn(caseId);
@@ -224,13 +224,13 @@ export function setCurrentProject(projectId) {
   if (fn) fn(projectId);
 }
 
-/** Open the shared case editor on a case (04-test-cases.js editCase). */
+/** Open the case editor on a case (window.editCase, React TestCaseEditorModal). */
 export function editCase(caseId) {
   const fn = compatFn("editCase");
   if (fn) return fn(caseId);
 }
 
-/** Open the case editor for a new case in a feature that also joins a test cycle (04). */
+/** Open the case editor for a new case in a feature that also joins a test cycle (window.openNewCaseInCycle). */
 export function openNewCaseInCycle(featureId, cycleId) {
   const fn = compatFn("openNewCaseInCycle");
   if (fn) return fn(featureId, cycleId);
@@ -294,4 +294,10 @@ export function goToProjects() {
 export function importSheetForFeature(featureId, projectId) {
   const fn = compatFn("importSheetForFeature");
   if (fn) return fn(featureId, projectId);
+}
+
+/** Open the case editor for a new case in a feature (window.openNewCase, React TestCaseEditorModal). */
+export function openNewCase(featureId) {
+  const fn = compatFn("openNewCase");
+  if (fn) return fn(featureId);
 }

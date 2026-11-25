@@ -784,8 +784,7 @@ let currentProject = null,
   currentFeature = null,
   currentFeatureData = null,
   currentFeatureCases = [],
-  currentViewName = "dashboard",
-  editing = { id: null, steps: [] };
+  currentViewName = "dashboard";
 const TITLES = {
   dashboard: "Dashboard",
   projects: "Projects & Repos",
