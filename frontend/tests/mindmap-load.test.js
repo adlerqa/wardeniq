@@ -103,7 +103,7 @@ test("page load renders the repo checkboxes and the indexed-code diagnostics", a
   const diagHtml = h.$("#mm-diag").innerHTML;
   assert.match(diagHtml, /Indexed code by repository/, "the diagnostics panel is rendered");
   assert.match(diagHtml, /42 impl indexed/, "it shows the indexed file count");
-  assert.equal(h.graph.length, 1, "the graph receives the loaded data");
+  assert.match(h.$("#mm-graph").textContent, /No features in this project yet/, "the graph is drawn from the loaded data");
 });
 
 test("page load clears stale diagnostics when the project has no analysis", async (t) => {

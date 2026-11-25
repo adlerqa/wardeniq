@@ -222,9 +222,3 @@ export function setCurrentProject(projectId) {
   const fn = compatFn("setCurrentProject");
   if (fn) fn(projectId);
 }
-
-/** Hand the /mindmap response to the coverage graph (09-mind-map-and-jobs.js). */
-export function setMindmapGraphData(data) {
-  const fn = compatFn("setMindmapGraphData");
-  if (fn) fn(data);
-}

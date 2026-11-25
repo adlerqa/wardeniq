@@ -6,14 +6,13 @@ import chunk03 from "./controllers/03-features-and-usage.js?raw";
 import chunk04 from "./controllers/04-test-cases.js?raw";
 import chunk07 from "./controllers/07-library-and-crud.js?raw";
 import chunk08 from "./controllers/08-code-analysis-and-cycles.js?raw";
-import chunk09 from "./controllers/09-mind-map-and-jobs.js?raw";
 import chunk10 from "./controllers/10-auth.js?raw";
 import chunk13 from "./controllers/13-gap-analysis.js?raw";
 import chunk16 from "./controllers/16-boot.js?raw";
 
 const runtimeChunks = [
   chunk00, chunk02, chunk03, chunk04,
-  chunk07, chunk08, chunk09, chunk10,
+  chunk07, chunk08, chunk10,
   chunk13, chunk16,
 ];
 

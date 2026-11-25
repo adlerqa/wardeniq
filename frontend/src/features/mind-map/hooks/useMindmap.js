@@ -5,7 +5,6 @@ import {
   currentProjectId,
   loadProjects,
   setCurrentProject,
-  setMindmapGraphData,
   toast,
   watchJob,
 } from "../../../lib/compatBridge.js";
@@ -15,8 +14,8 @@ import { branchMap, repoAnalysisDefaultChecked, withoutConnected } from "../lib/
  * Mind Map controls and coverage list (was the first half of
  * 09-mind-map-and-jobs.js). navigateTo("mindmap") in 00-core.js calls
  * window.initMindmap(), registered while mounted; nothing loads on mount.
- * The coverage graph is still compat code: the loaded data is handed to it
- * through setMindmapGraphData.
+ * `graphData` is the last /mindmap response that loaded, drawn by the
+ * coverage graph (kept when a later load fails, as before).
  *
  * status: { kind: "text" | "running" | "failed" | "done" | "error", ... }
  * map:    { status: "idle" | "loading" | "analyzing" | "noproject" | "ready" | "error", data, error }
@@ -30,6 +29,7 @@ export default function useMindmap() {
   const [diag, setDiagState] = useState({ rows: [], key: 0 });
   const [map, setMap] = useState({ status: "idle", data: null, error: "" });
   const [picker, setPicker] = useState(null); // { pid, repos }
+  const [graphData, setGraphData] = useState(null);
   const pidRef = useRef("");
   const mapSeq = useRef(0);
   // Each redraw starts collapsed again, as the old innerHTML redraw did.
@@ -87,7 +87,7 @@ export default function useMindmap() {
       const r = await api(`/api/projects/${p}/mindmap`);
       if (my !== mapSeq.current) return;
       setDiag(r.last_analysis?.per_repo || []);
-      setMindmapGraphData(r);
+      setGraphData(r);
       setMap({ status: "ready", data: r, error: "", seq: my });
     } catch (e) {
       if (my === mapSeq.current) setMap({ status: "error", data: null, error: e.message });
@@ -227,6 +227,7 @@ export default function useMindmap() {
     analyzing,
     diag,
     map,
+    graphData,
     picker,
     changeProject,
     updateRepo,

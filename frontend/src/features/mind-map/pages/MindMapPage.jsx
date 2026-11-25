@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
+import { GraphCrumb, GraphDetail, GraphLegend, GraphSummary } from "../components/CoverageGraphParts.jsx";
+import { CoverageGraphSvg } from "../components/CoverageGraphSvg.jsx";
 import { CoverageList } from "../components/CoverageList.jsx";
 import GitRepoPicker from "../components/GitRepoPicker.jsx";
 import { AnalysisStatus, IndexedCodeDiag, RepoRows } from "../components/MindmapControls.jsx";
+import useCoverageGraph from "../hooks/useCoverageGraph.js";
 import useMindmap from "../hooks/useMindmap.js";
 
 /**
@@ -11,8 +14,8 @@ import useMindmap from "../hooks/useMindmap.js";
  * React structure for the implementation coverage mind map.
  *
  * Project / repo controls, the analysis run, diagnostics and the coverage
- * list are React (useMindmap). The SVG graph inside #mm-graph is still drawn
- * by the mind-map compatibility controller.
+ * list are React (useMindmap); the coverage graph is React too
+ * (useCoverageGraph + CoverageGraphSvg).
  *
  * Additional interactions handled here:
  * - Mouse wheel zoom
@@ -21,6 +24,8 @@ import useMindmap from "../hooks/useMindmap.js";
  */
 export default function MindMapPage() {
   const mm = useMindmap();
+  const graph = useCoverageGraph(mm.graphData);
+  const gm = graph.m && graph.m.feats.length ? graph.m : null;
   const graphCardRef = useRef(null);
   const graphStageRef = useRef(null);
 
@@ -762,6 +767,9 @@ const handleResetInteraction = () => {
           ref={graphCardRef}
           className="card mm-graph-card"
           id="mm-graph-card"
+          onClick={graph.onCardClick}
+          onMouseOver={graph.onCardMouseOver}
+          onMouseOut={graph.onCardMouseOut}
           style={
             isFullscreen
               ? {
@@ -794,19 +802,26 @@ const handleResetInteraction = () => {
             </div>
           </div>
 
-          <div className="mm-summary" id="mm-summary"></div>
+          <div className="mm-summary" id="mm-summary">
+            {gm ? <GraphSummary m={gm} /> : null}
+          </div>
 
           <div className="mm-stage-wrap">
             <div className="mm-stage-bar">
-              <div className="mm-legend" id="mm-legend"></div>
+              <div className="mm-legend" id="mm-legend">
+                {gm ? <GraphLegend m={gm} mode={graph.mode} /> : null}
+              </div>
 
               <div className="mm-stage-tools">
-                <span className="mm-crumb" id="mm-crumb"></span>
+                <span className="mm-crumb" id="mm-crumb">
+                  {gm ? <GraphCrumb m={gm} mode={graph.mode} sel={graph.sel} filter={graph.filter} /> : null}
+                </span>
 
                 <button
                   type="button"
                   className="ghost mm-tool"
                   id="mm-zoom-out"
+                  onClick={() => graph.zoom(0.85)}
                   title="Zoom out"
                   aria-label="Zoom out"
                 >
@@ -817,6 +832,7 @@ const handleResetInteraction = () => {
                   type="button"
                   className="ghost mm-tool"
                   id="mm-zoom-in"
+                  onClick={() => graph.zoom(1.18)}
                   title="Zoom in"
                   aria-label="Zoom in"
                 >
@@ -828,7 +844,10 @@ const handleResetInteraction = () => {
                   className="ghost mm-tool"
                   id="mm-reset"
                   title="Reset map position and zoom"
-                  onClick={handleResetInteraction}
+                  onClick={() => {
+                    handleResetInteraction();
+                    graph.reset();
+                  }}
                 >
                   Reset
                 </button>
@@ -867,12 +886,25 @@ const handleResetInteraction = () => {
                     }
                   : {}),
               }}
-            ></div>
+            >
+              {graph.m ? (
+                <CoverageGraphSvg
+                  key={graph.drawKey}
+                  m={graph.m}
+                  mode={graph.mode}
+                  sel={graph.sel}
+                  filter={graph.filter}
+                  k={graph.k}
+                />
+              ) : null}
+            </div>
           </div>
 
-          <div id="mm-detail" className="mm-detail"></div>
+          <div id="mm-detail" className="mm-detail">
+            {gm ? <GraphDetail m={gm} sel={graph.sel} filter={graph.filter} /> : null}
+          </div>
 
-          <div className="mm-graph-tip" id="mm-graph-tip" hidden></div>
+          <div className="mm-graph-tip" id="mm-graph-tip" ref={graph.tipRef} hidden></div>
         </div>
 
         <div id="mm-map">

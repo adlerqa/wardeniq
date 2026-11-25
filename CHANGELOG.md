@@ -98,6 +98,12 @@
   that never ran because its screens were never part of the app: the Jobs list, Start
   Developing and the feature Regenerate button handler (the backend endpoints are
   unchanged).
+- **Mind Map coverage graph rebuilt in React (part of #257).** The SVG graph (radial and
+  tree layouts, feature focus, status filters, zoom, tooltips, evidence hotspots and the
+  case detail) is now React, with the same elements and attributes; drag-to-pan, wheel
+  zoom and fullscreen work as before. `09-mind-map-and-jobs.js` is removed (`syncJira`
+  moved to `03`). The legend is now cleared, instead of left from the previous project,
+  when a project has no features.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

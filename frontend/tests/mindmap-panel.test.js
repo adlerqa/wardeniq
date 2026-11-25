@@ -108,7 +108,7 @@ function harness(t, routes = {}) {
   const module = { exports: {} };
   vm.runInNewContext(bundled.outputFiles[0].text, {
     module, exports: module.exports, require, window, document, console, fetch: fakeFetch, setTimeout,
-    clearTimeout, DOMPoint: class {},
+    clearTimeout, DOMPoint: class {}, DOMParser: window.DOMParser,
   });
   const root = createRoot(container);
   t.after(async () => {
@@ -165,7 +165,7 @@ test("registers window.initMindmap without fetching; loads projects, repos and t
     ["|main (default)", "dev|dev"],
   );
   assert.deepEqual([...h.$(".mm-repo-branch[data-rid='r2']").options].map((o) => o.textContent), ["default (default)"]);
-  assert.equal(h.calls.graph.length, 1);
+  assert.ok(h.$("#mm-graph svg.mm-svg"), "the graph is drawn");
 });
 
 test("window.initMindmap is removed on unmount", async (t) => {
@@ -226,7 +226,7 @@ test("load error and no features", async (t) => {
   });
   await h.open();
   assert.equal(h.$("#mm-map").innerHTML, '<div class="card err">Couldn\'t load the coverage map. boom</div>');
-  assert.equal(h.calls.graph.length, 0);
+  assert.equal(h.$("#mm-graph").innerHTML, "", "nothing to draw yet");
   mode = "empty";
   await h.click(h.$("#mm-refresh"));
   assert.equal(h.$("#mm-map").textContent, "No features in this project yet.");
@@ -345,4 +345,73 @@ test("GitHub repo picker: PAT error and nothing new", async (t) => {
   await h.click(h.$("#mm-add-git"));
   assert.deepEqual(h.calls.toast.at(-1), ["No new repos to add — all your accessible repos are already in this project", true]);
   assert.equal(document.querySelector("#gitrepo-list"), null);
+});
+
+test("graph: summary, legend, tree layout, expand a feature, filter, back", async (t) => {
+  const h = harness(t);
+  await h.open();
+  // 2 repos + "(no repository)" → tree
+  assert.equal(h.$("#mm-summary").textContent, "20%implemented 5 cases judged 1 covered 1 partial 3 uncovered 3 features 3 repos");
+  assert.equal(h.$("#mm-legend .mm-lg-hint").textContent, "grouped by repository · click a feature to expand its cases");
+  assert.ok(h.$("#mm-graph svg.mm-svg.mm-svg-tall"));
+  assert.deepEqual([...h.container.querySelectorAll("[data-mmmode]")].map((b) => b.className), ["mm-mode-b on", "mm-mode-b", "mm-mode-b"]);
+  assert.match(h.$("#mm-detail .mm-hot-head").textContent, /^Evidence hotspots/);
+  await h.click(h.$("#mm-graph [data-mmfeat='0']"));
+  assert.match(h.$("#mm-crumb").textContent, /^All features ▸ Password reset　/);
+  assert.equal(h.$("#mm-detail .mm-detail-title").textContent, "Password reset v2");
+  assert.equal(h.container.querySelectorAll("#mm-detail .mm-case").length, 3);
+  await h.click(h.$("#mm-detail [data-mmfilter='uncovered']"));
+  assert.equal(h.container.querySelectorAll("#mm-detail .mm-case").length, 1);
+  assert.equal(h.$("#mm-detail [data-mmfilter='uncovered']").className, "mm-chip uncovered on");
+  assert.match(h.$("#mm-crumb").textContent, /Password reset ▸ uncovered/);
+  await h.click(h.$("#mm-crumb-root"));
+  assert.equal(h.$("#mm-crumb-root"), null);
+  assert.match(h.$("#mm-detail").textContent, /Evidence hotspots/);
+});
+
+test("graph: radial mode, focus a feature, bucket, zoom, reset", async (t) => {
+  const h = harness(t);
+  await h.open();
+  await h.click(h.$("[data-mmmode='radial']"));
+  assert.ok(h.$("#mm-graph circle.mm-ring"));
+  assert.equal(h.$("#mm-legend .mm-lg-hint").textContent, "node size = cases · click a branch to expand");
+  const zoomG = () => h.$("#mm-zoom");
+  await h.click(h.$("#mm-zoom-in"));
+  assert.match(zoomG().getAttribute("transform"), / scale\(1\.18\) /);
+  const svgBefore = h.$("#mm-graph svg");
+  await h.click(h.$("#mm-zoom-out"));
+  assert.equal(h.$("#mm-graph svg"), svgBefore, "zoom keeps the drawing (and any pan)");
+  await h.click(h.$("#mm-graph [data-mmbucket='0:covered']"));
+  assert.ok(h.$("#mm-graph .mm-hub-back"));
+  assert.match(h.$("#mm-graph .mm-hub-back").textContent, /1 covered/);
+  assert.notEqual(h.$("#mm-graph svg"), svgBefore, "other changes redraw (pan resets)");
+  await h.click(h.$("#mm-graph .mm-hub-back circle"));
+  assert.equal(h.$("#mm-graph .mm-hub-back"), null);
+  await h.click(h.$("#mm-zoom-in"));
+  await h.click(h.$("#mm-reset"));
+  assert.match(zoomG().getAttribute("transform"), / scale\(1\) /);
+  assert.equal(h.$("[data-mmmode='radial']").className, "mm-mode-b on", "reset keeps the layout");
+});
+
+test("graph: tooltips show sanitized node markup", async (t) => {
+  const h = harness(t);
+  await h.open();
+  const card = h.$("#mm-graph-card");
+  const tip = h.$("#mm-graph-tip");
+  await h.flush(() =>
+    h.$("#mm-graph [data-mmfeat='0'] rect").dispatchEvent(new window.MouseEvent("mouseover", { bubbles: true, clientX: 50, clientY: 40 })),
+  );
+  assert.equal(tip.hidden, false);
+  assert.equal(tip.innerHTML, "<b>Password reset</b> · v2<br>33% implemented · 3 cases<br>o/backend, o/web<br><i>click to expand</i>");
+  await h.flush(() => h.$("#mm-summary").dispatchEvent(new window.MouseEvent("mouseover", { bubbles: true })));
+  assert.equal(tip.hidden, true);
+  await h.click(h.$("#mm-graph [data-mmfeat='0']"));
+  const leaf = [...h.container.querySelectorAll("#mm-graph [data-tip]")].find((g) => g.querySelector(".mm-leaf") && /Send link/.test(g.getAttribute("data-tip")));
+  await h.flush(() => leaf.dispatchEvent(new window.MouseEvent("mouseover", { bubbles: true })));
+  assert.equal(
+    tip.innerHTML,
+    '<b>Send link &lt;b&gt;x&lt;/b&gt;</b><br><span class="mm-t-covered">covered</span> · API<br>Done.<br>evidence: <code>a.py</code> <code>b.py</code>',
+  );
+  await h.flush(() => card.dispatchEvent(new window.MouseEvent("mouseout", { bubbles: true })));
+  assert.equal(tip.hidden, true);
 });

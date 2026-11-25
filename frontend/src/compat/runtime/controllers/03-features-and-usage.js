@@ -1562,3 +1562,14 @@ window.saveReadyThreshold = async (fid) => {
   }
 };
 $("#d-close").onclick = showFeatureList;
+
+// Post a feature's coverage to its Jira issue (#d-jira; moved here from 09 when
+// the Mind Map moved to React, #257).
+window.syncJira = async (fid) => {
+  try {
+    const r = await api(`/api/features/${fid}/jira-sync`, { method: "POST" });
+    toast("Posted coverage to Jira " + r.issue);
+  } catch (e) {
+    toast(e.message, true);
+  }
+};
