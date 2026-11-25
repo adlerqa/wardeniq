@@ -12,6 +12,7 @@ const source = readFileSync(
 
 function harness(api) {
   const nodes = new Map();
+  const esc = (s) => String(s || "");
   const $ = (selector) => {
     if (!nodes.has(selector)) {
       nodes.set(selector, { innerHTML: "", value: "test-proj", hidden: false, textContent: "" });
@@ -23,7 +24,8 @@ function harness(api) {
     $,
     api,
     currentProject: "test-proj",
-    esc: (s) => String(s || ""),
+    esc,
+    escAttr: esc,
     repoKindClass: () => "github",
     repoKindLabel: () => "GitHub",
     repoAnalysisDefaultChecked: () => true,
@@ -72,6 +74,7 @@ test("page load renders the repo checkboxes and the indexed-code diagnostics", a
   const reposHtml = h.$("#mm-repos").innerHTML;
   assert.match(reposHtml, /mm-repo-chk/, "repo checkboxes are rendered");
   assert.match(reposHtml, /test\/repo/, "the repository name is shown");
+  assert.match(reposHtml, /aria-label="Branch for test\/repo"/, "the branch selector is labeled");
 
   const diagHtml = h.$("#mm-diag").innerHTML;
   assert.match(diagHtml, /Indexed code by repository/, "the diagnostics panel is rendered");
