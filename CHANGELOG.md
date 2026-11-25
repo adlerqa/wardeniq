@@ -127,6 +127,10 @@
   provider detection from a pasted URL, the repository list (Analyze, Sync, Pause / Resume,
   Remove) and the sync status line — are now React, with the same markup. The compat
   controller `02-projects.js` is removed.
+- **LLM Usage & Cost screen rebuilt in React (part of #257).** The KPI cards, recent
+  processes, the per-model and per-project tables and their filters are now React, with
+  the same markup. The unused model-pricing editor code, whose controls were not on any
+  page, is removed.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

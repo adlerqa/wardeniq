@@ -1,12 +1,10 @@
+import { ModelTable, ProjectTable, RecentTable, UsageTotals } from "../components/UsageParts.jsx";
+import useUsage from "../hooks/useUsage.js";
 import "../styles/usage.css";
 
-/**
- * UsagePage
- *
- * UI structure only.
- * Existing API/data behavior remains handled by the usage controller.
- */
+/** LLM Usage & Cost: KPI cards, recent processes and the per-model / per-project breakdown (useUsage). */
 export default function UsagePage() {
+  const us = useUsage();
   return (
     <section id="view-usage" className="view" hidden>
       <div className="usage-page">
@@ -28,6 +26,7 @@ export default function UsagePage() {
             type="button"
             className="ghost usage-refresh"
             id="usage-refresh"
+            onClick={us.loadUsage}
           >
             <svg
               viewBox="0 0 24 24"
@@ -49,12 +48,14 @@ export default function UsagePage() {
 
         {/* =====================================================
             KPI CARDS
-            Controller inserts cards here
+            useUsage fills these
         ====================================================== */}
         <div
           id="usage-totals"
           className="usage-stats"
-        />
+        >
+          <UsageTotals us={us} />
+        </div>
 
         {/* =====================================================
             COST INFORMATION
@@ -138,12 +139,16 @@ export default function UsagePage() {
                 id="usage-recent-search"
                 className="usage-search"
                 placeholder="Search process, project or feature..."
+                value={us.search}
+                onChange={(e) => us.setSearch(e.target.value)}
               />
             </div>
           </div>
 
           <div className="usage-table-area">
-            <div id="usage-recent" />
+            <div id="usage-recent">
+              <RecentTable us={us} />
+            </div>
           </div>
         </section>
 
@@ -216,17 +221,26 @@ export default function UsagePage() {
                 <select
                   id="usage-model-filter"
                   className="usage-select"
+                  value={us.model}
+                  onChange={(e) => us.setModel(e.target.value)}
                 >
                   <option value="">
                     All models
                   </option>
+                  {us.modelOpts.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
                 </select>
               </div>
 
               <div
                 id="usage-by-model"
                 className="usage-breakdown-table"
-              />
+              >
+                <ModelTable us={us} />
+              </div>
             </div>
           </details>
 
@@ -287,17 +301,26 @@ export default function UsagePage() {
                 <select
                   id="usage-project-filter"
                   className="usage-select"
+                  value={us.project}
+                  onChange={(e) => us.setProject(e.target.value)}
                 >
                   <option value="">
                     All projects
                   </option>
+                  {us.projectOpts.map((o) => (
+                    <option key={o} value={o}>
+                      {o}
+                    </option>
+                  ))}
                 </select>
               </div>
 
               <div
                 id="usage-by-project"
                 className="usage-breakdown-table"
-              />
+              >
+                <ProjectTable us={us} />
+              </div>
             </div>
           </details>
         </div>
