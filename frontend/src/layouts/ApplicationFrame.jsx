@@ -1,5 +1,6 @@
 import Sidebar from "./Sidebar.jsx";
 import Header from "./Header.jsx";
+import { useServiceStatus } from "./useServiceStatus.js";
 import DashboardPage from "../features/dashboard/pages/DashboardPage.jsx";
 import ProjectsPage from "../features/projects/pages/ProjectsPage.jsx";
 import FeaturesPage from "../features/features/pages/FeaturesPage.jsx";
@@ -16,6 +17,7 @@ import TestPlanPage from "../features/test-plan/pages/TestPlanPage.jsx";
 import GapAnalysisPage from "../features/gap-analysis/pages/GapAnalysisPage.jsx";
 
 export default function ApplicationFrame() {
+  const { status, banner } = useServiceStatus();
   return (
     <div className="app min-h-screen" id="app-shell">
       <Sidebar />
@@ -23,11 +25,26 @@ export default function ApplicationFrame() {
         <div
           className="boot-banner"
           id="boot-banner"
-          hidden
+          hidden={!banner.visible}
+          data-kind={banner.visible ? banner.kind || "warn" : undefined}
           role="status"
           aria-live="polite"
-        />
-        <Header />
+        >
+          {banner.visible ? (
+            <>
+              <span className="boot-banner-msg">
+                {banner.kind === "error" ? "⚠" : "●"} {banner.summary}
+              </span>
+              {banner.raw ? (
+                <details className="boot-banner-details">
+                  <summary>Details</summary>
+                  <pre className="boot-banner-raw">{banner.raw}</pre>
+                </details>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+        <Header status={status} />
         <main>
       <div className="ro-banner" id="ro-banner" hidden>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">

@@ -1,35 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 
-const src = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../src/compat/runtime/controllers/00-core.js"),
-  "utf8",
-);
-const start = src.indexOf("const BOOT_VECTOR_SEARCH_MSG");
-const end = src.indexOf("async function refreshStatus");
-assert.ok(start > 0 && end > start, "boot status helpers should exist in 00-core.js");
-
-const esc = (s) =>
-  (s ?? "").toString().replace(
-    /[&<>"']/g,
-    (c) =>
-      ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
-      })[c],
-  );
-
-const { looksLikeRawBootDetail, formatBootStatus, BOOT_VECTOR_SEARCH_MSG, bootBannerDetailsHtml } =
-  new Function(
-    "esc",
-    `${src.slice(start, end)}\nreturn { looksLikeRawBootDetail, formatBootStatus, BOOT_VECTOR_SEARCH_MSG, bootBannerDetailsHtml };`,
-  )(esc);
+import {
+  BOOT_VECTOR_SEARCH_MSG,
+  bootBannerDetailsHtml,
+  formatBootStatus,
+  looksLikeRawBootDetail,
+} from "../src/lib/bootStatus.js";
 
 const RAW_INDEX =
   "index retry: recv(): message msgLen 68288512 is invalid. Min 16 Max: 48000000, full error: {'ok': 0.0, 'errmsg': 'recv(): message msgLen 68288512 is invalid. Min 16 Max: 48000000', 'code': 17, 'codeName': 'ProtocolError', '$clusterTime': {'clusterTime': Timestamp(...)}}";

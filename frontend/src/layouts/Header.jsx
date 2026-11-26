@@ -2,6 +2,7 @@ import { api } from "../lib/api.js";
 import { openChangePasswordModal, showLogin } from "../lib/compatBridge.js";
 import { useIdentity } from "../features/auth/hooks/useIdentity.js";
 import { canChangePassword } from "../features/auth/lib/identity.js";
+import ServiceChips from "./ServiceChips.jsx";
 
 /** Sign out, then show the sign-in screen even if the request fails (was 10-auth.js). */
 async function signOut() {
@@ -13,7 +14,7 @@ async function signOut() {
   showLogin();
 }
 
-export default function Header() {
+export default function Header({ status }) {
   // The signed-in user as of the last applyRole() (null until then).
   const user = useIdentity();
   const role = (user && user.role) || "viewer";
@@ -78,6 +79,7 @@ export default function Header() {
       ====================================================== */}
       <div
         id="status"
+        data-loaded={status && status.phase === "ready" ? "1" : undefined}
         className="
           min-h-[36px]
           min-w-max
@@ -99,33 +101,37 @@ export default function Header() {
           transform: "none",
         }}
       >
-        <div className="flex items-center gap-2 text-xs text-slate-400">
-          <span className="relative flex h-2 w-2">
-            <span
-              className="
-                absolute
-                inline-flex
-                h-full w-full
-                animate-ping
-                rounded-full
-                bg-emerald-400
-                opacity-30
-              "
-            />
+        {status && status.phase !== "idle" ? (
+          <ServiceChips status={status} />
+        ) : (
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <span className="relative flex h-2 w-2">
+              <span
+                className="
+                  absolute
+                  inline-flex
+                  h-full w-full
+                  animate-ping
+                  rounded-full
+                  bg-emerald-400
+                  opacity-30
+                "
+              />
 
-            <span
-              className="
-                relative
-                inline-flex
-                h-2 w-2
-                rounded-full
-                bg-emerald-400
-              "
-            />
-          </span>
+              <span
+                className="
+                  relative
+                  inline-flex
+                  h-2 w-2
+                  rounded-full
+                  bg-emerald-400
+                "
+              />
+            </span>
 
-          <span className="muted">loading…</span>
-        </div>
+            <span className="muted">loading…</span>
+          </div>
+        )}
       </div>
 
       {/* =====================================================

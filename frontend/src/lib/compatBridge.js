@@ -215,7 +215,7 @@ export function loadSyncStatus() {
   if (fn) return fn();
 }
 
-/** Startup / database status as { kind, summary, raw } (00-core.js formatBootStatus). */
+/** Startup / database status as { kind, summary, raw } (lib/bootStatus.js). */
 export function formatBootStatus(boot) {
   const fn = compatFn("formatBootStatus");
   return fn ? fn(boot) : { visible: false, kind: "ok", summary: "", raw: "" };
@@ -269,7 +269,7 @@ export function updateBackbar() {
   if (fn) return fn();
 }
 
-/** Refresh the header service status chips (00-core.js refreshStatus). */
+/** Refresh the header service status chips (React, layouts/useServiceStatus.js). */
 export function refreshStatus() {
   const fn = compatFn("refreshStatus");
   if (fn) return fn();

@@ -187,6 +187,10 @@
   priority pill and step table HTML used by Gap Analysis in `src/lib/htmlRenderers.js`.
   Unused report widgets and verdict renderers were removed from `00-core.js`
   (970 → 586 lines). No behaviour change.
+- **Service status rebuilt in React (part of #257).** The header service chips
+  (MongoDB, embeddings, LLM, feature and case counts) and the start-up / boot banner
+  are React, with the same markup and behaviour; the boot-status rules live in
+  `src/lib/bootStatus.js`. `00-core.js` drops to about 450 lines.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access
