@@ -23,15 +23,21 @@ const controllerSources = Object.fromEntries(
 const loaderSource = source
   .replace(/^import \{[^}]+\} from "react";\s*/m, "")
   .replace(
-    /^import (\w+) from "(\.\/controllers\/[^"]+\?raw)";$/gm,
-    (_, binding, path) =>
-      `const ${binding} = __controllerSources[${JSON.stringify(path)}];`,
+    /\(\) => import\("(\.\/controllers\/[^"]+\?raw)"\)/g,
+    (_, path) => `() => __loadController(${JSON.stringify(path)})`,
   )
   .split("/**\n * Compatibility bridge")[0]
   .concat("\nglobalThis.testLoadRuntime = loadRuntime;");
 
-function harness({ ready = false, beforeAppend = () => {} } = {}) {
+function harness({
+  ready = false,
+  beforeAppend = () => {},
+  loadController = (path) => Promise.resolve({
+    default: controllerSources[path],
+  }),
+} = {}) {
   const scripts = [];
+  const requestedFiles = [];
   const window = { __WARDENIQ_RUNTIME_READY__: ready };
   const document = {
     createElement() {
@@ -45,18 +51,29 @@ function harness({ ready = false, beforeAppend = () => {} } = {}) {
     },
   };
   const context = vm.createContext({
-    __controllerSources: controllerSources,
+    __loadController(path) {
+      requestedFiles.push(path);
+      return loadController(path);
+    },
     document,
     window,
   });
   vm.runInContext(loaderSource, context);
 
-  return { loadRuntime: context.testLoadRuntime, scripts, window, document };
+  return {
+    loadRuntime: context.testLoadRuntime,
+    requestedFiles,
+    scripts,
+    window,
+    document,
+  };
 }
 
-test("injects all eager controller sources in filename order into one classic script", async () => {
+test("loads all dynamic controller sources in filename order into one classic script", async () => {
   const importedFiles = Array.from(
-    source.matchAll(/^import \w+ from "\.\/controllers\/([^"]+)\?raw";$/gm),
+    source.matchAll(
+      /\(\) => import\("\.\/controllers\/([^"]+)\?raw"\)/g,
+    ),
     (match) => match[1],
   );
   assert.equal(importedFiles.length, 18);
@@ -66,12 +83,41 @@ test("injects all eager controller sources in filename order into one classic sc
   await h.loadRuntime();
 
   assert.equal(h.scripts.length, 1);
+  assert.deepEqual(
+    h.requestedFiles,
+    controllerFiles.map((name) => `./controllers/${name}?raw`),
+  );
   assert.equal(h.scripts[0].dataset.wardeniqRuntime, "compat");
   assert.equal(h.scripts[0].type, undefined);
   assert.equal(
     h.scripts[0].textContent,
     `${Object.values(controllerSources).join("\n")}\n//# sourceURL=wardeniq-compat-runtime.js`,
   );
+  assert.equal(h.window.__WARDENIQ_RUNTIME_READY__, true);
+});
+
+test("reports a dynamic import failure and allows a later retry", async () => {
+  const failure = new Error("temporary chunk download failure");
+  const attempts = new Map();
+  const h = harness({
+    loadController(path) {
+      const count = (attempts.get(path) ?? 0) + 1;
+      attempts.set(path, count);
+      if (path.endsWith("00-core.js?raw") && count === 1) {
+        return Promise.reject(failure);
+      }
+      return Promise.resolve({ default: controllerSources[path] });
+    },
+  });
+
+  await assert.rejects(h.loadRuntime(), (error) => error === failure);
+  assert.equal(h.scripts.length, 0);
+  assert.equal(h.window.__WARDENIQ_RUNTIME_READY__, false);
+
+  await h.loadRuntime();
+
+  assert.equal(attempts.get("./controllers/00-core.js?raw"), 2);
+  assert.equal(h.scripts.length, 1);
   assert.equal(h.window.__WARDENIQ_RUNTIME_READY__, true);
 });
 
