@@ -55,6 +55,8 @@ services:
       # Seconds allowed per LLM call. Blank = built-in per-call defaults; raise it on
       # CPU-only machines where the bundled model needs minutes per call.
       - LLM_TIMEOUT_SECONDS=${LLM_TIMEOUT_SECONDS:-}
+      # Timeout for one embedding call; blank falls back to LLM_TIMEOUT_SECONDS, then 120 s.
+      - EMBED_TIMEOUT_SECONDS=${EMBED_TIMEOUT_SECONDS:-}
       - DB_NAME=${DB_NAME:-wardeniq}
       # ── App config ──
       - AUTO_SETUP=true

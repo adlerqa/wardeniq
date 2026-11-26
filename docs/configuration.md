@@ -408,11 +408,13 @@ counts and rates then describe the timeout, not the model.
 > **CPU-only machines.** Set `LLM_TIMEOUT_SECONDS` in `.env` (for example
 > `LLM_TIMEOUT_SECONDS=1800`) and restart. It replaces the timeout of every LLM call the
 > app makes, so a slow but working local model is no longer cut off. Unset, the built-in
-> The same setting now also covers the embedding calls (see `EMBED_TIMEOUT_SECONDS` in the table below to set
-> them separately); before, embeddings had a fixed 2-minute limit, so a CPU-only machine whose first
-> embedding call took longer failed when creating a feature whatever was set.
 > defaults above apply. A smaller or faster model also helps; see
 > [Which model should I use?](#which-model-should-i-use).
+>
+> The same setting also covers the embedding calls. To give embeddings a different limit, set
+> `EMBED_TIMEOUT_SECONDS` (see the table below). Before, embeddings had a fixed 2-minute limit,
+> so a CPU-only machine whose first embedding call took longer failed when creating a feature,
+> whatever was set. With Docker Compose, both settings are passed from `.env` to the container.
 >
 > The same timeout also applies to the active provider check used by **Configuration →
 > Save/Test**. If the endpoint is unreachable rather than refusing the connection, that
