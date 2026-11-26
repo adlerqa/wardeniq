@@ -57,12 +57,16 @@ app = FastAPI(title="wardenIQ — Test Intelligence Platform", version=VERSION,
 # Phase 2 (docs/dev/REFACTOR_PLAN.md): the InvalidId exception + its handler now live in
 # app/core/exceptions.py. Registration stays here — it needs the `app` instance.
 from core.exceptions import (  # noqa: E402
-    MigrationInProgress, _InvalidId, invalid_id_handler, migration_in_progress_handler,
+    MigrationInProgress, _InvalidId, embedding_timeout_handler, invalid_id_handler,
+    migration_in_progress_handler,
 )
+from embeddings import EmbeddingTimeout  # noqa: E402
 
 app.exception_handler(_InvalidId)(invalid_id_handler)
 # #111: any NEW background job is refused with a clean 409 while a database migration runs.
 app.exception_handler(MigrationInProgress)(migration_in_progress_handler)
+# An embedding call that outlasts the embedding timeout becomes a readable 504, not a bare 500.
+app.exception_handler(EmbeddingTimeout)(embedding_timeout_handler)
 
 
 # Phase 2 (docs/dev/REFACTOR_PLAN.md): RBAC, the auth gateway + security-headers

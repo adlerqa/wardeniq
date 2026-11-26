@@ -411,6 +411,11 @@ counts and rates then describe the timeout, not the model.
 > defaults above apply. A smaller or faster model also helps; see
 > [Which model should I use?](#which-model-should-i-use).
 >
+> The same setting also covers the embedding calls. To give embeddings a different limit, set
+> `EMBED_TIMEOUT_SECONDS` (see the table below). Before, embeddings had a fixed 2-minute limit,
+> so a CPU-only machine whose first embedding call took longer failed when creating a feature,
+> whatever was set. With Docker Compose, both settings are passed from `.env` to the container.
+>
 > The same timeout also applies to the active provider check used by **Configuration →
 > Save/Test**. If the endpoint is unreachable rather than refusing the connection, that
 > check can wait for the full configured timeout.
@@ -543,6 +548,7 @@ startup and secrets.
 | `GEN_MODEL` | `qwen2.5:3b` | Ollama generation model (swap in a bigger/hosted model for quality) |
 | `EMBED_MODEL` / `EMBED_DIM` | `nomic-embed-text` / `768` | Embedding model + dimensions |
 | `LLM_TIMEOUT_SECONDS` | _(unset = built-in per-call defaults)_ | Timeout in seconds for every LLM call, on every provider. Unset, each call keeps its built-in default: 180 to 300 s for test generation, 300 s for Ollama and 120 s for hosted providers elsewhere. AWS Bedrock is the exception: unset, it keeps the AWS SDK's own 60 s connect/read timeout, and the SDK retries a timed-out call (up to 5 attempts in total), so a Bedrock call can wait several times the timeout. Set one value to replace all of them. On CPU-only machines raise it (for example `1800`); see [Timeouts and incomplete runs](#timeouts-and-incomplete-runs) |
+| `EMBED_TIMEOUT_SECONDS` | _(unset = `LLM_TIMEOUT_SECONDS` if set, otherwise 120)_ | Timeout in seconds for one embedding call (Ollama, OpenAI-compatible providers and Voyage; AWS Bedrock keeps the AWS SDK's own timeout). It used to be a fixed 120 s that no setting changed. Unset, `LLM_TIMEOUT_SECONDS` applies if you set it, so on a slow CPU one setting is enough; set this to give embeddings a different limit. When a call is cut off, creating a feature answers HTTP 504 with a message that names this setting, instead of a bare 500 |
 | `GITHUB_TOKEN` | _(empty)_ | Fine-grained PAT (PR + contents read); also settable in-app |
 | `GITLAB_BASE_URL` | `https://gitlab.com` | Point at a self-hosted GitLab instance (e.g. `https://gitlab.example.com`). Repo URLs, the API, and generated blob/commit links all follow this |
 | `POLL_INTERVAL_SECONDS` | `1800` | How often watched repos are polled for new PRs/commits (30 min). Seed default only — also settable live in **Configuration → Sync & polling**, which overrides this |

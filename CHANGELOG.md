@@ -54,6 +54,24 @@
 
 ### Fixed
 
+- **Embedding calls now have a configurable timeout, and a timeout is reported clearly.** A tester on a
+  CPU-only machine could not create a feature: the first embedding call took about 4 minutes, but
+  every embedding call was cut off after a fixed 120 seconds, and `POST /api/features` answered a
+  bare HTTP 500 before any job existed. The docs and the CPU notice both say to raise
+  `LLM_TIMEOUT_SECONDS` on a slow machine, and that setting did not reach embeddings, so the advice
+  could not have worked. Reproduced with a fake Ollama that answers after 130 seconds: with
+  `LLM_TIMEOUT_SECONDS=1800` set the call still failed at 120.0 seconds. Now the limit is
+  `EMBED_TIMEOUT_SECONDS` if set, otherwise `LLM_TIMEOUT_SECONDS` if set (so the documented advice
+  covers embeddings), otherwise 120 seconds as before. It applies to Ollama, OpenAI-compatible
+  providers (OpenAI, Gemini and the like) and Voyage; AWS Bedrock keeps the AWS SDK's own timeout, as
+  it does for generation. A call that runs out of time raises an error that names both settings and
+  the hosted-provider option, and the API answers it with HTTP 504 and that message instead of a bare
+  500; a failed job shows the same text. An invalid value is ignored with a warning that names the
+  right variable. In Docker, `docker-compose.app.yml` passes `EMBED_TIMEOUT_SECONDS` to the container
+  like `LLM_TIMEOUT_SECONDS` (found by a tester: the app never reads `.env` itself, so a variable the
+  compose file does not forward cannot be set there). Trade-offs: a larger limit means a hung embedding endpoint can hold a request for
+  that long, and a machine whose embedding call is this slow will still be slow, as this fixes the
+  failure, not the speed (part of #249).
 - **Assigning a PR to a feature on a private repository no longer saves empty coverage.**
   `POST /api/prs/{pr_id}/assign` fetched the PR's changed files with the instance-wide
   `GITHUB_TOKEN` instead of the project's own GitHub PAT, and swallowed the failure. On

@@ -27,19 +27,20 @@ OLLAMA_MAX_NUM_CTX = int(os.getenv("OLLAMA_MAX_NUM_CTX", "8192"))
 DEFAULT_MAX_TOKENS = 4000
 
 
-def _timeout_from_env(raw: str | None) -> float | None:
-    """Parse LLM_TIMEOUT_SECONDS. Blank, invalid or non-finite/non-positive means "unset"."""
+def _timeout_from_env(raw: str | None, name: str = "LLM_TIMEOUT_SECONDS") -> float | None:
+    """Parse a timeout setting (LLM_TIMEOUT_SECONDS, or `name`). Blank, invalid or
+    non-finite/non-positive means "unset"."""
     value = (raw or "").strip()
     if not value:
         return None
     try:
         seconds = float(value)
     except ValueError:
-        log.warning("Ignoring LLM_TIMEOUT_SECONDS=%r: not a number", value)
+        log.warning("Ignoring %s=%r: not a number", name, value)
         return None
     if not math.isfinite(seconds) or seconds <= 0:
         log.warning(
-            "Ignoring LLM_TIMEOUT_SECONDS=%r: must be finite and greater than 0", value
+            "Ignoring %s=%r: must be finite and greater than 0", name, value
         )
         return None
     return seconds
