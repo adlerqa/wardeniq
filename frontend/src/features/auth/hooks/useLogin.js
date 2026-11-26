@@ -21,7 +21,7 @@ const callWindow = (name, ...args) => (typeof window[name] === "function" ? wind
  *
  * Registers window.showLogin({ msg }) — used by api() on a 401, the bridge,
  * logout and the invite-link boot (app/boot.js). After a successful sign-in it
- * hands off to the compat runtime: applyRole, maybeShowInvite, startApp.
+ * hands off to applyRole, maybeShowInvite and startApp (registered on window).
  *
  * The overlay's `hidden` attribute is set directly (not as React state) because
  * checkAuth (useIdentity.js) hides it on boot from outside this hook. The inputs

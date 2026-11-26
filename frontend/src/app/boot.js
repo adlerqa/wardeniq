@@ -2,7 +2,7 @@
  * Start-up sequence (was compat/runtime/controllers/16-boot.js): invitation
  * links, sign-in check, first-run redirect to Configuration, restoring the last
  * view, and the field hardening that keeps browsers from autofilling. Run by
- * useBoot once the compatibility runtime is loaded.
+ * useBoot when the app mounts.
  *
  * Everything outside this file is reached through `deps`, so tests can drive it:
  *   { api, fetch, currentUser, checkAuth, maybeShowInvite, showLogin, toast,

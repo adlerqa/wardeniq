@@ -14,8 +14,8 @@ import {
  * Test Cases screen state (was initCases / fillFeatFilter / loadCases in
  * 04-test-cases.js).
  *
- * The compat runtime still drives this screen from outside, so while mounted
- * the hook registers:
+ * Other screens drive this one from outside, so while mounted the hook
+ * registers:
  *   window.initCases()            — navigateTo("cases") in app/navigation.js
  *   window.loadCases()            — after a case is saved / deleted (04, 07, 03)
  *   window.fillFeatFilter()       — kept for callers of the old name

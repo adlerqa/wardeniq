@@ -3,10 +3,8 @@
  * the open project and feature, the feature's data, the view on screen, the
  * signed-in user, and the page title set by navigation.
  *
- * React reaches it through lib/compatBridge.js (getCurrentProject, …), which
- * useNavigation registers on window. The Gap Analysis compat controller reads
- * it as bare globals (currentProject, currentFeature, currentFeatureData), so
- * installNavGlobals also defines those as window accessors.
+ * Screens reach it through lib/compatBridge.js (getCurrentProject, …), which
+ * useNavigation registers on window, or import `nav` directly.
  */
 const state = {
   project: null,
@@ -49,7 +47,7 @@ export const nav = {
   },
 };
 
-/** The accessor functions the bridge and the compat runtime call. */
+/** The accessor functions registered on window for lib/compatBridge.js. */
 export const navFunctions = {
   getCurrentProject: () => state.project,
   setCurrentProject: (id) => nav.setProject(id),
@@ -60,28 +58,3 @@ export const navFunctions = {
   setCurrentUser: (u) => nav.setUser(u),
   getCurrentViewName: () => state.view,
 };
-
-const GLOBALS = {
-  currentProject: "project",
-  currentFeature: "feature",
-  currentFeatureData: "featureData",
-  currentFeatureCases: "featureCases",
-  currentViewName: "view",
-  ME: "user",
-};
-
-/** Bare-global access for the compat controller. Returns an uninstall function. */
-export function installNavGlobals(win) {
-  for (const [name, key] of Object.entries(GLOBALS))
-    Object.defineProperty(win, name, {
-      configurable: true,
-      get: () => state[key],
-      set: (v) => {
-        if (key === "featureData") nav.setFeatureData(v);
-        else state[key] = v;
-      },
-    });
-  return () => {
-    for (const name of Object.keys(GLOBALS)) delete win[name];
-  };
-}

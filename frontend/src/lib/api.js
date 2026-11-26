@@ -1,6 +1,5 @@
 /**
- * API helper (the former compat `api()` / `cleanErr()`, same behaviour); also
- * registered on window as `api` for the Gap Analysis compat controller:
+ * API helper (the former compat `api()` / `cleanErr()`, same behaviour):
  *
  *   - parses the JSON body (a non-JSON body becomes the error detail);
  *   - network failure: "Can't reach the server" toast, then throws;

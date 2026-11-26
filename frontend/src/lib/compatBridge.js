@@ -1,18 +1,16 @@
 /**
- * Thin bridge from React code to the shared UI helpers that still live in the
- * compatibility runtime or that React modules register on window (app/,
- * layouts/, components/overlays, features/).
+ * Cross-screen calls. Screens, overlays and app/ modules register the functions
+ * other parts of the app need on `window` while they are mounted (toast,
+ * uiConfirm, navigateTo, openFeature, loadProjects, …); everything else calls
+ * them through this module, so that:
+ *   - a caller never reaches into `window` directly;
+ *   - a function that isn't registered (that screen not mounted, or a unit
+ *     test) degrades to a no-op / fallback instead of throwing;
+ *   - tests can stub a function by assigning it on `window`.
  *
- * The runtime is injected as one classic <script>, so its top-level function
- * declarations (toast, uiConfirm, uiModalHTML, showLogin, refreshMe) are
- * properties of `window`. React components call them through this module
- * instead of reaching into `window` directly, so that:
- *   - there is one place to swap each helper for a React component later;
- *   - a missing helper (runtime not loaded yet, or unit tests) degrades to a
- *     no-op / console fallback instead of throwing.
- *
- * Do not add new behaviour here. When a helper is ported to React, point the
- * matching function at the React version and delete the window lookup.
+ * Do not add behaviour here: each function only looks up and calls the
+ * registered one. The name is historical (it began as the bridge to the
+ * removed compatibility runtime, #257).
  */
 
 function compatFn(name) {
@@ -63,7 +61,7 @@ export function openChangePasswordModal(mandatory) {
   return fn ? fn(mandatory) : Promise.resolve(false);
 }
 
-/** Sets the signed-in user known to the compat runtime (app/navState.js). */
+/** Sets the signed-in user (app/navState.js). */
 export function setCurrentUser(user) {
   const fn = compatFn("setCurrentUser");
   if (fn) fn(user);
@@ -84,7 +82,7 @@ export function currentFeatureId() {
 /**
  * Name shown in the feature workspace header (#d-name, filled by
  * 03-features-and-usage.js). Screens that title themselves after the open
- * feature read it here, as the compat controllers did.
+ * feature read it here.
  */
 export function currentFeatureName() {
   if (typeof document === "undefined") return "";
@@ -108,7 +106,7 @@ export function usageLogLines(usage) {
   return fn ? fn(usage) : [];
 }
 
-/** The signed-in user ({ id, email, role, ... }) known to the compat runtime, or null. */
+/** The signed-in user ({ id, email, role, ... }), or null (app/navState.js). */
 export function currentUser() {
   const fn = compatFn("getCurrentUser");
   return fn ? fn() || null : null;
@@ -140,7 +138,7 @@ export async function openCaseInFeature(caseId, featureId) {
 
 /**
  * Refresh the project list (window.loadProjects, registered by the React
- * Projects screen: sets window.allProjects and the runtime project, fills the
+ * Projects screen: sets window.allProjects and the current project, fills the
  * Features screen's picker) and return the projects. Resolves to [] when it
  * is not registered.
  */

@@ -98,7 +98,7 @@ function TokenTable({ tokens, projects, onRevoke }) {
 /**
  * API tokens panel on the Users screen (admin only): create and revoke
  * service-account bearer tokens. Data loads when the Users screen opens:
- * navigateTo("users") in the compatibility runtime calls window.loadApiTokens(),
+ * navigateTo("users") (app/navigation.js) calls window.loadApiTokens(),
  * which this component registers while it is mounted. It does not load on
  * mount, because the panel is mounted (hidden) for every role and the API is
  * admin-only.

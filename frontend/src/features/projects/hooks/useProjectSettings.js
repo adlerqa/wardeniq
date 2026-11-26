@@ -7,8 +7,8 @@ import { patPath, providerForAddress, providerName, suggestMatches, syncStatusLi
 /**
  * Project settings below the header (was 02-projects.js): the project's git
  * provider and PAT, "Connect repository" with its suggestion list, the
- * repository list and the sync status line. The project is the runtime's
- * current project (app/navState.js), read when each action runs.
+ * repository list and the sync status line. The project is the current
+ * project (app/navState.js), read when each action runs.
  *
  * Registered while mounted: window.loadSyncStatus() — app/navigation.js navigateTo
  * and the Configuration sync card.

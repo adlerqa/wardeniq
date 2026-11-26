@@ -1,7 +1,6 @@
 /**
- * Skeleton placeholders as HTML strings (was 00-core.js), for screens that
- * still paint their loading state with innerHTML (Gap Analysis). React screens
- * use components/feedback/Skeleton.jsx. Registered on window by useSharedGlobals.
+ * Skeleton placeholders as HTML strings, for the Gap Analysis loading states
+ * (same markup as before). Other screens use components/feedback/Skeleton.jsx.
  */
 import { escapeHtml } from "./html.js";
 
@@ -59,12 +58,3 @@ export const skeleton = {
     return c;
   },
 };
-
-/** Paint a skeleton into the element matching `sel`, if there is one. */
-export function skIn(sel, html) {
-  const el = document.querySelector(sel);
-  if (el) el.innerHTML = html;
-}
-
-/** Compact detail-pane placeholder. */
-export const loadingRow = (text) => skeleton.block(text || "Loading details");

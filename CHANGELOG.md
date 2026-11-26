@@ -205,6 +205,12 @@
   markup and behaviour. With `13-gap-analysis.js` gone the compatibility runtime
   (`src/compat`, `RuntimeBridge`) is removed and the app starts up directly. External
   links on the Gap Analysis screen now also carry `rel="noreferrer"`.
+- **React migration finished (#257).** Every screen, overlay and shared behaviour is
+  React; the helpers that only the last compat controller needed on `window` (`$`,
+  `esc`, `api`, the bare navigation globals, the HTML-string skeleton / priority /
+  steps helpers) are removed. `frontend/ARCHITECTURE.md` and `frontend/README.md`
+  describe the current structure (feature folders, `src/app` start-up and navigation,
+  cross-screen calls through `src/lib/compatBridge.js`).
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

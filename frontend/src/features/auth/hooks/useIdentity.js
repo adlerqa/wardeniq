@@ -16,7 +16,7 @@ const ADMIN_ONLY_VIEWS = ["users", "config"];
  * The signed-in user's role in the page (was the identity half of
  * compat/runtime/controllers/10-auth.js). Mounted once, by the Header.
  *
- * Registers on window, for the compat runtime and other screens:
+ * Registers on window, for start-up, navigation and other screens:
  *   applyRole()               — header user menu + role-dependent page state
  *   checkAuth()               — load the signed-in user at boot (true) or show sign-in (false)
  *   refreshMe()               — re-read the user so an admin's role change / disable applies live

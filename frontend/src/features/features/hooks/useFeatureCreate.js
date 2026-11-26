@@ -62,7 +62,7 @@ export default function useFeatureCreate(fs) {
   const fsRef = useRef(fs);
   fsRef.current = fs;
 
-  /** The project the feature goes into: the Features screen's project, else the runtime's. */
+  /** The project the feature goes into: the Features screen's project, else the current one. */
   const projectId = () => fsRef.current.projects.cur || currentProjectId() || "";
 
   // ---- pre-run cost estimate (issue #22): file sizes stand in for extracted text ----

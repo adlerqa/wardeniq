@@ -19,7 +19,7 @@ import { deletedText, pickCurrent, statsText } from "../lib/projects.js";
  * Projects screen: project cards, the detail header, rename / delete and the
  * page switch (list / create / detail). Registered while mounted (called by
  * navigation and other screens; nothing loads on mount):
- *   window.loadProjects()            — reload; keeps window.allProjects and the runtime project in step
+ *   window.loadProjects()            — reload; keeps window.allProjects and the current project in step
  *   window.showProjectList()         — back to the cards
  *   window.showProjectCreate()       — the create wizard (empty-state button)
  *   window.openProjectSettings(pid)  — project settings (also window.selectProject)

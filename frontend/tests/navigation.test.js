@@ -12,7 +12,7 @@ const dom = new JSDOM(`<!doctype html><body>
 Object.assign(globalThis, { window: dom.window, document: dom.window.document, history: dom.window.history, location: dom.window.location, localStorage: dom.window.localStorage });
 test.after(() => dom.window.close());
 
-const { nav, navFunctions, installNavGlobals } = await import("../src/app/navState.js");
+const { nav, navFunctions } = await import("../src/app/navState.js");
 const navigation = await import("../src/app/navigation.js");
 const calls = [];
 for (const n of ["loadDashboard", "showProjectList", "loadProjects", "loadSyncStatus", "loadFeatures", "openFeature", "showFeatureList", "initCases", "initValidator", "enforceViewerReadOnly"])
@@ -58,20 +58,13 @@ test("back bar: project list, feature workspace, sub-screens, create page", () =
   assert.equal(navigation.backbarModel().show, false);
 });
 
-test("breadcrumb steps need a project / feature; compat globals read the same state", () => {
+test("breadcrumb steps need a project / feature", () => {
   navFunctions.setCurrentProject(null);
   navigation.clickBreadcrumb("features");
   navFunctions.setCurrentProject("p2");
   navFunctions.setCurrentFeature(null);
   navigation.clickBreadcrumb("workspace");
   assert.deepEqual(toasts, ["Please select a project first.", "Please select a feature first."]);
-  const win = {};
-  const off = installNavGlobals(win);
-  assert.equal(win.currentProject, "p2");
-  win.currentFeature = "f9";
-  assert.equal(navFunctions.getCurrentFeatureId(), "f9");
-  win.currentFeatureData = { name: "X", test_cases: [2, 3] };
-  assert.deepEqual(win.currentFeatureCases, [2, 3]);
-  off();
-  assert.equal("currentProject" in win, false);
+  navFunctions.setCurrentFeatureData({ name: "X", test_cases: [2, 3] });
+  assert.deepEqual(nav.get().featureCases, [2, 3]);
 });

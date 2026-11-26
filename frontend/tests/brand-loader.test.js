@@ -3,7 +3,6 @@ import test from "node:test";
 import { JSDOM } from "jsdom";
 
 import { ANALYZE_MESSAGES, brandLoader, brandTick } from "../src/lib/brandLoader.js";
-import { prioBadge, stepsHtml } from "../src/lib/htmlRenderers.js";
 
 test("analyze loader: size class, escaped steps / messages, first step active", () => {
   assert.match(brandLoader("analyze"), /^<div class="aql-root inline"/);
@@ -36,14 +35,4 @@ test("the ticker moves each loader's message and stepper", () => {
   brandTick(6, doc);
   assert.deepEqual(state(), ["0", "a", "aql-stp active|aql-stp|aql-stp"]);
   window.close();
-});
-
-test("priority pill and step table HTML", () => {
-  assert.deepEqual(["critical", "P2", 3, null].map((p) => prioBadge(p).match(/>(\w+)<\/span>$/)[1]), ["High", "Medium", "Low", "Low"]);
-  assert.match(prioBadge("high"), /border:1px solid rgba\(239,68,68,0\.25\)/);
-  assert.equal(stepsHtml([]), "");
-  const html = stepsHtml(["Open <app> → It opens", "Click -> Shows -> done", { action: "A & B", expected: "" }]);
-  assert.match(html, /<span>Open &lt;app&gt;<\/span><span class="case-step-expected">It opens<\/span>/);
-  assert.match(html, /<span class="case-step-expected">Shows → done<\/span>/);
-  assert.match(html, /<span>A &amp; B<\/span><span class="case-step-expected">No separate expected result<\/span>/);
 });

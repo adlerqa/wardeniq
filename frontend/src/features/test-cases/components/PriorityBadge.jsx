@@ -1,6 +1,6 @@
 import { PRIO_COLORS, prioKey, prioLabel } from "../lib/testCases.js";
 
-/** Priority pill (HTML-string twin: lib/htmlRenderers.js prioBadge). */
+/** Priority pill: High red, Medium blue, Low green. */
 export default function PriorityBadge({ priority }) {
   const [border, background, color] = PRIO_COLORS[prioKey(priority)];
   return (

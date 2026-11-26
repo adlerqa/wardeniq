@@ -5,7 +5,7 @@ import { PriorityBadge } from "../../test-cases/components/CaseList.jsx";
 import { prioLabel } from "../../test-cases/lib/testCases.js";
 import { ITEM_STATUSES, cycleProgress, dateOnly, needsInlineEditor, normalizeSteps, scheduleBadge } from "../lib/cycles.js";
 
-/** The canonical # / Step / Expected result table (HTML-string twin: lib/htmlRenderers.js stepsHtml). */
+/** The canonical # / Step / Expected result table (also used by Gap Analysis). */
 export function StepsTable({ steps }) {
   const rows = normalizeSteps(steps);
   if (!rows.length) return null;
