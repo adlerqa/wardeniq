@@ -93,16 +93,16 @@ export function currentFeatureName() {
 }
 
 /**
- * Follow a background job (03-features-and-usage.js watchJob: SSE plus a
- * safety poll). Calls onTick(job) on every update; returns a stop function.
- * Without the compat runtime it returns a no-op stop.
+ * Follow a background job (lib/jobs.js watchJob: SSE plus a safety poll).
+ * Calls onTick(job) on every update; returns a stop function. Not registered
+ * (unit tests): a no-op stop.
  */
 export function watchJob(jobId, onTick, intervalMs) {
   const fn = compatFn("watchJob");
   return fn ? fn(jobId, onTick, intervalMs) || (() => {}) : () => {};
 }
 
-/** Token-usage lines appended to a job log (03-features-and-usage.js usageLogLines). */
+/** Token-usage lines appended to a job log (lib/jobs.js). */
 export function usageLogLines(usage) {
   const fn = compatFn("usageLogLines");
   return fn ? fn(usage) : [];
@@ -203,7 +203,7 @@ export function uiPrompt(title, label, value) {
   return fn ? fn(title, label, value) : Promise.resolve(null);
 }
 
-/** Write a job's progress log into the element matching `selector` (03 renderJobLog). */
+/** Write a job's progress log into the element matching `selector` (lib/jobs.js). */
 export function renderJobLog(selector, job) {
   const fn = compatFn("renderJobLog");
   if (fn) return fn(selector, job);
@@ -245,7 +245,7 @@ export function openInfoDialog(options) {
   if (fn) return fn(options);
 }
 
-/** Open a project's feature list (03 openProjectFeatures). */
+/** Open a project's feature list (React, features/features/hooks/useFeatures.js). */
 export function openProjectFeatures(projectId) {
   const fn = compatFn("openProjectFeatures");
   if (fn) return fn(projectId);

@@ -3,8 +3,9 @@
  * compat/runtime/controllers/03-features-and-usage.js).
  */
 
-export const fmtTok = (n) => Number(n || 0).toLocaleString();
-export const fmtUsd = (c) => (c == null ? "—" : "$" + Number(c).toFixed(Number(c) < 1 ? 4 : 2));
+import { fmtTok, fmtUsd } from "../../../lib/format.js";
+
+export { fmtTok, fmtUsd };
 
 /** The four KPI cards. */
 export function statCards(t = {}) {

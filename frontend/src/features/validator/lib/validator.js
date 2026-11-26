@@ -71,12 +71,5 @@ export function resultsView(score) {
   };
 }
 
-/** Lines of the job log (compat renderJobLog in 03-features-and-usage.js). */
-export function jobLogLines(job, usageLines = () => []) {
-  const lines = (job.logs || []).map(
-    (x) => `${x.progress == null ? "   " : String(x.progress).padStart(3) + "%"}  ${x.stage || ""}`,
-  );
-  if (job.error) lines.push(`ERR  ${job.error}`);
-  lines.push(...usageLines(job.usage));
-  return lines;
-}
+/** Lines of the job log (lib/jobs.js). */
+export { jobLogLines } from "../../../lib/jobs.js";

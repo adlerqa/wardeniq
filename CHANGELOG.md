@@ -167,6 +167,11 @@
   change-password dialog and the pending-invitation gate are now React, with the same
   markup and behaviour. The compat controller `10-auth.js` is removed. Pressing Enter
   repeatedly in the change-password dialog no longer sends the request twice.
+- **Job helpers moved to React modules (part of #257).** The background-job watcher
+  (live updates with a safety poll and stall detection), the job log and the token /
+  cost formats now live in `src/lib/jobs.js` and `src/lib/format.js`; opening a
+  project's feature list is handled by the Features screen. The compat controller
+  `03-features-and-usage.js` is removed. No behaviour change.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

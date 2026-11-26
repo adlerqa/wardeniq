@@ -4,10 +4,12 @@ import { api } from "../../../lib/api.js";
 import {
   currentProjectId,
   importSheetForFeature,
+  navigateTo,
   openCaseConfirmation,
   openFeature,
   refreshStatus,
   setCurrentFeature,
+  setCurrentProject,
   toast,
   uiPrompt,
   updateBackbar,
@@ -21,6 +23,7 @@ import { escapeHtml } from "../../../lib/html.js";
  *   window.loadFeatures()                  — 00-core.js, 07, imports, test cycles
  *   window.showFeatureList()               — back to the cards (00-core.js, 07)
  *   window.syncFeatureProjects(list, cur)  — after each project-list load (Projects screen)
+ *   window.openProjectFeatures(pid)        — a project's feature list (Projects screen)
  * window.showFeatureCreate is registered by useFeatureCreate.
  *
  * page: "list" | "create" | "workspace"
@@ -70,6 +73,14 @@ export default function useFeatures() {
       loadFeatures: () => loadFeatures(),
       showFeatureList: () => showFeatureList(),
       syncFeatureProjects: (all, cur) => setProjects({ list: all, cur: cur || "", synced: true }),
+      // A project's feature list, from the project cards / a new project (was 03-features-and-usage.js).
+      openProjectFeatures: async (pid) => {
+        setCurrentProject(pid);
+        setCurrentFeature(null);
+        navigateTo("features");
+        await loadFeatures();
+        showFeatureList();
+      },
     };
     Object.assign(window, hooks);
     return () => {
