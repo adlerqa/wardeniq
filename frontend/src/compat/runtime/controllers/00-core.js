@@ -817,6 +817,10 @@ function getCurrentFeatureId() {
 function setCurrentFeature(id) {
   currentFeature = id;
 }
+function setCurrentFeatureData(f) {
+  currentFeatureData = f;
+  currentFeatureCases = (f && f.test_cases) || [];
+}
 // Signed-in user (or null), for React screens until identity moves to React (#257).
 function getCurrentUser() {
   return ME;

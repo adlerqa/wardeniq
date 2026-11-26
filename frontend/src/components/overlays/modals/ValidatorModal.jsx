@@ -1,19 +1,97 @@
+import { useEffect, useRef, useState } from "react";
+
+import { api } from "../../../lib/api.js";
+import { toast } from "../../../lib/compatBridge.js";
+import { splitLinks } from "../../../features/features/lib/features.js";
 import "./modal css/validator-modal.css";
 
+const callWindow = (name, ...args) => (typeof window[name] === "function" ? window[name](...args) : undefined);
+
+function VmMsg({ msg }) {
+  if (!msg) return null;
+  if (msg.kind === "err") return <span className="err">{msg.text}</span>;
+  if (msg.kind === "ok") return <span className="ok">{msg.text}</span>;
+  return msg.text;
+}
+
 /**
- * ValidatorModal
- *
- * UI-only redesign.
- * Existing upload/versioning logic continues to use the same element IDs.
+ * "Upload new version" dialog for the open feature (was the #vmodal handlers
+ * in 07-library-and-crud.js). Registered while mounted:
+ * window.openNewVersionModal(featureId, label).
  */
 export default function ValidatorModal() {
-  const handleClose = () => {
-    document.getElementById("vm-cancel")?.click();
+  const [show, setShow] = useState(false);
+  const [label, setLabel] = useState("");
+  const [text, setText] = useState("");
+  const [confluence, setConfluence] = useState("");
+  const [figma, setFigma] = useState("");
+  const [replace, setReplace] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef(null);
+  const fidRef = useRef(null);
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  useEffect(() => {
+    const open = (featureId, featureLabel) => {
+      fidRef.current = featureId;
+      setLabel(featureLabel || "");
+      if (fileRef.current) fileRef.current.value = "";
+      setText("");
+      setConfluence("");
+      setFigma("");
+      setReplace(false);
+      setMsg(null);
+      setShow(true);
+    };
+    window.openNewVersionModal = open;
+    return () => {
+      if (window.openNewVersionModal === open) delete window.openNewVersionModal;
+    };
+  }, []);
+
+  const handleClose = () => setShow(false);
+
+  const create = async () => {
+    const vConfl = splitLinks(confluence);
+    const vFigma = splitLinks(figma);
+    const files = [...(fileRef.current ? fileRef.current.files : [])];
+    if (!files.length && !text.trim() && !vConfl.length && !vFigma.length) {
+      setMsg({ kind: "err", text: "Upload a doc, paste text, or add a Confluence/Figma link." });
+      return;
+    }
+    setBusy(true);
+    setMsg({ kind: "text", text: "uploading + diffing against previous version…" });
+    const fd = new FormData();
+    for (const f of files) fd.append("files", f);
+    fd.append("text", text);
+    fd.append("replace", replace ? "true" : "false");
+    vConfl.forEach((u) => fd.append("confluence_url", u));
+    vFigma.forEach((u) => fd.append("figma_url", u));
+    try {
+      const r = await api(`/api/features/${fidRef.current}/versions`, { method: "POST", body: fd });
+      const d = r.diff || {};
+      setMsg({
+        kind: "ok",
+        text: `v${r.version} created — ${d.kept || 0} kept${d.retired && d.retired.length ? `, ${d.retired.length} retired` : ""}. Generating new cases…`,
+      });
+      toast(`Version ${r.version} created`);
+      timer.current = setTimeout(() => {
+        setShow(false);
+        Promise.resolve(callWindow("openFeature", r.feature_id)).then(() => callWindow("watchFeatureGen", r.job_id, r.feature_id));
+        callWindow("loadFeatures");
+      }, 1200);
+    } catch (e) {
+      setMsg({ kind: "err", text: e.message });
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <div
-      className="modal validator-modal-overlay"
+      className={`modal validator-modal-overlay${show ? " show" : ""}`}
       id="vmodal"
       role="dialog"
       aria-modal="true"
@@ -55,7 +133,9 @@ export default function ValidatorModal() {
               <div
                 className="validator-modal-feature"
                 id="vm-feat"
-              />
+              >
+                {label}
+              </div>
             </div>
           </div>
 
@@ -109,6 +189,7 @@ export default function ValidatorModal() {
               </label>
 
               <input
+                ref={fileRef}
                 type="file"
                 id="vm-file"
                 multiple
@@ -159,6 +240,8 @@ export default function ValidatorModal() {
             <div className="validator-field">
               <textarea
                 id="vm-text"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
                 placeholder="Paste the updated requirement text here..."
               />
             </div>
@@ -205,6 +288,8 @@ export default function ValidatorModal() {
 
                 <textarea
                   id="vm-confluence"
+                  value={confluence}
+                  onChange={(e) => setConfluence(e.target.value)}
                   rows="2"
                   placeholder="https://your-org.atlassian.net/wiki/..."
                 />
@@ -242,6 +327,8 @@ export default function ValidatorModal() {
 
                 <textarea
                   id="vm-figma"
+                  value={figma}
+                  onChange={(e) => setFigma(e.target.value)}
                   rows="2"
                   placeholder="https://www.figma.com/file/<key>/..."
                 />
@@ -262,6 +349,8 @@ export default function ValidatorModal() {
               <input
                 type="checkbox"
                 id="vm-replace"
+                checked={replace}
+                onChange={(e) => setReplace(e.target.checked)}
               />
 
               <span className="validator-checkbox-ui">
@@ -318,7 +407,9 @@ export default function ValidatorModal() {
           <div
             id="vm-msg"
             className="validator-modal-message"
-          />
+          >
+            <VmMsg msg={msg} />
+          </div>
         </div>
 
         {/* =====================================================
@@ -329,6 +420,7 @@ export default function ValidatorModal() {
             className="ghost validator-cancel-btn"
             id="vm-cancel"
             type="button"
+            onClick={handleClose}
           >
             Cancel
           </button>
@@ -337,6 +429,8 @@ export default function ValidatorModal() {
             className="go validator-create-btn"
             id="vm-go"
             type="button"
+            disabled={busy}
+            onClick={create}
           >
             <svg
               viewBox="0 0 24 24"

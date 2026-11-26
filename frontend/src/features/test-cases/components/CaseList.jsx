@@ -6,7 +6,7 @@ import CaseDetail from "./CaseDetail.jsx";
 import PriorityBadge from "./PriorityBadge.jsx";
 
 export { PriorityBadge };
-import { RESULT_OPTIONS, caseSubText, caseTitle, lineageBadge } from "../lib/testCases.js";
+import { RESULT_OPTIONS, caseSubText, caseTitle, lineageBadge, typeLabel } from "../lib/testCases.js";
 
 /*
  * Rows keep the classes and data attributes of the old HTML (`.open`,
@@ -51,14 +51,43 @@ function RowDetail({ id, cl }) {
   return <CaseDetail testCase={d.data} onClose={cl.closeDetail} />;
 }
 
-function CaseRow({ testCase: c, cl }) {
+/** Feature-workspace rows: "origin · type" sub line and the imported / inherited badge. */
+const INHERITED = ["reused", "carried", "carried_repaired", "inherited", "adapted"];
+function workspaceRow(c) {
+  const orig = c.association && c.association.origin;
+  const steps = (c.steps || []).length;
+  const imported = c.imported || orig === "imported";
+  return {
+    sub: `${orig ? `${orig.replaceAll("_", " ")} · ` : ""}${typeLabel(c.type)} · ${steps} step${steps === 1 ? "" : "s"}`,
+    badge: imported
+      ? { label: "Imported from sheet", title: "Came from an uploaded sheet" }
+      : INHERITED.includes(orig)
+        ? { label: "Inherited / reused" }
+        : null,
+  };
+}
+function casesRow(c) {
+  const b = lineageBadge(c);
+  return {
+    sub: caseSubText(c),
+    badge: b
+      ? {
+          label: b.label,
+          title: b.kind === "imported" ? "This test case came from an uploaded sheet (imported / reused across features)" : undefined,
+        }
+      : null,
+  };
+}
+
+function CaseRow({ testCase: c, cl, variant }) {
   const title = caseTitle(c);
-  const badge = lineageBadge(c);
+  const feature = variant === "feature";
+  const { sub, badge } = feature ? workspaceRow(c) : casesRow(c);
   return (
     <div
       className={`testcase-item${cl.open === c.id ? " open" : ""}`}
       data-case-item={c.id}
-      style={c.deprecated ? { opacity: 0.6 } : undefined}
+      style={!feature && c.deprecated ? { opacity: 0.6 } : undefined}
     >
       <div className="testcase-row" onClick={() => cl.toggleDetail(c.id)}>
         <input
@@ -80,20 +109,12 @@ function CaseRow({ testCase: c, cl }) {
             ) : null}
             {title}
             {badge ? (
-              <span
-                className="badge reused"
-                style={{ marginLeft: "7px" }}
-                title={
-                  badge.kind === "imported"
-                    ? "This test case came from an uploaded sheet (imported / reused across features)"
-                    : undefined
-                }
-              >
+              <span className="badge reused" style={{ marginLeft: "7px" }} title={badge.title}>
                 {badge.label}
               </span>
             ) : null}
           </div>
-          <div className="testcase-sub">{caseSubText(c)}</div>
+          <div className="testcase-sub">{sub}</div>
         </div>
         <ResultSelect testCase={c} cl={cl} />
         <span className="testcase-priority">
@@ -102,7 +123,7 @@ function CaseRow({ testCase: c, cl }) {
         <button
           className="testcase-delete needs-editor"
           title="Delete testcase"
-          aria-label="Delete testcase"
+          aria-label={feature ? undefined : "Delete testcase"}
           onClick={(e) => {
             e.stopPropagation();
             requestDeleteCase(c.id);
@@ -148,12 +169,12 @@ function CaseListHeader({ cl, total, scope }) {
 }
 
 /** Header and rows of a case list (Test Cases screen; the feature workspace groups). */
-export function CaseRows({ items, cl, scope = "cases" }) {
+export function CaseRows({ items, cl, scope = "cases", variant = "cases", total }) {
   return (
     <>
-      <CaseListHeader cl={cl} total={items.length} scope={scope} />
+      <CaseListHeader cl={cl} total={total ?? items.length} scope={scope} />
       {items.map((c) => (
-        <CaseRow key={c.id} testCase={c} cl={cl} />
+        <CaseRow key={c.id} testCase={c} cl={cl} variant={variant} />
       ))}
     </>
   );

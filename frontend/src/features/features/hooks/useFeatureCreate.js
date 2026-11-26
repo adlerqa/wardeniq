@@ -121,8 +121,6 @@ export default function useFeatureCreate(fs) {
   /** Open a blank page (Confluence / Figma links, the sheet and the mix are kept, as before). */
   const showFeatureCreate = useCallback(async () => {
     fsRef.current.showPage("create");
-    const detail = document.getElementById("detail-card");
-    if (detail) detail.hidden = true;
     setName("");
     setText("");
     setMatchKey("");

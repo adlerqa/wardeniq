@@ -53,6 +53,7 @@ export function harness(t, routes = {}) {
   Object.assign(window, {
     getCurrentProject: () => current,
     getCurrentFeatureId: () => null,
+    setCurrentFeatureData: () => {},
     setCurrentFeature: (f) => calls.feature.push(f),
     openFeature: async (f) => calls.open.push(f),
     updateBackbar: () => calls.backbar++,
@@ -133,6 +134,9 @@ export function harness(t, routes = {}) {
     setProject: (p) => (current = p),
     async mount() {
       await act(async () => root.render(React.createElement(module.exports.default)));
+      // Card clicks are recorded rather than opening the (React) workspace.
+      window.__openFeature = window.openFeature;
+      window.openFeature = async (f) => calls.open.push(f);
     },
     async open() {
       await this.mount();

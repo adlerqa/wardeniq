@@ -21,7 +21,6 @@ import { escapeHtml } from "../../../lib/html.js";
  *   window.loadFeatures()                  — 00-core.js, 07, imports, test cycles
  *   window.showFeatureList()               — back to the cards (00-core.js, 07)
  *   window.syncFeatureProjects(list, cur)  — after each project-list load (Projects screen)
- *   window.showFeatureWorkspacePage()      — 03 openFeature hides the list / create pages
  * window.showFeatureCreate is registered by useFeatureCreate.
  *
  * page: "list" | "create" | "workspace"
@@ -62,9 +61,6 @@ export default function useFeatures() {
   }, []);
 
   const showFeatureList = useCallback(() => {
-    // The workspace card is still drawn by 03 openFeature (#257).
-    const detail = document.getElementById("detail-card");
-    if (detail) detail.hidden = true;
     setCurrentFeature(null);
     showPage("list");
   }, [showPage]);
@@ -74,7 +70,6 @@ export default function useFeatures() {
       loadFeatures: () => loadFeatures(),
       showFeatureList: () => showFeatureList(),
       syncFeatureProjects: (all, cur) => setProjects({ list: all, cur: cur || "", synced: true }),
-      showFeatureWorkspacePage: () => showPage("workspace"),
     };
     Object.assign(window, hooks);
     return () => {

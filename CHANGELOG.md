@@ -149,6 +149,15 @@
   detail under a row, the result select, row selection and the bulk actions (pass / fail /
   clear, export, delete) are now React, with the same markup. Exporting with no feature
   filter now shows only the "Choose one feature" error (it also showed a success toast).
+- **Feature workspace rebuilt in React (part of #257).** The workspace (header, version
+  switcher, PR match tag, coverage card and QA-readiness target, overview, version diff,
+  generation banner, case groups with the shared case rows, selection, bulk actions and
+  exports, Jira sync, "Reuse imported") and the "Upload new version" dialog are now React,
+  with the same markup. The compat controllers `04-test-cases.js` and
+  `07-library-and-crud.js` are removed. The unused export dialog (never opened) and the
+  always-hidden Regenerate button are removed. Two fixes: the generation banner's progress
+  line no longer shows HTML entities (`&lt;`) for some stages, and reopening a feature
+  while it is still generating keeps the loader visible (it used to disappear).
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

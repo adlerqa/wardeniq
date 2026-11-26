@@ -10,7 +10,7 @@ function ExpectedItem({ item }) {
   return String(item);
 }
 
-function ExpectedValue({ value }) {
+export function ExpectedValue({ value }) {
   if (Array.isArray(value))
     return value.length ? (
       <ul>

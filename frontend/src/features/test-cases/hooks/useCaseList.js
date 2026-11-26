@@ -9,8 +9,8 @@ const RESULT_LABELS = Object.fromEntries(RESULT_OPTIONS);
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 /**
- * Row behaviour of a test case list (was viewCase / setCaseResult in 04 and
- * the selection / bulk actions in 03): one open detail at a time (loaded once
+ * Row behaviour of a test case list (was viewCase / setCaseResult in
+ * 04-test-cases.js and the selection / bulk actions in 03): one open detail at a time (loaded once
  * per list load), the result select per row, ticked rows and the bulk actions.
  * Everything resets when the list reloads (`seq` changes).
  *

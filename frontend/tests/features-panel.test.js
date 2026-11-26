@@ -9,7 +9,7 @@ test("registers window hooks without fetching; cards, title and the hidden proje
   const h = harness(t);
   await h.mount();
   assert.equal(h.requests.length, 0);
-  for (const k of ["loadFeatures", "showFeatureList", "showFeatureCreate", "syncFeatureProjects", "showFeatureWorkspacePage"])
+  for (const k of ["loadFeatures", "showFeatureList", "showFeatureCreate", "syncFeatureProjects", "openFeature", "watchFeatureGen"])
     assert.equal(typeof window[k], "function", k);
   assert.equal(h.$("#features-page-title").textContent, "Features");
   await h.open();
@@ -77,8 +77,9 @@ test("page switch: create, workspace, back to the list, and back to projects", a
   await h.open();
   await h.click(h.$("#feature-new-btn"));
   assert.equal(h.$("#feature-create-page").hidden, false);
-  await h.flush(() => window.showFeatureWorkspacePage());
-  assert.deepEqual([h.$("#feature-list-page").hidden, h.$("#feature-create-page").hidden], [true, true]);
+  await h.flush(() => window.__openFeature("f2"));
+  assert.deepEqual([h.$("#feature-list-page").hidden, h.$("#feature-create-page").hidden, h.$("#detail-card").hidden], [true, true, false]);
+  assert.equal(h.$("#d-name").textContent, "Signup <i>");
   await h.flush(() => window.showFeatureList());
   assert.equal(h.$("#feature-list-page").hidden, false);
   assert.ok(h.calls.backbar >= 3);

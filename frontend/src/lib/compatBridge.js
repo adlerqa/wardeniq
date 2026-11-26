@@ -110,7 +110,7 @@ export function roleDescription(role) {
 export async function openCaseInFeature(caseId, featureId) {
   const openFeature = compatFn("openFeature");
   const navigateTo = compatFn("navigateTo");
-  const viewCase = compatFn("viewCase");
+  const viewCase = compatFn("viewCase"); // registered by the React workspace
   if (openFeature) await openFeature(featureId);
   if (navigateTo) navigateTo("features");
   setTimeout(() => {
@@ -133,17 +133,7 @@ export async function loadProjects() {
   return Array.isArray(list) ? list : [];
 }
 
-/** Open / close a test case's detail under its row (04-test-cases.js viewCase). */
-export function viewCase(caseId, sourceEl) {
-  const fn = compatFn("viewCase");
-  if (fn) return fn(caseId, sourceEl);
-}
 
-/** Save a case's latest result from its row <select> (04-test-cases.js setCaseResult). */
-export function setCaseResult(caseId, status, selectEl) {
-  const fn = compatFn("setCaseResult");
-  if (fn) return fn(caseId, status, selectEl);
-}
 
 /** Delete / unlink a test case after confirming (window.requestDeleteCase, React case editor). */
 export function requestDeleteCase(caseId) {
@@ -151,11 +141,6 @@ export function requestDeleteCase(caseId) {
   if (fn) return fn(caseId);
 }
 
-/** Sync the bulk-action bars with the row checkboxes (03-features-and-usage.js). */
-export function updateCaseSelection() {
-  const fn = compatFn("updateCaseSelection");
-  if (fn) return fn();
-}
 
 /** Id of the project selected in the compat runtime (00-core.js `currentProject`), or null. */
 export function currentProjectId() {
@@ -163,7 +148,7 @@ export function currentProjectId() {
   return fn ? fn() || null : null;
 }
 
-/** Re-open a feature in the workspace so new / removed cases show (03 openFeature). */
+/** Re-open a feature in the workspace so new / removed cases show (window.openFeature, React workspace). */
 export function openFeature(featureId) {
   const fn = compatFn("openFeature");
   if (fn) return fn(featureId);
@@ -300,4 +285,43 @@ export function importSheetForFeature(featureId, projectId) {
 export function openNewCase(featureId) {
   const fn = compatFn("openNewCase");
   if (fn) return fn(featureId);
+}
+
+/** Keep the runtime's open-feature data in step (00-core.js currentFeatureData / currentFeatureCases). */
+export function setCurrentFeatureData(feature) {
+  const fn = compatFn("setCurrentFeatureData");
+  if (fn) fn(feature);
+}
+
+/** The "Reuse imported" dialog for a feature (window.openImportLibraryModal, React Imports). */
+export function openImportLibraryModal(featureId) {
+  const fn = compatFn("openImportLibraryModal");
+  if (fn) return fn(featureId);
+}
+
+/** The "Upload new version" dialog (window.openNewVersionModal, React ValidatorModal). */
+export function openNewVersionModal(featureId, label) {
+  const fn = compatFn("openNewVersionModal");
+  if (fn) return fn(featureId, label);
+}
+
+/** The branded loader markup (00-core.js brandLoader), as an HTML string. */
+export function brandLoaderHtml(variant, options) {
+  const fn = compatFn("brandLoader");
+  return fn ? fn(variant, options) : "";
+}
+
+/** Switch the main view (00-core.js navigateTo). */
+export function navigateTo(view) {
+  const fn = compatFn("navigateTo");
+  if (fn) return fn(view);
+}
+
+/** "Test Cases" from a feature page: the Test Cases screen scoped to the open feature. */
+export async function openFeatureTestCases() {
+  const fid = currentFeatureId();
+  if (!fid) return;
+  navigateTo("cases");
+  // The Test Cases screen is React (features/test-cases).
+  if (typeof window.openTestCasesFor === "function") await window.openTestCasesFor(fid, currentProjectId() || "");
 }

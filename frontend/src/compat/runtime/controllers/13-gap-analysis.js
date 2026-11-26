@@ -877,3 +877,37 @@ window.resetScanStatus = async (rid) => {
     toast(e.message, true);
   }
 };
+
+// Download a gap report (moved from 03-features-and-usage.js when the feature
+// workspace moved to React, #257).
+async function downloadGapExport(kind, fmt) {
+  if (!currentFeature) {
+    toast("Open a feature first", true);
+    return;
+  }
+  const mime = fmt === "pdf" ? "application/pdf" : "text/csv";
+  const res = await fetch(
+    `/api/features/${currentFeature}/gap/${kind}/export/${fmt}`,
+    { method: "GET" },
+  );
+  if (!res.ok) {
+    let detail = "Export failed";
+    try {
+      detail = (await res.json()).detail || detail;
+    } catch (e) {}
+    throw new Error(detail);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(new Blob([blob], { type: mime }));
+  const a = document.createElement("a");
+  const base = (currentFeatureData?.name || "feature")
+    .replace(/[^a-z0-9]+/gi, "_")
+    .toLowerCase();
+  const label = kind === "pr-coverage" ? "pr_coverage" : "automation_coverage";
+  a.href = url;
+  a.download = `${base}_${label}.${fmt}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
