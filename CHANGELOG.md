@@ -177,6 +177,11 @@
   identity refresh, and the autofill hardening on every field now live in
   `src/app/boot.js` and run once the compatibility runtime has loaded. The compat
   controller `16-boot.js` is removed. No behaviour change.
+- **Toasts and shared dialogs rebuilt in React (part of #257).** Toast notifications,
+  the confirm, one-line prompt and HTML dialogs are React components with the same
+  markup and behaviour; the loading skeletons used by Gap Analysis moved to
+  `src/lib/skeleton.js`. About 270 lines leave `00-core.js`, including the unused
+  button-busy helpers and the no-op progress bar.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

@@ -6,6 +6,7 @@ import ValidatorModal from "./modals/ValidatorModal.jsx";
 import ProjectAccessModal from "./modals/ProjectAccessModal.jsx";
 import JobLogModal from "./modals/JobLogModal.jsx";
 import ToastHost from "./modals/ToastHost.jsx";
+import HtmlModal from "./modals/HtmlModal.jsx";
 import ImportSheetModal from "../../features/imports/components/ImportSheetModal.jsx";
 import ImportLibraryModal from "../../features/imports/components/ImportLibraryModal.jsx";
 
@@ -20,6 +21,7 @@ export default function AppOverlays() {
       <ProjectAccessModal />
       <JobLogModal />
       <ToastHost />
+      <HtmlModal />
       <ImportSheetModal />
       <ImportLibraryModal />
     </>

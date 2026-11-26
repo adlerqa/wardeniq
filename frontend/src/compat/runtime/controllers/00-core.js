@@ -9,195 +9,10 @@
 // inline on* handlers in the shell markup (e.g. onclick="navigateTo(...)") with
 // no window.* shim required.
 
-// ---- toast + prompt helpers (replace browser popups) ----
-// toast(message, isErr)  — backward compatible.
-// toast(message, {type:'ok'|'err'|'info'|'warn', title, duration})
-function toast(msg, opt) {
-  let type = "ok",
-    title,
-    duration;
-  if (opt === true) {
-    type = "err";
-  } else if (opt && typeof opt === "object") {
-    type = opt.type || (opt.isErr ? "err" : "ok");
-    title = opt.title;
-    duration = opt.duration;
-  }
-  const titles = {
-    ok: "Success",
-    err: "Something went wrong",
-    info: "Heads up",
-    warn: "Warning",
-  };
-  const icons = { ok: "✓", err: "!", info: "i", warn: "⚠" };
-  title = title || titles[type];
-  // Errors and warnings stay longer and scale with message length.
-  duration =
-    duration ||
-    (type === "err" || type === "warn"
-      ? Math.min(9000, 5200 + (msg || "").length * 35)
-      : 3800);
-  const d = document.createElement("div");
-  d.className = "toastmsg " + type;
-  d.innerHTML =
-    `<div class="t-ico">${icons[type]}</div>` +
-    `<div class="t-body"><div class="t-title"></div><div class="t-msg"></div></div>` +
-    `<button class="t-close" aria-label="Dismiss">×</button>` +
-    `<div class="t-timer" style="animation:toastTimer ${duration}ms linear forwards"></div>`;
-  d.querySelector(".t-title").textContent = title;
-  d.querySelector(".t-msg").textContent = msg == null ? "" : String(msg);
-  const remove = () => {
-    if (d.dataset.gone) return;
-    d.dataset.gone = "1";
-    d.classList.add("leaving");
-    setTimeout(() => d.remove(), 220);
-  };
-  d.querySelector(".t-close").onclick = remove;
-  document.getElementById("toast").appendChild(d);
-  const timer = setTimeout(remove, duration);
-  d.addEventListener("mouseenter", () => {
-    clearTimeout(timer);
-    const bar = d.querySelector(".t-timer");
-    if (bar) bar.style.animationPlayState = "paused";
-  });
-  return d;
-}
-
-// confirmModal(...) — styled, promise-based replacement for window.confirm.
-// Resolves true if confirmed, false if cancelled (Cancel / backdrop / Esc).
-// Usage: if(!(await confirmModal({title, body, confirmText, danger:true})))return;
-function confirmModal(opts) {
-  opts = opts || {};
-  const m = document.getElementById("confirm-modal");
-  const okBtn = document.getElementById("confirm-ok");
-  const cancelBtn = document.getElementById("confirm-cancel");
-  if (!m || !okBtn || !cancelBtn) {
-    return Promise.resolve(window.confirm(opts.body || "Are you sure?"));
-  }
-  document.getElementById("confirm-title").textContent =
-    opts.title || "Please confirm";
-  document.getElementById("confirm-body").textContent = opts.body || "";
-  okBtn.textContent = opts.confirmText || "Continue";
-  okBtn.className = opts.danger ? "danger" : "go";
-  m.classList.add("show");
-  setTimeout(() => okBtn.focus(), 40);
-  return new Promise((resolve) => {
-    let done = false;
-    const close = (val) => {
-      if (done) return;
-      done = true;
-      m.classList.remove("show");
-      okBtn.onclick = null;
-      cancelBtn.onclick = null;
-      m.onclick = null;
-      document.removeEventListener("keydown", onKey);
-      resolve(val);
-    };
-    const onKey = (e) => {
-      if (e.key === "Escape") close(false);
-      else if (e.key === "Enter") close(true);
-    };
-    okBtn.onclick = () => close(true);
-    cancelBtn.onclick = () => close(false);
-    m.onclick = (e) => {
-      if (e.target === m) close(false);
-    }; // backdrop click cancels
-    document.addEventListener("keydown", onKey);
-  });
-}
-
-// ---- skeleton placeholders (returned as HTML strings) ----
-function skeletonState(body, label = "Loading content") {
-  return `<div class="sk-state" role="status" aria-label="${esc(label)}">${body}</div>`;
-}
-const skeleton = {
-  line(w) {
-    return `<div class="sk sk-line"${w ? ` style="width:${w}"` : ""}></div>`;
-  },
-  cards(n = 6, label = "Loading cards") {
-    let c = "";
-    for (let i = 0; i < n; i++)
-      c += `<div class="sk-card"><div class="sk sk-line lg"></div><div class="sk sk-line sm"></div><div class="sk sk-line" style="width:40%;margin-top:22px"></div></div>`;
-    return skeletonState(`<div class="sk-grid">${c}</div>`, label);
-  },
-  kpis(n = 7) {
-    let c = "";
-    for (let i = 0; i < n; i++)
-      c += `<div class="sk-kpi"><div class="sk sk-line" style="width:50%;height:24px"></div><div class="sk sk-line sm" style="margin-top:10px"></div></div>`;
-    return c;
-  },
-  rows(n = 5, label = "Loading rows") {
-    let c = "";
-    for (let i = 0; i < n; i++)
-      c += `<div class="sk-row"><div class="sk sk-dot"></div><div style="flex:1"><div class="sk sk-line lg" style="margin:0 0 8px"></div><div class="sk sk-line sm" style="margin:0"></div></div><div class="sk sk-badge"></div></div>`;
-    return skeletonState(`<div class="sk-row-wrap">${c}</div>`, label);
-  },
-  table(cols = 5, n = 5, label = "Loading table") {
-    const head = `<tr>${Array(cols).fill('<th><div class="sk sk-line sm" style="margin:0;width:70%"></div></th>').join("")}</tr>`;
-    let body = "";
-    for (let i = 0; i < n; i++)
-      body += `<tr>${Array(cols).fill('<td><div class="sk sk-line" style="margin:0"></div></td>').join("")}</tr>`;
-    return skeletonState(
-      `<div style="overflow:auto"><table>${head}${body}</table></div>`,
-      label,
-    );
-  },
-  block(label = "Loading details") {
-    return skeletonState(
-      `<div class="sk sk-line lg"></div><div class="sk sk-line"></div><div class="sk sk-line sm"></div>`,
-      label,
-    );
-  },
-  dashboard() {
-    return skeletonState(
-      `<div class="sk sk-line lg" style="width:180px;height:24px;margin-bottom:20px"></div>` +
-        `<div class="dash-metrics">${this.kpis(7)}</div>` +
-        `<div class="dash-row c2"><div class="sk-card">${this.kpis(2)}</div><div class="sk-card">${this.blockLines(5)}</div></div>` +
-        `<div class="sk-card" style="margin-top:16px">${this.blockLines(6)}</div>`,
-      "Loading dashboard",
-    );
-  },
-  blockLines(n = 4) {
-    let c = "";
-    for (let i = 0; i < n; i++)
-      c += `<div class="sk sk-line${i === 0 ? " lg" : i === n - 1 ? " sm" : ""}"></div>`;
-    return c;
-  },
-};
-// paint a skeleton into a container if it exists
-function skIn(sel, html) {
-  const el = $(sel);
-  if (el) el.innerHTML = html;
-}
-// Compact detail-pane placeholder.
-function loadingRow(text) {
-  return skeleton.block(text || "Loading details");
-}
-
-// ---- button busy state ----
-function setBusy(elOrSel, on) {
-  const el = typeof elOrSel === "string" ? $(elOrSel) : elOrSel;
-  if (!el) return;
-  if (on) {
-    el.setAttribute("aria-busy", "true");
-  } else {
-    el.removeAttribute("aria-busy");
-  }
-}
-// run an async action while showing a button spinner; re-throws so callers keep their try/catch
-async function withBusy(elOrSel, fn) {
-  const el = typeof elOrSel === "string" ? $(elOrSel) : elOrSel;
-  setBusy(el, true);
-  try {
-    return await fn();
-  } finally {
-    setBusy(el, false);
-  }
-}
-
-// ---- top progress bar (driven by live api() request count) ----
-// Top route-progress bar removed — no-op stub kept so existing start()/done() callers don't break.
-const NProgress = { start() {}, done() {} };
+// Toasts, the confirm / prompt / HTML dialogs and the skeleton placeholders are
+// React (components/overlays/modals, lib/skeleton.js, #257); they register
+// toast, confirmModal, uiPrompt, uiModalHTML, skeleton, skIn and loadingRow on
+// window.
 
 // ============ BRANDED LOADERS (ported from the wardenIQ test-generator app) ============
 // --- gear SVG generator (ported from AnalyzeLoader GearSVG) ---
@@ -515,85 +330,6 @@ function rcRing(o) {
       ${o.label ? `<text x="${cx}" y="${cx + 16}" text-anchor="middle" fill="#94a3b8" style="font-size:9px;letter-spacing:.08em;text-transform:uppercase">${esc(o.label)}</text>` : ""}
     </svg></div>`;
 }
-function uiPrompt(title, label, value) {
-  return new Promise((res) => {
-    const m = document.getElementById("pmodal");
-    document.getElementById("pm-title").textContent = title;
-    document.getElementById("pm-label").textContent = label || "Value";
-    const inp = document.getElementById("pm-input");
-    inp.value = value || "";
-    m.classList.add("show");
-    setTimeout(() => inp.focus(), 50);
-    const done = (v) => {
-      m.classList.remove("show");
-      document.getElementById("pm-ok").onclick = null;
-      document.getElementById("pm-cancel").onclick = null;
-      inp.onkeydown = null;
-      res(v);
-    };
-    document.getElementById("pm-ok").onclick = () => done(inp.value.trim());
-    document.getElementById("pm-cancel").onclick = () => done(null);
-    inp.onkeydown = (e) => {
-      if (e.key === "Enter") done(inp.value.trim());
-      if (e.key === "Escape") done(null);
-    };
-  });
-}
-// uiConfirm(msg, title, confirmLabel, danger) is registered by the React
-// CaseConfirmationModal (#257).
-// Generic HTML modal → resolves true (confirm) / false (cancel). Body HTML stays in
-// the DOM while open so callers can read its inputs after resolve.
-function uiModalHTML(title, bodyHTML, confirmLabel = "Save") {
-  return new Promise((res) => {
-    let m = document.getElementById("html-modal");
-    if (!m) {
-      m = document.createElement("div");
-      m.className = "modal";
-      m.id = "html-modal";
-      m.innerHTML = `<div class="box" style="max-width:520px;width:92vw">
-        <div class="editor-head"><h2 id="hm-title" style="margin:0;font-size:17px"></h2><button class="ghost" id="hm-x">close</button></div>
-        <div id="hm-body" style="padding:16px 20px"></div>
-        <div class="editor-foot" style="display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;border-top:1px solid var(--line)">
-          <button class="ghost" id="hm-cancel">Cancel</button><button class="go" id="hm-ok"></button></div>
-      </div>`;
-      document.body.appendChild(m);
-    }
-    $("#hm-title").textContent = title;
-    $("#hm-body").innerHTML = bodyHTML;
-    $("#hm-ok").textContent = confirmLabel;
-    m.classList.add("show");
-    // Wire the specific-projects radio toggle + project search (used by manageAccess).
-    m.querySelectorAll('input[name="ma-scope"]').forEach(
-      (r) =>
-        (r.onchange = () => {
-          const some =
-            (document.querySelector('input[name="ma-scope"]:checked') || {})
-              .value === "some";
-          const list = document.getElementById("ma-list");
-          const search = document.getElementById("ma-search");
-          if (list) list.hidden = !some;
-          if (search) search.hidden = !some;
-        }),
-    );
-    const maSearch = document.getElementById("ma-search");
-    if (maSearch)
-      maSearch.addEventListener("input", () => {
-        const q = maSearch.value.trim().toLowerCase();
-        document.querySelectorAll("#ma-list label").forEach((l) => {
-          l.style.display =
-            !q || (l.getAttribute("data-name") || "").includes(q) ? "" : "none";
-        });
-      });
-    const done = (v) => {
-      m.classList.remove("show");
-      res(v);
-    };
-    $("#hm-ok").onclick = () => done(true);
-    $("#hm-cancel").onclick = () => done(false);
-    $("#hm-x").onclick = () => done(false);
-  });
-}
-
 // ----- second <script> block -----
 
 const $ = (s) => document.querySelector(s);
@@ -719,9 +455,6 @@ function cleanErr(detail, status) {
 async function api(p, o) {
   // NOTE: never log request bodies or response payloads — they can carry PATs,
   // API keys, SMTP passwords, OTP codes and other secrets into the browser console.
-  try {
-    NProgress.start();
-  } catch (e) {}
   let r, raw;
   try {
     r = await fetch(p, o);
@@ -737,10 +470,6 @@ async function api(p, o) {
     throw new Error(
       "Can't reach the server — please check your connection and try again.",
     );
-  } finally {
-    try {
-      NProgress.done();
-    } catch (e) {}
   }
   let j = {};
   try {

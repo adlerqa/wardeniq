@@ -1,6 +1,6 @@
 /**
  * Background jobs: the durable job watcher and the job log (was
- * compat/runtime/controllers/03-features-and-usage.js). useJobGlobals.js
+ * compat/runtime/controllers/03-features-and-usage.js). useSharedGlobals.js
  * registers watchJob / renderJobLog / usageLogLines on window for the bridge.
  */
 import { api } from "./api.js";

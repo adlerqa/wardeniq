@@ -4,7 +4,7 @@ import ApplicationFrame from "../layouts/ApplicationFrame.jsx";
 import AppOverlays from "../components/overlays/AppOverlays.jsx";
 import RuntimeBridge from "../compat/runtime/RuntimeBridge.jsx";
 import AppErrorBoundary from "../components/feedback/AppErrorBoundary.jsx";
-import { useJobGlobals } from "../lib/useJobGlobals.js";
+import { useSharedGlobals } from "../lib/useSharedGlobals.js";
 import { useBoot } from "./useBoot.js";
 
 /**
@@ -13,7 +13,7 @@ import { useBoot } from "./useBoot.js";
  * compatibility code under compat/.
  */
 export default function App() {
-  useJobGlobals();
+  useSharedGlobals();
   const boot = useBoot();
   return (
     <AppErrorBoundary>

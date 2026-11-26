@@ -20,7 +20,7 @@ function compatFn(name) {
   return typeof fn === "function" ? fn : null;
 }
 
-/** toast(message, isErr | {type, title, duration}) — same signature as 00-core.js. */
+/** toast(message, isErr | {type, title, duration}) (React ToastHost). */
 export function toast(message, options) {
   const fn = compatFn("toast");
   if (fn) return fn(message, options);
@@ -36,7 +36,7 @@ export function uiConfirm(message, title, confirmLabel, danger) {
 }
 
 /**
- * Opens the shared HTML modal (00-core.js uiModalHTML). `bodyHTML` is inserted
+ * Opens the shared HTML modal (React HtmlModal). `bodyHTML` is inserted
  * as HTML: escape every interpolated value (see escapeHtml in lib/html.js).
  */
 export function uiModalHTML(title, bodyHTML, confirmLabel) {
@@ -189,7 +189,7 @@ export function openCaseConfirmation(options) {
 }
 
 /**
- * The shared confirm dialog (00-core.js confirmModal):
+ * The shared confirm dialog (React ConfirmationModal):
  * { title, body, confirmText, danger } → Promise<boolean>.
  */
 export function confirmModal(options) {
@@ -197,7 +197,7 @@ export function confirmModal(options) {
   return fn ? fn(options) : Promise.resolve(false);
 }
 
-/** The shared one-line prompt dialog (00-core.js uiPrompt) → Promise<string | null>. */
+/** The shared one-line prompt dialog (React, modals/ProjectAccessModal.jsx) → Promise<string | null>. */
 export function uiPrompt(title, label, value) {
   const fn = compatFn("uiPrompt");
   return fn ? fn(title, label, value) : Promise.resolve(null);
