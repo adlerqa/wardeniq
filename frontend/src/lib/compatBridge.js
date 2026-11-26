@@ -323,7 +323,7 @@ export function openNewVersionModal(featureId, label) {
   if (fn) return fn(featureId, label);
 }
 
-/** The branded loader markup (00-core.js brandLoader), as an HTML string. */
+/** The branded loader markup (lib/brandLoader.js), as an HTML string. */
 export function brandLoaderHtml(variant, options) {
   const fn = compatFn("brandLoader");
   return fn ? fn(variant, options) : "";

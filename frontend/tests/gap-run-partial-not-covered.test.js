@@ -16,7 +16,7 @@ const controllers = (name) =>
 const coreSource = controllers("00-core.js");
 const escSource = coreSource.slice(
   coreSource.indexOf("const esc = (s) =>"),
-  coreSource.indexOf("const escAttr = esc;") + "const escAttr = esc;".length,
+  coreSource.indexOf("// Turn raw backend / httpx error strings"),
 );
 const source = controllers("13-gap-analysis.js");
 

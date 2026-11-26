@@ -182,6 +182,11 @@
   markup and behaviour; the loading skeletons used by Gap Analysis moved to
   `src/lib/skeleton.js`. About 270 lines leave `00-core.js`, including the unused
   button-busy helpers and the no-op progress bar.
+- **Branded loaders and shared HTML renderers moved out of compat (part of #257).** The
+  gear / quiz loaders and their message ticker live in `src/lib/brandLoader.js`; the
+  priority pill and step table HTML used by Gap Analysis in `src/lib/htmlRenderers.js`.
+  Unused report widgets and verdict renderers were removed from `00-core.js`
+  (970 → 586 lines). No behaviour change.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access
