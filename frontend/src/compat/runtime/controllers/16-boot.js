@@ -93,13 +93,13 @@ async function handleInviteLink() {
     return true;
   }
   // Not signed in (or as someone else): prompt login prefilled with the invited email.
-  showLogin();
+  showLogin({
+    msg: `You've been invited to ${(info.invite && info.invite.workspace) || "WardenIQ"} as ${(info.invite && info.invite.role) || "a user"}. Sign in as ${info.email} to accept.`,
+  });
   const em = $("#login-email");
   if (em) {
     em.value = info.email;
   }
-  $("#login-msg").textContent =
-    `You've been invited to ${(info.invite && info.invite.workspace) || "WardenIQ"} as ${(info.invite && info.invite.role) || "a user"}. Sign in as ${info.email} to accept.`;
   return true;
 }
 (async () => {

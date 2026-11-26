@@ -825,6 +825,9 @@ function setCurrentFeatureData(f) {
 function getCurrentUser() {
   return ME;
 }
+function setCurrentUser(u) {
+  ME = u;
+}
 
 // ---- nav ----
 function navigateTo(v) {

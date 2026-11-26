@@ -158,6 +158,11 @@
   always-hidden Regenerate button are removed. Two fixes: the generation banner's progress
   line no longer shows HTML entities (`&lt;`) for some stages, and reopening a feature
   while it is still generating keeps the loader visible (it used to disappear).
+- **Sign-in screen rebuilt in React (part of #257).** Password sign-in, the one-time
+  email code (including the 6-box code entry and paste), forgot / reset password with
+  and without SMTP, the startup diagnostics banner and Sign out are now React, with the
+  same markup and behaviour. The identity half of `10-auth.js` (role, viewer read-only
+  mode, change password, invitations) is unchanged for now.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

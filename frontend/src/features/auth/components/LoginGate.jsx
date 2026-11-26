@@ -1,5 +1,6 @@
 import { useState } from "react";
 import BrandMark from "../../../components/brand/BrandMark.jsx";
+import { useLogin } from "../hooks/useLogin.js";
 
 const inputClass = `
   mt-2 h-11 w-full rounded-lg
@@ -87,6 +88,8 @@ function PasswordInput({
   placeholder = "••••••••",
   autoComplete,
   className,
+  inputRef,
+  onKeyDown,
 }) {
   const [showPassword, setShowPassword] = useState(false);
 
@@ -94,6 +97,8 @@ function PasswordInput({
     <div className="relative mt-2">
       <input
         id={id}
+        ref={inputRef}
+        onKeyDown={onKeyDown}
         type={showPassword ? "text" : "password"}
         placeholder={placeholder}
         autoComplete={autoComplete}
@@ -154,9 +159,19 @@ function PasswordInput({
   );
 }
 
+/** Busy / disabled props for an action button. */
+const busyProps = (busy, id) => ({
+  id,
+  disabled: busy.has(id),
+  "aria-busy": busy.has(id) ? "true" : undefined,
+});
+
 export default function LoginGate() {
+  const l = useLogin();
+  const { field: f, actions: a } = l;
   return (
     <div
+      ref={l.root}
       id="login"
       hidden
       className="
@@ -202,11 +217,13 @@ export default function LoginGate() {
 
           <div
             id="login-boot-status"
-            hidden
+            hidden={l.boot.hidden}
             role="status"
             aria-live="polite"
             className="mb-6 rounded-lg border border-amber-400/30 bg-amber-400/10 p-4 text-[12.5px] leading-5 text-amber-200 break-words"
-          />
+          >
+            {l.boot.text}
+          </div>
 
           {/* Main title */}
           <div className="mb-7 text-center">
@@ -218,20 +235,22 @@ export default function LoginGate() {
               id="login-intro"
               className="mx-auto mt-2 max-w-[330px] text-[12.5px] leading-5 text-slate-500"
             >
-              Sign in to continue to your WardenIQ workspace.
+              {l.intro}
             </p>
           </div>
 
           {/* =========================
               EMAIL OTP - STEP 1
           ========================== */}
-          <div id="login-step1">
+          <div id="login-step1" hidden={l.step !== "step1"}>
             <label htmlFor="login-email" className={labelClass}>
               Work email
             </label>
 
             <input
               id="login-email"
+              ref={f.email}
+              onKeyDown={a.emailKey}
               type="email"
               placeholder="you@company.com"
               autoComplete="email"
@@ -241,7 +260,8 @@ export default function LoginGate() {
             <button
               type="button"
               className={primaryButtonClass}
-              id="login-send"
+              {...busyProps(l.busy, "login-send")}
+              onClick={a.send}
             >
               Send verification code
             </button>
@@ -254,7 +274,7 @@ export default function LoginGate() {
           {/* =========================
               EMAIL OTP - STEP 2
           ========================== */}
-          <div id="login-step2" hidden>
+          <div id="login-step2" hidden={l.step !== "step2"}>
             <div
               id="login-sent-badge"
               className="
@@ -273,13 +293,15 @@ export default function LoginGate() {
                 id="login-sent-text"
                 className="block text-[11px] text-slate-500"
               >
-                Verification code sent to
+                {l.sent}
               </span>
 
               <b
                 id="login-to"
                 className="mt-1 block truncate text-[12.5px] font-medium text-slate-200"
-              />
+              >
+                {l.to}
+              </b>
             </div>
 
             <label className={labelClass}>Enter verification code</label>
@@ -291,6 +313,7 @@ export default function LoginGate() {
               {[1, 2, 3, 4, 5, 6].map((digit) => (
                 <input
                   key={digit}
+                  {...l.boxProps(digit - 1)}
                   className="
                     otp-box
                     !h-12
@@ -322,7 +345,8 @@ export default function LoginGate() {
             <button
               type="button"
               className={primaryButtonClass}
-              id="login-verify"
+              {...busyProps(l.busy, "login-verify")}
+              onClick={a.verify}
             >
               Verify &amp; sign in
             </button>
@@ -331,6 +355,7 @@ export default function LoginGate() {
               type="button"
               className={`${linkClass} !mt-5 !flex !w-full !items-center !justify-center !gap-1.5`}
               id="login-back"
+              onClick={a.back}
             >
               <BackIcon />
               Use a different email
@@ -340,7 +365,7 @@ export default function LoginGate() {
           {/* =========================
               PASSWORD LOGIN
           ========================== */}
-          <div id="login-password" hidden>
+          <div id="login-password" hidden={l.step !== "password"}>
             <div>
               <label htmlFor="login-username" className={labelClass}>
                 Username or email
@@ -348,6 +373,8 @@ export default function LoginGate() {
 
               <input
                 id="login-username"
+                ref={f.username}
+                onKeyDown={a.usernameKey}
                 type="text"
                 placeholder="admin"
                 autoComplete="username"
@@ -365,6 +392,7 @@ export default function LoginGate() {
                   className={linkClass}
                   id="login-forgot-btn"
                   type="button"
+                  onClick={a.forgot}
                 >
                   Forgot password?
                 </button>
@@ -372,6 +400,8 @@ export default function LoginGate() {
 
               <PasswordInput
                 id="login-pw"
+                inputRef={f.pw}
+                onKeyDown={a.pwKey}
                 placeholder="••••••••"
                 autoComplete="current-password"
                 className={inputClass}
@@ -381,7 +411,8 @@ export default function LoginGate() {
             <button
               type="button"
               className={primaryButtonClass}
-              id="login-signin"
+              {...busyProps(l.busy, "login-signin")}
+              onClick={a.signIn}
             >
               Sign in
             </button>
@@ -390,7 +421,7 @@ export default function LoginGate() {
           {/* =========================
               RESET WITHOUT SMTP
           ========================== */}
-          <div id="login-forgot-nosmtp" hidden>
+          <div id="login-forgot-nosmtp" hidden={l.step !== "nosmtp"}>
             <AuthHeading
               title="Reset password"
               description="SMTP is not configured. Use your deployment APP_SECRET to reset the administrator password."
@@ -403,6 +434,7 @@ export default function LoginGate() {
 
               <input
                 id="reset-master-username"
+                ref={f.masterUser}
                 type="text"
                 placeholder="admin"
                 className={inputClass}
@@ -416,6 +448,7 @@ export default function LoginGate() {
 
               <PasswordInput
                 id="reset-master-secret"
+                inputRef={f.masterSecret}
                 placeholder="APP_SECRET"
                 className={inputClass}
               />
@@ -428,6 +461,7 @@ export default function LoginGate() {
 
               <PasswordInput
                 id="reset-master-new-pw"
+                inputRef={f.masterNewPw}
                 placeholder="••••••••"
                 autoComplete="new-password"
                 className={inputClass}
@@ -437,7 +471,8 @@ export default function LoginGate() {
             <button
               type="button"
               className={primaryButtonClass}
-              id="reset-master-submit-btn"
+              {...busyProps(l.busy, "reset-master-submit-btn")}
+              onClick={a.masterReset}
             >
               Reset password
             </button>
@@ -446,6 +481,7 @@ export default function LoginGate() {
               className={`${linkClass} !mt-5 !flex !w-full !items-center !justify-center !gap-1.5`}
               id="reset-nosmtp-back-btn"
               type="button"
+              onClick={a.backToLogin}
             >
               <BackIcon />
               Back to sign in
@@ -455,7 +491,7 @@ export default function LoginGate() {
           {/* =========================
               REQUEST RESET CODE
           ========================== */}
-          <div id="login-forgot-step1" hidden>
+          <div id="login-forgot-step1" hidden={l.step !== "forgot1"}>
             <AuthHeading
               title="Forgot password?"
               description="Enter your username or email and we'll send you a reset code."
@@ -467,6 +503,7 @@ export default function LoginGate() {
 
             <input
               id="reset-target"
+              ref={f.target}
               type="text"
               placeholder="you@company.com"
               className={inputClass}
@@ -475,7 +512,8 @@ export default function LoginGate() {
             <button
               type="button"
               className={primaryButtonClass}
-              id="reset-request-btn"
+              {...busyProps(l.busy, "reset-request-btn")}
+              onClick={a.requestReset}
             >
               Send reset code
             </button>
@@ -484,6 +522,7 @@ export default function LoginGate() {
               className={`${linkClass} !mt-5 !flex !w-full !items-center !justify-center !gap-1.5`}
               id="reset-back-btn"
               type="button"
+              onClick={a.backToLogin}
             >
               <BackIcon />
               Back to sign in
@@ -493,7 +532,7 @@ export default function LoginGate() {
           {/* =========================
               SET NEW PASSWORD
           ========================== */}
-          <div id="login-forgot-step2" hidden>
+          <div id="login-forgot-step2" hidden={l.step !== "forgot2"}>
             <AuthHeading
               title="Create new password"
               description="Enter the reset code and choose a new password."
@@ -506,6 +545,7 @@ export default function LoginGate() {
 
               <input
                 id="reset-code"
+                ref={f.code}
                 type="text"
                 inputMode="numeric"
                 maxLength="6"
@@ -527,6 +567,7 @@ export default function LoginGate() {
 
               <PasswordInput
                 id="reset-new-pw"
+                inputRef={f.newPw}
                 placeholder="••••••••"
                 autoComplete="new-password"
                 className={inputClass}
@@ -536,7 +577,8 @@ export default function LoginGate() {
             <button
               type="button"
               className={primaryButtonClass}
-              id="reset-submit-btn"
+              {...busyProps(l.busy, "reset-submit-btn")}
+              onClick={a.submitReset}
             >
               Set new password
             </button>
@@ -545,6 +587,7 @@ export default function LoginGate() {
               className={`${linkClass} !mt-5 !flex !w-full !items-center !justify-center !gap-1.5`}
               id="reset-cancel-btn"
               type="button"
+              onClick={a.backToLogin}
             >
               <BackIcon />
               Cancel &amp; sign in
@@ -566,6 +609,7 @@ export default function LoginGate() {
             "
             id="login-msg"
             role="status"
+            {...(l.msg.html ? { dangerouslySetInnerHTML: { __html: l.msg.html } } : { children: l.msg.text })}
           />
 
           <div
@@ -581,7 +625,9 @@ export default function LoginGate() {
             "
             id="login-err"
             role="alert"
-          />
+          >
+            {l.err}
+          </div>
         </div>
 
         {/* Footer inside the same card */}

@@ -45,10 +45,16 @@ export function uiModalHTML(title, bodyHTML, confirmLabel) {
   return Promise.resolve(false);
 }
 
-/** Shows the sign-in screen and clears the cached identity (10-auth.js). */
-export function showLogin() {
+/** Shows the sign-in screen and clears the signed-in user (React, features/auth/hooks/useLogin.js). */
+export function showLogin(options) {
   const fn = compatFn("showLogin");
-  if (fn) return fn();
+  if (fn) return fn(options);
+}
+
+/** Sets the signed-in user known to the compat runtime (00-core.js `ME`). */
+export function setCurrentUser(user) {
+  const fn = compatFn("setCurrentUser");
+  if (fn) fn(user);
 }
 
 /** Re-reads the signed-in user, e.g. after a 403 (10-auth.js). */

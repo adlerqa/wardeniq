@@ -1,3 +1,16 @@
+import { api } from "../lib/api.js";
+import { showLogin } from "../lib/compatBridge.js";
+
+/** Sign out, then show the sign-in screen even if the request fails (was 10-auth.js). */
+async function signOut() {
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+  } catch {
+    /* signed out locally either way */
+  }
+  showLogin();
+}
+
 export default function Header() {
   return (
     <header
@@ -285,6 +298,7 @@ export default function Header() {
           "
           id="logout-btn"
           title="Sign out"
+          onClick={signOut}
         >
           <svg
             viewBox="0 0 24 24"
