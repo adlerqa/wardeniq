@@ -101,6 +101,32 @@ class LLM:
         self.base_url = (base_url or DEFAULT_BASE.get(self.provider, "")).strip().rstrip("/")
         # AWS region for Bedrock (ignored by every other provider).
         self.region = (region or "").strip()
+        # Local Ollama calls whose prompt plus reply did not fit the context window (see
+        # _note_context_overflow). A caller that wants to report them (the generation
+        # pipeline) remembers len() before its calls and reads what was added.
+        self.context_overflows: list[dict] = []
+
+    def _note_context_overflow(self, user: str, prompt_tokens: int, reply_tokens: int, context: int):
+        """Record and log an Ollama call that needed more tokens than its context window.
+
+        Ollama does not fail such a call. It keeps writing and, to make room, throws away part
+        of the earlier text, which is the instructions and evidence at the start of the prompt
+        (its own server log says "truncated"); the reply then parses fine but may ignore the
+        rules it was given. A tester on a CPU-only machine found it by reading that log: the
+        combined E2E call used 5,117 prompt tokens and wrote 4,250 in an 8,192-token window,
+        and the app said nothing."""
+        task = next((line[5:].strip() for line in str(user or "").splitlines()
+                     if line.startswith("TASK:")), "")[:80]
+        entry = {"model": self.model, "task": task, "prompt_tokens": int(prompt_tokens),
+                 "reply_tokens": int(reply_tokens), "context": int(context)}
+        self.context_overflows.append(entry)
+        log.warning(
+            "ollama call %r for %s used %d tokens (%d prompt + %d reply) in a %d-token context "
+            "window: Ollama dropped part of the earlier text while writing, so the reply may "
+            "ignore the instructions. Raise OLLAMA_MAX_NUM_CTX if the machine has the memory, "
+            "or use a model with a longer context.",
+            task or "(untitled)", self.model, prompt_tokens + reply_tokens, prompt_tokens,
+            reply_tokens, context)
 
     # ---- AWS Bedrock helpers -------------------------------------------------
     def _aws_creds(self) -> tuple[str, str, str]:
@@ -217,6 +243,10 @@ class LLM:
             data = r.json()
             usage.record(self.model, data.get("prompt_eval_count", 0),
                          data.get("eval_count", 0), kind="llm")
+            prompt_tokens = data.get("prompt_eval_count") or 0
+            reply_tokens = data.get("eval_count") or 0
+            if prompt_tokens + reply_tokens > ollama_ctx:
+                self._note_context_overflow(user, prompt_tokens, reply_tokens, ollama_ctx)
             if options.get("num_predict") and data.get("done_reason") == "length":
                 # The reply was cut off at the limit, so the JSON is probably truncated; the
                 # repair step in the generation pipeline expects exactly this.

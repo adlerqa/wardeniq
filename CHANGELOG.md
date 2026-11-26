@@ -54,6 +54,27 @@
 
 ### Fixed
 
+- **The combined E2E call: copied titles are dropped, its repeated evidence is printed once, and a context
+  overflow is reported.** A tester's run on a CPU-only machine (qwen2.5:3b, `examples/sample-prd.md`) kept 16
+  cases with only 11 distinct titles. The combined E2E call had written five business tests that were
+  word-for-word copies of its own E2E titles (four were kept again as e2e and one as nfr). The copies also
+  used the business suite's slots, so the five distinct tests the business fallback wrote next were trimmed
+  away. The same call sent 5,117 prompt tokens and wrote 4,250 in an 8,192-token window; Ollama logged
+  `truncated = 1`, dropped part of the earlier text, and wardenIQ said nothing. Now: a business test or edge
+  case whose title is already an API, E2E or edge test's title is dropped (`copy-of-another-suite` in the job
+  result), before the business fallback counts what it has, so the fallback asks for what is really missing,
+  and the fallback's own copies are dropped too; the prompt asks for distinct business titles; the three
+  retrieved-evidence blocks of that prompt, which shared 10 of their 13 distinct lines, now print each
+  passage once (a real prompt went from 5,862 to 4,870 tokens, so about 1,000 more tokens of room for the
+  reply); and an Ollama call whose prompt plus reply is larger than its context window is logged and listed
+  in the job log and in `context_overflows` in the job result. Measured with the real prompt on a GPU: the
+  shortened prompt gave the same kind of output as the original (3 to 6 E2E and 3 to 5 business tests, no
+  copied titles, 3 runs against 3). Forcing a context shift with a smaller window cut the business tests to 1
+  in all three runs, against 3 to 10 in seven normal runs. Not shown: the copied titles and the 4,250-token
+  reply did not occur in these GPU runs (replies were 834 to 1,309 tokens), so the overflow is reported and
+  made less likely, but I could not show that it caused the copies. Not changed: a UI test is still kept only
+  if its field label appears literally in the documents, which is why most of the UI tests a model writes are
+  discarded (22 written, 5 kept in one run) (part of #249).
 - **Embedding calls now have a configurable timeout, and a timeout is reported clearly.** A tester on a
   CPU-only machine could not create a feature: the first embedding call took about 4 minutes, but
   every embedding call was cut off after a fixed 120 seconds, and `POST /api/features` answered a
