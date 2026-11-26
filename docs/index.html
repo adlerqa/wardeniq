@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>wardenIQ — Test Intelligence Platform</title>
+  <meta name="description" content="QC for AI-built software. wardenIQ generates a structured test suite from your requirement docs, then continuously checks your code against it. Open source, MIT licensed.">
+  <link rel="canonical" href="https://adlerqa.github.io/wardeniq/">
+  <style>
+    :root { --bg:#ffffff; --fg:#1b1f24; --muted:#5b6672; --accent:#2f6fed; --card:#f4f6f9; --border:#dde2e8; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#0f1318; --fg:#e8ecf1; --muted:#9aa6b2; --accent:#6c9cff; --card:#171c23; --border:#2a313a; }
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+    main { max-width:820px; margin:0 auto; padding:48px 16px 64px; }
+    h1 { font-size:2rem; margin:0 0 8px; }
+    h2 { font-size:1.25rem; margin:40px 0 12px; }
+    p.lead { font-size:1.15rem; color:var(--muted); margin:0 0 20px; }
+    a { color:var(--accent); }
+    .actions a.btn { display:inline-block; margin:0 8px 8px 0; padding:8px 16px; border:1px solid var(--accent); border-radius:6px; text-decoration:none; }
+    .actions a.primary { background:var(--accent); color:#fff; }
+    img.shot { max-width:100%; border:1px solid var(--border); border-radius:8px; }
+    ul { padding-left:20px; }
+    pre { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:12px 14px; overflow-x:auto; font-size:.9rem; }
+    footer { margin-top:48px; color:var(--muted); font-size:.9rem; }
+    .badge { margin-top:24px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>wardenIQ</h1>
+    <p class="lead"><strong>QC for AI-built software.</strong> Point wardenIQ at your requirement docs and your code. It writes a structured test suite from the docs, then continuously checks your code against those tests, so you always know what is covered, what is automated, and what is at risk.</p>
+
+    <p class="actions">
+      <a class="btn primary" href="https://github.com/adlerqa/wardeniq">View on GitHub</a>
+      <a class="btn" href="https://github.com/adlerqa/wardeniq/blob/main/docs/getting-started.md">Getting started</a>
+      <a class="btn" href="https://github.com/adlerqa/wardeniq/blob/main/docs/installation.md">Installation</a>
+    </p>
+
+    <img class="shot" src="assets/demo.gif" alt="Upload a PRD and wardenIQ generates a grounded test suite">
+
+    <h2>What it does</h2>
+    <ul>
+      <li>Generates a typed test suite (functional, E2E, API and non-functional) from PRD, HLD and LLD documents.</li>
+      <li>Checks the real code against every test case and marks it covered, partial or uncovered, with the files read as evidence.</li>
+      <li>Gives a live map of coverage, automation and risk gaps you can act on.</li>
+      <li>Works with hosted LLMs or fully local models via Ollama.</li>
+      <li>Runs as a single lightweight app container: point it at a cloud MongoDB and an LLM provider, or use the bundled all-in-one demo mode.</li>
+    </ul>
+
+    <h2>Try it</h2>
+<pre><code>git clone https://github.com/adlerqa/wardeniq.git wardenIQ &amp;&amp; cd wardenIQ</code></pre>
+    <p>Then follow the <a href="https://github.com/adlerqa/wardeniq/blob/main/docs/getting-started.md">getting started guide</a>. The app opens at <code>http://localhost:8001</code>.</p>
+
+    <h2>Open source</h2>
+    <p>wardenIQ is early, evolving and open. It is licensed MIT: fork it, run it on-prem, use it commercially. Contributions are welcome; start with the <a href="https://github.com/adlerqa/wardeniq/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22">good first issues</a>.</p>
+
+    <div class="badge">
+      <a href="https://launchnest.io/p/wardeniq" target="_blank">
+        <img src="https://launchnest.io/badge/wardeniq.svg?variant=listed" alt="wardenIQ on LaunchNest" width="220" height="56" />
+      </a>
+    </div>
+
+    <footer>
+      <a href="https://github.com/adlerqa/wardeniq">github.com/adlerqa/wardeniq</a> &middot; MIT License
+    </footer>
+  </main>
+</body>
+</html>
