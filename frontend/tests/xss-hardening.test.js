@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 // Rendering hardening: values that come from users, imports or the LLM must be
 // escaped before they reach innerHTML -- including inside class attributes -- and
 // the Mind Map tooltip must not turn attribute text back into live markup.
 
-const dir = new URL("../src/compat/runtime/controllers/", import.meta.url);
-const read = (f) => readFileSync(new URL(f, dir), "utf8");
 // The Mind Map graph is React now (features/mind-map): its tooltips are built
 // in lib/graph.js and shown by hooks/useCoverageGraph.js.
 const mmHookSource = readFileSync(
@@ -92,14 +90,4 @@ test("mmSafeTipNodes keeps formatting tags and drops anything else", () => {
 test("the Mind Map tooltip is never filled via innerHTML from an attribute", () => {
   assert.ok(!/innerHTML/.test(mmHookSource));
   assert.ok(mmHookSource.includes('mmSafeTipNodes(t.getAttribute("data-tip"))'));
-});
-
-test("record fields interpolated into class attributes are escaped", () => {
-  const offenders = [];
-  for (const f of readdirSync(dir).filter((n) => n.endsWith(".js"))) {
-    const src = read(f);
-    const re = /class="[^"]*\$\{\s*(?:c|cs|it)\.(?:type|status|category)\s*\}/g;
-    for (const m of src.matchAll(re)) offenders.push(`${f}: ${m[0]}`);
-  }
-  assert.deepEqual(offenders, []);
 });

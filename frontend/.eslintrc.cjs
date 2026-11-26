@@ -10,7 +10,6 @@ module.exports = {
   ignorePatterns: [
     "dist",
     ".eslintrc.cjs",
-    "src/compat/runtime/controllers/**",
   ],
   parserOptions: { ecmaVersion: "latest", sourceType: "module" },
   settings: { react: { version: "18.3" } },

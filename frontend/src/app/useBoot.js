@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { api } from "../lib/api.js";
 import {
   currentUser,
@@ -38,9 +38,9 @@ const deps = () => ({
 /**
  * App start-up (was compat/runtime/controllers/16-boot.js). On mount: field
  * hardening, window.startApp (sign-in and invitations call it), the 5 s
- * service-status refresh and the 30 s identity refresh while signed in.
- * Returns the boot function, which App hands to RuntimeBridge as onReady: the
- * sequence needs the compat runtime, so it runs once that has loaded.
+ * service-status refresh and the 30 s identity refresh while signed in; then
+ * the boot sequence, once. App calls it after every screen and overlay has
+ * registered its window functions (child effects run first).
  */
 export function useBoot() {
   const started = useRef(false);
@@ -64,7 +64,7 @@ export function useBoot() {
     };
   }, []);
 
-  return useCallback(() => {
+  useEffect(() => {
     if (started.current) return;
     started.current = true;
     runBoot(deps());

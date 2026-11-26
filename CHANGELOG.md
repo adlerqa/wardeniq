@@ -198,6 +198,13 @@
   `00-core.js` is removed; only `13-gap-analysis.js` remains, and gets `$`, `esc`,
   `api` and the navigation state from React. Breadcrumbs use click handlers instead
   of inline `onclick` attributes. No behaviour change.
+- **Gap Analysis rebuilt in React; compatibility runtime removed (part of #257).** The
+  PR Code Coverage tab (runs with live refresh, exclude / include, run detail with the
+  covered / missing toggle, reassign, manual run on a PR) and the Automation Test
+  Coverage tab (test repos with rescan / reset, matched tests) are React with the same
+  markup and behaviour. With `13-gap-analysis.js` gone the compatibility runtime
+  (`src/compat`, `RuntimeBridge`) is removed and the app starts up directly. External
+  links on the Gap Analysis screen now also carry `rel="noreferrer"`.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access
