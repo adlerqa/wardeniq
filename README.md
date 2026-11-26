@@ -13,6 +13,10 @@
 **`v0.2.3`** — early, evolving, open. Licensed **MIT**: fork it, run it
 on-prem, use it commercially, no strings.
 
+<a href="https://launchnest.io/p/wardeniq" target="_blank">
+  <img src="https://launchnest.io/badge/wardeniq.svg?variant=listed" alt="wardenIQ on LaunchNest" width="220" height="56" />
+</a>
+
 ![Upload a PRD, wardenIQ generates a grounded test suite](docs/assets/demo.gif)
 
 <sub>Create a project, attach a PRD, and wardenIQ generates a typed test suite from it — functional, E2E, API and non-functional.</sub>
