@@ -163,12 +163,26 @@ def build_version_transition_block(context: dict) -> str:
     impact_str = f"\nVERSION IMPACT SIGNALS:\n{json.dumps(impact, indent=2)}" if impact else ""
     return f"\nVERSION TRANSITION INTELLIGENCE:\n{summary or 'This generation is version-aware. Respect version changes before reusing coverage.'}{impact_str}\n"
 
-def build_rag_evidence_block(rag_context: dict | None, top_k: int = 8) -> str:
+def build_rag_evidence_block(rag_context: dict | None, top_k: int = 8,
+                             shown: dict | None = None, label: str = "") -> str:
+    """The retrieved evidence as text for a prompt.
+
+    `shown` is for a prompt that carries several of these blocks (the combined E2E call has
+    three, one per suite): pass the same dict to each. A summary or passage that an earlier
+    block already printed is then replaced by a short pointer to it (`label` names this block
+    for the pointers of later ones). In a real prompt the three blocks shared 10 of their 13
+    distinct lines, about 1,700 of 5,862 tokens, in a call whose reply then had too little
+    room. With `shown=None` (the default) the text is exactly what it always was."""
     if not rag_context or not isinstance(rag_context, dict):
         return "RAG EVIDENCE: none."
 
     summary = str(rag_context.get("summary") or "").strip()
     summary = summary if summary else "No RAG summary available."
+    if shown is not None:
+        if summary in shown.get("summaries", {}):
+            summary = f"same as in the {shown['summaries'][summary]} block above."
+        else:
+            shown.setdefault("summaries", {})[summary] = label or "earlier"
 
     chunks = rag_context.get("retrieved_chunks") or []
     if not isinstance(chunks, list):
@@ -209,7 +223,14 @@ def build_rag_evidence_block(rag_context: dict | None, top_k: int = 8) -> str:
             text = chunk["payload"].get("text")
         text = str(text or "")
         short_text = " ".join(text.split()).strip()[:500]
-        
+
+        if shown is not None:
+            passages = shown.setdefault("passages", {})
+            if short_text in passages:
+                formatted.append(f"[{idx + 1}] SOURCE={source_type} | SCORE={score_str}\n"
+                                 f"(the same passage as {passages[short_text]})")
+                continue
+            passages[short_text] = f"{label or 'an earlier block'} [{idx + 1}]"
         formatted.append(f"[{idx + 1}] SOURCE={source_type} | SCORE={score_str}\n{short_text}")
         
     return f"RAG SUMMARY:\n{summary}\n\nTOP RETRIEVED CHUNKS (highest relevance first):\n" + "\n\n".join(formatted)
@@ -595,6 +616,7 @@ REASON_HYBRID_SCAFFOLD = "hybrid-scaffold"
 REASON_NO_SOURCE_GROUNDING = "no-source-grounding"
 REASON_EDGE_SUPPRESSED = "edge-suppressed"
 REASON_DUPLICATE = "duplicate"
+REASON_SUITE_COPY = "copy-of-another-suite"
 REASON_UI_RULE_NOT_IN_DOCUMENTS = "ui-rule-not-in-documents"
 
 
@@ -1458,9 +1480,12 @@ def build_e2e_agent_prompt(
     #    retrieval also reused by build_business_test_prompt()'s fallback below.
     hld = context.get("summaries", {}).get("hld") or ""
     business_context = context.get("businessContext") or {}
-    rag_evidence = build_rag_evidence_block(rag_context, top_k)
-    api_edge_evidence = build_rag_evidence_block(api_rag_context, api_top_k)
-    business_evidence = build_rag_evidence_block(business_rag_context, business_top_k)
+    # The three blocks come from three retrievals over the same few chunks, so most
+    # passages recur; each is printed once and later blocks point back to it.
+    shown_evidence: dict = {}
+    rag_evidence = build_rag_evidence_block(rag_context, top_k, shown_evidence, "E2E/JOURNEY")
+    api_edge_evidence = build_rag_evidence_block(api_rag_context, api_top_k, shown_evidence, "API/STATE-MUTATION")
+    business_evidence = build_rag_evidence_block(business_rag_context, business_top_k, shown_evidence, "BUSINESS RULE")
     api_count = len(pruned_api_dictionary)
     
     if discovered_api_surface is None:
@@ -1532,6 +1557,7 @@ An edge case title that is a verbatim copy of an API test title makes the respon
 
 BUSINESS TEST RULES:
 Generate exactly one test per distinct business rule. The total must not exceed {max_business}.
+A business test's title must differ from the title of every e2e_tests and edge_cases item. Do not restate an end-to-end flow as a business test: a business test is one rule and the violation the system refuses. If the evidence states fewer distinct rules than the ceiling, write fewer business tests.
 A business rule test must verify a CONSTRAINT or PERMISSION BOUNDARY — something the system actively enforces.
 It answers: "What happens when a user violates a rule?"
 A test whose intent describes display behavior, optional UX flow, slot update rendering, timer animation,

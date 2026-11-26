@@ -28,6 +28,7 @@ from testgen.prompt_builder import (
     is_few_shot_leak,
     is_prompt_exemplar_copy,
     REASON_DUPLICATE,
+    REASON_SUITE_COPY,
     REASON_EDGE_SUPPRESSED,
     REASON_NO_SOURCE_GROUNDING,
     REASON_UI_RULE_NOT_IN_DOCUMENTS,
@@ -566,6 +567,30 @@ def _deduplicate_with_reasons(cases: list, category: str) -> tuple[list[dict], l
         out.append(case)
     out.sort(key=lambda c: PRIORITY_ORDER.get(str(c.get("priority") or "P2").upper(), 2))
     return out, rejected
+
+
+def _title_key(case: dict) -> str:
+    """A case's title as plain lowercase words, so that "Reset link expires." and
+    "reset link  expires" are the same title."""
+    return " ".join(re.findall(r"[a-z0-9]+", str((case or {}).get("title") or "").lower()))
+
+
+def _drop_title_copies(cases: list, elsewhere: list) -> tuple[list, list[tuple[dict, str]]]:
+    """Split `cases` into those kept and those whose title is already the title of a test in
+    another suite (`elsewhere`). _deduplicate() only compares within one suite, and the
+    identity hash includes the suite, so the same sentence could be kept as an E2E test, an
+    edge case and a business test. A real run on a 3B model wrote five business tests that
+    were word-for-word copies of its own E2E titles: 16 kept cases had 11 distinct titles,
+    and the copies used the business suite's slots, so the business tests written afterwards
+    were trimmed away."""
+    seen = {_title_key(case) for case in elsewhere if isinstance(case, dict)} - {""}
+    kept, dropped = [], []
+    for case in cases:
+        if isinstance(case, dict) and _title_key(case) in seen:
+            dropped.append((case, REASON_SUITE_COPY))
+        else:
+            kept.append(case)
+    return kept, dropped
 
 
 def _deduplicate(cases: list, category: str) -> list[dict]:
@@ -1504,6 +1529,9 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
     def _mark(name):
         _marks.append((name, time.perf_counter()))
 
+    # Ollama calls whose prompt plus reply outgrew the context window are noted on the LLM
+    # object (llm.LLM._note_context_overflow); this run reports the ones added during it.
+    overflow_start = len(getattr(llm, "context_overflows", []))
     feature_id = params["feature_id"]
     feature = store.get_feature(feature_id)
     if not feature:
@@ -1995,7 +2023,17 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         except Exception as exc:  # noqa: BLE001
             errors.append(f"E2E fallback failed: {exc}")
 
-    business_tests = _as_list(e2e_result.get("business_tests"))
+    # A test written in one suite under the title of a test in another is the same test
+    # twice (see _drop_title_copies). Drop the later suite's copy BEFORE the business
+    # fallback below counts what it has, so the fallback asks for the tests that are
+    # really missing.
+    suite_copies: list[tuple[dict, str]] = []
+    edge_cases_raw, dropped = _drop_title_copies(
+        _as_list(e2e_result.get("edge_cases")), [*api_tests, *e2e_tests])
+    suite_copies.extend(dropped)
+    business_tests, dropped = _drop_title_copies(
+        _as_list(e2e_result.get("business_tests")), [*api_tests, *e2e_tests, *edge_cases_raw])
+    suite_copies.extend(dropped)
     business_context = context.get("businessContext") or {}
     requirement_count = len(_as_list(business_context.get("requirements")))
     if isinstance(business_context.get("prd"), dict):
@@ -2025,7 +2063,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                         requirement_count, len(business_tests), acceptable_business_min,
                         {
                             "api": len(api_tests), "ui": len(ui_tests), "e2e": len(e2e_tests),
-                            "nfr": len(_as_list(e2e_result.get("edge_cases")))
+                            "nfr": len(edge_cases_raw)
                             if evidence_sufficient.get("edge") else 0,
                         },
                         focus, total, smoke_mode=bool(params.get("smoke_mode")),
@@ -2037,14 +2075,18 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
                 max_tokens=8000,
                 timeout_seconds=resolve_timeout(240),
             )
-            business_tests.extend(_as_list(fallback.get("business_tests")))
+            extra, dropped = _drop_title_copies(
+                _as_list(fallback.get("business_tests")),
+                [*api_tests, *e2e_tests, *edge_cases_raw, *business_tests])
+            suite_copies.extend(dropped)
+            business_tests.extend(extra)
         except Exception as exc:  # noqa: BLE001
             errors.append(f"Business fallback failed: {exc}")
 
     # #64: every case a filter below drops is recorded here as (case, reason), so the
     # run can report a generated/persisted/rejected summary instead of dropping cases
     # silently. Reasons are the fixed REASON_* vocabulary from prompt_builder.py.
-    filter_rejections: list[tuple[dict, str]] = []
+    filter_rejections: list[tuple[dict, str]] = list(suite_copies)
 
     def _dedup_tracked(cases, category):
         kept, rejected = _deduplicate_with_reasons(cases, category)
@@ -2055,7 +2097,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         "api_tests": _dedup_tracked(api_tests, "api_tests"),
         "ui_validations": ui_tests,
         "e2e_tests": _dedup_tracked(e2e_tests, "e2e_tests"),
-        "edge_cases": _dedup_tracked(_as_list(e2e_result.get("edge_cases")), "edge_cases"),
+        "edge_cases": _dedup_tracked(edge_cases_raw, "edge_cases"),
         "business_tests": _dedup_tracked(business_tests, "business_tests"),
     }
     log_progress(
@@ -2178,6 +2220,18 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
             80,
         )
 
+    context_overflows = list(getattr(llm, "context_overflows", [])[overflow_start:])
+    for item in context_overflows:
+        log_progress(
+            update_job_fn,
+            f"Context window exceeded: \"{item.get('task') or 'a model call'}\" used "
+            f"{item['prompt_tokens'] + item['reply_tokens']} tokens "
+            f"({item['prompt_tokens']} prompt + {item['reply_tokens']} reply) in a "
+            f"{item['context']}-token window, so the model lost part of its instructions "
+            "while writing. Raise OLLAMA_MAX_NUM_CTX or use a model with a longer context.",
+            80,
+        )
+
     log_progress(update_job_fn, "Persisting normalized and deduplicated test cases", 82)
     cases_new = cases_reused = steps_new = steps_reused = 0
     type_map = {
@@ -2218,6 +2272,7 @@ def generate_fresh_testcases_pipeline(store, llm, embedder, params, update_job_f
         "inherited_reused": inherited_reused,
         "inherited_rebuilt": inherited_rebuilt,
         "inherited_rejected": inherited_rejected,
+        "context_overflows": context_overflows,
         "discovered_api_count": len(api_surface),
         "rag_gap_count": len(gaps),
         "errors": errors,
