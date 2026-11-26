@@ -571,6 +571,21 @@
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   padding: 22px 14px;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(100, 116, 139, 0.65) transparent;
+}
+.sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.65);
 }
 .app.sidebar-collapsed .sidebar {
   padding: 22px 10px;
@@ -658,6 +673,83 @@
   color: #e2e8f0;
   border-color: rgba(255, 255, 255, 0.2);
   background: rgba(255, 255, 255, 0.06);
+}
+
+/* ============ SIDEBAR — grouped navigation and project context ============ */
+.sidebar-section-label {
+  padding: 0 10px 7px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.sidebar-project-context {
+  margin: 2px 0 18px;
+  padding: 11px 10px 12px;
+  border: 1px solid rgba(71, 85, 105, 0.6);
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.48);
+}
+.sidebar-project-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: #67e8f9;
+}
+.sidebar-project-picker svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+.sidebar-project-picker select {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #e2e8f0;
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+.sidebar-project-picker option {
+  color: #0f172a;
+}
+.sidebar-project-collapsed {
+  display: none;
+  width: 34px;
+  height: 34px;
+  margin: 0 auto;
+  border: 1px solid rgba(103, 232, 249, 0.3);
+  border-radius: 10px;
+  background: rgba(8, 145, 178, 0.18);
+  color: #a5f3fc;
+  font-size: 12px;
+  font-weight: 700;
+}
+.nav-section + .nav-section {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(51, 65, 85, 0.65);
+}
+.app.sidebar-collapsed .sidebar-section-label,
+.app.sidebar-collapsed .sidebar-project-picker {
+  display: none;
+}
+.app.sidebar-collapsed .sidebar-project-context {
+  margin: 2px 0 12px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.app.sidebar-collapsed .sidebar-project-collapsed {
+  display: block;
+}
+.app.sidebar-collapsed .nav-section + .nav-section {
+  margin-top: 10px;
+  padding-top: 10px;
 }
 
 /* All clickable buttons should show the pointer cursor (some custom button

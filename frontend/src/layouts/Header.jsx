@@ -53,6 +53,11 @@ export default function Header() {
         >
           Dashboard
         </h1>
+        <span
+          id="current-project-header"
+          className="mt-1 block truncate text-[14px] font-semibold leading-snug text-cyan-400/90"
+          hidden
+        />
       </div>
 
       {/* =====================================================

@@ -43,10 +43,16 @@ async function startApp() {
   if (nav.feature) currentFeature = nav.feature;
   if (await needsConfig()) {
     navigateTo("config");
+    try {
+      await loadProjects();
+    } catch (e) {}
     return;
   }
   const hashView = (location.hash || "").replace(/^#/, "");
   navigateTo(hashView || nav.view || "dashboard"); // restore last view, not always Dashboard
+  try {
+    await loadProjects();
+  } catch (e) {}
 }
 // If the user arrived via an invitation LINK (/invite?token=… or ?token=…), resolve
 // the token, steer them through login-in-context, then straight to accept/decline.

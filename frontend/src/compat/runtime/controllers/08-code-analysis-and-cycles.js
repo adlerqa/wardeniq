@@ -38,12 +38,6 @@ async function initCycles() {
   loadLatestAnalysis();
   _syncAnalyzeButtonState();
 }
-$("#cyc-proj").onchange = () => {
-  currentProject = $("#cyc-proj").value;
-  loadCycleRepos();
-  loadUnmappedPRs();
-  loadLatestAnalysis();
-};
 if ($("#cyc-refresh"))
   $("#cyc-refresh").onclick = () => {
     loadCycleRepos();
@@ -53,23 +47,16 @@ if ($("#cyc-refresh"))
 // ---- Test Cycles view (independent of change-impact analysis) ----
 async function initTestCycles() {
   await loadProjects();
-  if ($("#tcy-proj")) $("#tcy-proj").value = currentProject;
   loadCycles();
   loadCycleTemplates();
 }
-if ($("#tcy-proj"))
-  $("#tcy-proj").onchange = () => {
-    currentProject = $("#tcy-proj").value;
-    loadCycles();
-    loadCycleTemplates();
-  };
 if ($("#tcy-refresh"))
   $("#tcy-refresh").onclick = () => {
     loadCycles();
     loadCycleTemplates();
   };
 async function createEmptyCycle() {
-  const pid = ($("#tcy-proj") && $("#tcy-proj").value) || currentProject;
+  const pid = currentProject;
   if (!pid) {
     toast("Select a project first", true);
     return;
@@ -101,7 +88,7 @@ async function createEmptyCycle() {
 window.createEmptyCycle = createEmptyCycle;
 if ($("#tcy-new")) $("#tcy-new").onclick = createEmptyCycle;
 async function loadCycleRepos() {
-  const pid = $("#cyc-proj").value || currentProject;
+  const pid = currentProject;
   if (!pid) return;
   try {
     const r = await api(`/api/projects/${pid}/repos?repo_type=app`); // app repos only (test repos excluded)
@@ -114,7 +101,7 @@ async function loadCycleRepos() {
   } catch (e) {}
 }
 async function loadUnmappedPRs() {
-  const pid = $("#cyc-proj").value || currentProject;
+  const pid = currentProject;
   if (!pid || !$("#unmapped-prs")) return;
   try {
     const [u, f] = await Promise.all([
@@ -192,7 +179,7 @@ $("#cyc-analyze").onclick = async () => {
     return;
   }
   const days = parseInt($("#cyc-days").value) || 14;
-  const pid = $("#cyc-proj").value || currentProject;
+  const pid = currentProject;
   const branches = collectBranches("cyc-repo");
   $("#cyc-impacted").innerHTML = "";
   $("#cyc-create").style.display = "none";
@@ -423,7 +410,7 @@ function clearImpacted(msg) {
   if ($("#cyc-create")) $("#cyc-create").style.display = "none";
 }
 async function loadLatestAnalysis() {
-  const pid = $("#cyc-proj").value || currentProject;
+  const pid = currentProject;
   if (!pid || !$("#cyc-impacted")) return;
   clearImpacted(""); // reset so a project with no saved analysis doesn't show the previous one
   try {
@@ -466,7 +453,7 @@ async function createCycleFromSelection() {
     toast("Enter a cycle name", true);
     return;
   }
-  const pid = $("#cyc-proj").value || currentProject;
+  const pid = currentProject;
   const repoIds = [...document.querySelectorAll(".cyc-repo-chk")]
     .filter((c) => c.checked)
     .map((c) => c.value);
@@ -496,7 +483,7 @@ async function createCycleFromSelection() {
 window.createCycleFromSelection = createCycleFromSelection;
 if ($("#cyc-make")) $("#cyc-make").onclick = createCycleFromSelection;
 async function loadCycleTemplates() {
-  const pid = ($("#tcy-proj") && $("#tcy-proj").value) || currentProject;
+  const pid = currentProject;
   if (!pid || !$("#cyc-templates")) return;
   try {
     const r = await api(`/api/projects/${pid}/cycle-templates`);
@@ -582,7 +569,7 @@ window.deleteCycleTemplate = async (tid) => {
   }
 };
 async function loadCycles() {
-  const pid = ($("#tcy-proj") && $("#tcy-proj").value) || currentProject;
+  const pid = currentProject;
   if (!pid) return;
   skIn("#cyc-list", skeleton.rows(5, "Loading test cycles"));
   try {
