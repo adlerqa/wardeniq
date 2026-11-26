@@ -7,7 +7,7 @@ import ValidatorResults from "./ValidatorResults.jsx";
 /**
  * MCQ Validator workspace card. Stays mounted (hidden when no feature is open)
  * and keeps the Generate and Retake buttons mounted, because the compat viewer
- * read-only pass (enforceViewerReadOnly in 10-auth.js) marks buttons in the
+ * read-only pass (enforceViewerReadOnly, features/auth/lib/identity.js) marks buttons in the
  * visible view by adding a class to them when the screen opens.
  */
 export default function ValidatorWorkspace({ state, generate, retake, ...answering }) {

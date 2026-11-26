@@ -2,12 +2,11 @@ import { useEffect, useRef, useState } from "react";
 
 import chunk00 from "./controllers/00-core.js?raw";
 import chunk03 from "./controllers/03-features-and-usage.js?raw";
-import chunk10 from "./controllers/10-auth.js?raw";
 import chunk13 from "./controllers/13-gap-analysis.js?raw";
 import chunk16 from "./controllers/16-boot.js?raw";
 
 const runtimeChunks = [
-  chunk00, chunk03, chunk10,
+  chunk00, chunk03,
   chunk13, chunk16,
 ];
 

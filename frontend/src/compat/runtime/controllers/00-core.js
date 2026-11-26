@@ -828,6 +828,9 @@ function getCurrentUser() {
 function setCurrentUser(u) {
   ME = u;
 }
+function getCurrentViewName() {
+  return currentViewName;
+}
 
 // ---- nav ----
 function navigateTo(v) {

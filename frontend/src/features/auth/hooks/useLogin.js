@@ -24,7 +24,7 @@ const callWindow = (name, ...args) => (typeof window[name] === "function" ? wind
  * hands off to the compat runtime: applyRole, maybeShowInvite, startApp.
  *
  * The overlay's `hidden` attribute is set directly (not as React state) because
- * the compat runtime still hides it on boot (10-auth.js checkAuth). The inputs
+ * checkAuth (useIdentity.js) hides it on boot from outside this hook. The inputs
  * are uncontrolled for the same reason: the invite-link boot prefills the email.
  */
 export function useLogin() {

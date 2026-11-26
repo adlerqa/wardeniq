@@ -7,7 +7,7 @@ const BAR_WIDTH = { 20: "w-[20%]", 30: "w-[30%]", 60: "w-[60%]" };
 /**
  * Test Plan workspace card. Stays mounted (hidden when no feature is open) and
  * keeps the Generate button mounted, because the compat viewer read-only pass
- * (enforceViewerReadOnly in 10-auth.js) marks buttons in the visible view by
+ * (enforceViewerReadOnly, features/auth/lib/identity.js) marks buttons in the visible view by
  * adding a class to them when the screen opens.
  */
 export default function TestPlanWorkspace({ state, onGenerate }) {

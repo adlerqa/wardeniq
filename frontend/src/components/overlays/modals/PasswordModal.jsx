@@ -1,4 +1,7 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { api } from "../../../lib/api.js";
+import { setCurrentUser, toast } from "../../../lib/compatBridge.js";
+import { passwordProblem } from "../../../features/auth/lib/identity.js";
 
 function EyeIcon({ visible }) {
   return visible ? (
@@ -38,7 +41,7 @@ function EyeIcon({ visible }) {
   );
 }
 
-function PasswordField({ id, label, autoComplete, placeholder = "••••••••" }) {
+function PasswordField({ id, label, autoComplete, placeholder = "••••••••", value, onChange, onKeyDown, inputRef }) {
   const [showPassword, setShowPassword] = useState(false);
 
   return (
@@ -53,6 +56,10 @@ function PasswordField({ id, label, autoComplete, placeholder = "•••••
       <div className="relative mt-2">
         <input
           id={id}
+          ref={inputRef}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onKeyDown}
           type={showPassword ? "text" : "password"}
           autoComplete={autoComplete}
           placeholder={placeholder}
@@ -114,11 +121,100 @@ function PasswordField({ id, label, autoComplete, placeholder = "•••••
   );
 }
 
-/** Shared password modal overlay. */
+const EMPTY = { current: "", next: "", confirm: "" };
+
+/**
+ * Change-password dialog for the local admin account (was 10-auth.js
+ * openChangePasswordModal). Registers window.openChangePasswordModal(mandatory),
+ * which resolves true once a new password is saved and false when cancelled.
+ * Mandatory mode (first sign-in on the shipped admin123 password, 16-boot.js
+ * startApp) hides Cancel / × and only resolves after a save.
+ */
 export default function PasswordModal() {
+  const [open, setOpen] = useState(false);
+  const [mandatory, setMandatory] = useState(false);
+  const [copy, setCopy] = useState({
+    title: "Change password",
+    intro: "Update the password used for your local administrator account.",
+  });
+  const [vals, setVals] = useState(EMPTY);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const resolver = useRef(null);
+  const currentRef = useRef(null);
+  const valsRef = useRef(vals);
+  valsRef.current = vals;
+
+  useEffect(() => {
+    const fn = (isMandatory) =>
+      new Promise((resolve) => {
+        resolver.current = resolve;
+        setVals(EMPTY);
+        setErr("");
+        setMandatory(!!isMandatory);
+        setCopy(
+          isMandatory
+            ? {
+                title: "Set a new password",
+                intro:
+                  "You're signed in with the default admin123 password. For security, set a new one before continuing.",
+              }
+            : { title: "Change password", intro: "Update the local admin password." },
+        );
+        setOpen(true);
+        setTimeout(() => currentRef.current?.focus(), 50);
+      });
+    window.openChangePasswordModal = fn;
+    return () => {
+      if (window.openChangePasswordModal === fn) delete window.openChangePasswordModal;
+    };
+  }, []);
+
+  const done = (ok) => {
+    setOpen(false);
+    const resolve = resolver.current;
+    resolver.current = null;
+    if (resolve) resolve(ok);
+  };
+  const cancel = () => {
+    if (!mandatory) done(false);
+  };
+  const save = async () => {
+    if (busy) return;
+    const { current, next, confirm } = valsRef.current;
+    setErr("");
+    const problem = passwordProblem(current, next, confirm);
+    if (problem) {
+      setErr(problem);
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api("/api/auth/change-password", {
+        method: "POST",
+        json: { current_password: current, new_password: next },
+      });
+      if (r && r.user) setCurrentUser(r.user);
+      toast("Password changed.");
+      done(true);
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const field = (k) => ({
+    value: vals[k],
+    onChange: (v) => setVals((x) => ({ ...x, [k]: v })),
+    onKeyDown: (e) => {
+      if (e.key === "Enter") save();
+    },
+  });
+  const hideWhenMandatory = { display: mandatory ? "none" : "" };
+
   return (
     <div
-      className="
+      className={`${open ? "show " : ""}
         modal
         fixed
         inset-0
@@ -129,7 +225,7 @@ export default function PasswordModal() {
         bg-black/70
         p-4
         backdrop-blur-[2px]
-      "
+      `}
       id="pwd-modal"
       role="dialog"
       aria-modal="true"
@@ -185,14 +281,14 @@ export default function PasswordModal() {
                 id="pwd-title"
                 className="m-0 text-[16px] font-semibold tracking-[-0.01em] text-slate-100"
               >
-                Change password
+                {copy.title}
               </h2>
 
               <p
                 className="muted mt-1 text-[12.5px] leading-5 text-slate-500"
                 id="pwd-intro"
               >
-                Update the password used for your local administrator account.
+                {copy.intro}
               </p>
             </div>
           </div>
@@ -214,6 +310,8 @@ export default function PasswordModal() {
             "
             id="pwd-x"
             title="Close"
+            style={hideWhenMandatory}
+            onClick={cancel}
             aria-label="Close change password dialog"
           >
             <svg
@@ -236,18 +334,22 @@ export default function PasswordModal() {
             id="pwd-current"
             label="Current password"
             autoComplete="current-password"
+            inputRef={currentRef}
+            {...field("current")}
           />
 
           <PasswordField
             id="pwd-new"
             label="New password"
             autoComplete="new-password"
+            {...field("next")}
           />
 
           <PasswordField
             id="pwd-confirm"
             label="Confirm new password"
             autoComplete="new-password"
+            {...field("confirm")}
           />
 
           {/* Requirement */}
@@ -288,7 +390,9 @@ export default function PasswordModal() {
               empty:hidden
             "
             role="alert"
-          />
+          >
+            {err}
+          </div>
         </div>
 
         {/* Footer */}
@@ -313,6 +417,8 @@ export default function PasswordModal() {
               hover:!text-white
             "
             id="pwd-cancel"
+            style={hideWhenMandatory}
+            onClick={cancel}
           >
             Cancel
           </button>
@@ -339,6 +445,9 @@ export default function PasswordModal() {
               disabled:opacity-50
             "
             id="pwd-save"
+            disabled={busy}
+            aria-busy={busy ? "true" : undefined}
+            onClick={save}
           >
             Save password
           </button>

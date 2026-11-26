@@ -1,5 +1,7 @@
 import { api } from "../lib/api.js";
-import { showLogin } from "../lib/compatBridge.js";
+import { openChangePasswordModal, showLogin } from "../lib/compatBridge.js";
+import { useIdentity } from "../features/auth/hooks/useIdentity.js";
+import { canChangePassword } from "../features/auth/lib/identity.js";
 
 /** Sign out, then show the sign-in screen even if the request fails (was 10-auth.js). */
 async function signOut() {
@@ -12,6 +14,9 @@ async function signOut() {
 }
 
 export default function Header() {
+  // The signed-in user as of the last applyRole() (null until then).
+  const user = useIdentity();
+  const role = (user && user.role) || "viewer";
   return (
     <header
       className="
@@ -188,6 +193,7 @@ export default function Header() {
           <div className="flex min-w-0 flex-col items-start gap-1">
             <span
               id="user-email"
+              title={user ? user.email : undefined}
               className="
                 user-email
                 block
@@ -199,17 +205,26 @@ export default function Header() {
                 leading-[18px]
                 text-slate-200
               "
-            />
+            >
+              {user ? user.email : null}
+            </span>
 
+            {/* applyRole replaces the badge classes with "rolebadge <role>", as before. */}
             <span
               id="user-role"
-              className="
+              className={
+                user
+                  ? `rolebadge ${role}`
+                  : `
                 rolebadge
                 viewer
                 w-fit
                 text-[10px]
-              "
-            />
+              `
+              }
+            >
+              {user ? role : null}
+            </span>
           </div>
         </div>
 
@@ -240,7 +255,8 @@ export default function Header() {
           "
           id="change-pw-btn"
           title="Change your local admin password"
-          hidden
+          hidden={!canChangePassword(user)}
+          onClick={() => openChangePasswordModal(false)}
         >
           <svg
             viewBox="0 0 24 24"

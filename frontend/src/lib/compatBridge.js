@@ -1,7 +1,7 @@
 /**
  * Thin bridge from React code to the shared UI helpers that still live in the
- * compatibility runtime (src/compat/runtime/controllers/00-core.js and
- * 10-auth.js).
+ * compatibility runtime (src/compat/runtime/controllers/00-core.js) or that
+ * React screens register on window.
  *
  * The runtime is injected as one classic <script>, so its top-level function
  * declarations (toast, uiConfirm, uiModalHTML, showLogin, refreshMe) are
@@ -51,13 +51,25 @@ export function showLogin(options) {
   if (fn) return fn(options);
 }
 
+/** The view on screen (00-core.js `currentViewName`), e.g. "dashboard". */
+export function currentViewName() {
+  const fn = compatFn("getCurrentViewName");
+  return fn ? fn() : "dashboard";
+}
+
+/** Opens the change-password dialog; resolves true once saved (React PasswordModal). */
+export function openChangePasswordModal(mandatory) {
+  const fn = compatFn("openChangePasswordModal");
+  return fn ? fn(mandatory) : Promise.resolve(false);
+}
+
 /** Sets the signed-in user known to the compat runtime (00-core.js `ME`). */
 export function setCurrentUser(user) {
   const fn = compatFn("setCurrentUser");
   if (fn) fn(user);
 }
 
-/** Re-reads the signed-in user, e.g. after a 403 (10-auth.js). */
+/** Re-reads the signed-in user, e.g. after a 403 (React, features/auth/hooks/useIdentity.js). */
 export function refreshMe() {
   const fn = compatFn("refreshMe");
   if (fn) return fn();

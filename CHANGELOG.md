@@ -161,8 +161,12 @@
 - **Sign-in screen rebuilt in React (part of #257).** Password sign-in, the one-time
   email code (including the 6-box code entry and paste), forgot / reset password with
   and without SMTP, the startup diagnostics banner and Sign out are now React, with the
-  same markup and behaviour. The identity half of `10-auth.js` (role, viewer read-only
-  mode, change password, invitations) is unchanged for now.
+  same markup and behaviour.
+- **Identity rebuilt in React (part of #257).** The header user menu, role handling (admin
+  menu entries, viewer read-only mode and its tooltips), the live identity refresh, the
+  change-password dialog and the pending-invitation gate are now React, with the same
+  markup and behaviour. The compat controller `10-auth.js` is removed. Pressing Enter
+  repeatedly in the change-password dialog no longer sends the request twice.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access
