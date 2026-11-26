@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../../lib/api.js";
 
 /**
- * Dashboard data. navigateTo("dashboard") in 00-core.js calls
+ * Dashboard data. navigateTo("dashboard") in app/navigation.js calls
  * window.loadDashboard(); this hook registers it while mounted.
  */
 export default function useDashboard() {

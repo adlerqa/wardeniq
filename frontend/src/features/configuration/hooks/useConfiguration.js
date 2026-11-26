@@ -4,7 +4,7 @@ import { api } from "../../../lib/api.js";
 
 /**
  * Configuration screen data (was loadConfig / loadDbStatus in
- * 06-configuration.js). navigateTo("config") in 00-core.js calls
+ * 06-configuration.js). navigateTo("config") in app/navigation.js calls
  * window.loadConfig(), registered while mounted; nothing loads on mount.
  *
  * `version` goes up on every successful settings load. Cards re-read their

@@ -21,7 +21,7 @@ const err = (text) => ({ text, error: true });
 /**
  * State and actions for the Test Plan screen, ported from the compat
  * 14-test-plan.js (initTestPlan, the Generate handler, watchTestPlanStream).
- * The screen opens through navigateTo("testplan") in 00-core.js, which calls
+ * The screen opens through navigateTo("testplan") in app/navigation.js, which calls
  * window.initTestPlan(); this hook registers it while mounted.
  *
  * One deliberate difference: re-opening the screen closes the previous

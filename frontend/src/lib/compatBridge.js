@@ -1,7 +1,7 @@
 /**
  * Thin bridge from React code to the shared UI helpers that still live in the
- * compatibility runtime (src/compat/runtime/controllers/00-core.js) or that
- * React screens register on window.
+ * compatibility runtime or that React modules register on window (app/,
+ * layouts/, components/overlays, features/).
  *
  * The runtime is injected as one classic <script>, so its top-level function
  * declarations (toast, uiConfirm, uiModalHTML, showLogin, refreshMe) are
@@ -51,7 +51,7 @@ export function showLogin(options) {
   if (fn) return fn(options);
 }
 
-/** The view on screen (00-core.js `currentViewName`), e.g. "dashboard". */
+/** The view on screen (app/navState.js), e.g. "dashboard". */
 export function currentViewName() {
   const fn = compatFn("getCurrentViewName");
   return fn ? fn() : "dashboard";
@@ -63,7 +63,7 @@ export function openChangePasswordModal(mandatory) {
   return fn ? fn(mandatory) : Promise.resolve(false);
 }
 
-/** Sets the signed-in user known to the compat runtime (00-core.js `ME`). */
+/** Sets the signed-in user known to the compat runtime (app/navState.js). */
 export function setCurrentUser(user) {
   const fn = compatFn("setCurrentUser");
   if (fn) fn(user);
@@ -75,7 +75,7 @@ export function refreshMe() {
   if (fn) return fn();
 }
 
-/** Id of the feature open in the compat runtime (00-core.js `currentFeature`), or null. */
+/** Id of the open feature (app/navState.js), or null. */
 export function currentFeatureId() {
   const fn = compatFn("getCurrentFeatureId");
   return fn ? fn() || null : null;
@@ -160,7 +160,7 @@ export function requestDeleteCase(caseId) {
 }
 
 
-/** Id of the project selected in the compat runtime (00-core.js `currentProject`), or null. */
+/** Id of the selected project (app/navState.js), or null. */
 export function currentProjectId() {
   const fn = compatFn("getCurrentProject");
   return fn ? fn() || null : null;
@@ -221,7 +221,7 @@ export function formatBootStatus(boot) {
   return fn ? fn(boot) : { visible: false, kind: "ok", summary: "", raw: "" };
 }
 
-/** Select a project in the compat runtime (00-core.js `currentProject`). */
+/** Select a project (app/navState.js). */
 export function setCurrentProject(projectId) {
   const fn = compatFn("setCurrentProject");
   if (fn) fn(projectId);
@@ -251,7 +251,7 @@ export function openProjectFeatures(projectId) {
   if (fn) return fn(projectId);
 }
 
-/** The project's feature list, from project settings (00-core.js goToProjectFeatures). */
+/** The project's feature list, from project settings (app/navigation.js). */
 export function goToProjectFeatures() {
   const fn = compatFn("goToProjectFeatures");
   if (fn) return fn();
@@ -263,7 +263,7 @@ export function syncFeatureProjects(projects, currentId) {
   if (fn) return fn(projects, currentId);
 }
 
-/** Redraw the backbar / breadcrumbs (00-core.js updateBackbar). */
+/** Redraw the backbar / breadcrumbs (app/navigation.js). */
 export function updateBackbar() {
   const fn = compatFn("updateBackbar");
   if (fn) return fn();
@@ -275,19 +275,19 @@ export function refreshStatus() {
   if (fn) return fn();
 }
 
-/** Open Code Analysis on a repo of a project (00-core.js gotoAnalyze). */
+/** Open Code Analysis on a repo of a project (app/navigation.js). */
 export function gotoAnalyze(repoId, projectId) {
   const fn = compatFn("gotoAnalyze");
   if (fn) return fn(repoId, projectId);
 }
 
-/** Select a feature in the compat runtime (00-core.js `currentFeature`); null clears it. */
+/** Select a feature (app/navState.js); null clears it. */
 export function setCurrentFeature(featureId) {
   const fn = compatFn("setCurrentFeature");
   if (fn) fn(featureId);
 }
 
-/** The Projects screen, reloaded (00-core.js goToProjects). */
+/** The Projects screen, reloaded (app/navigation.js). */
 export function goToProjects() {
   const fn = compatFn("goToProjects");
   if (fn) return fn();
@@ -305,7 +305,7 @@ export function openNewCase(featureId) {
   if (fn) return fn(featureId);
 }
 
-/** Keep the runtime's open-feature data in step (00-core.js currentFeatureData / currentFeatureCases). */
+/** Keep the open feature's data in step (app/navState.js). */
 export function setCurrentFeatureData(feature) {
   const fn = compatFn("setCurrentFeatureData");
   if (fn) fn(feature);
@@ -329,7 +329,7 @@ export function brandLoaderHtml(variant, options) {
   return fn ? fn(variant, options) : "";
 }
 
-/** Switch the main view (00-core.js navigateTo). */
+/** Switch the main view (app/navigation.js). */
 export function navigateTo(view) {
   const fn = compatFn("navigateTo");
   if (fn) return fn(view);

@@ -28,7 +28,7 @@ const reloadCycles = () => (typeof window.loadCycles === "function" ? window.loa
  * Code Analysis (change impact) screen (was the code analysis half of
  * 08-code-analysis-and-cycles.js). Registered while mounted; nothing loads on
  * mount:
- *   window.initCycles()                — navigateTo("cycles") in 00-core.js
+ *   window.initCycles()                — navigateTo("cycles") in app/navigation.js
  *   window.openCodeAnalysisFor(pid, rid) — "Analyze" on a Projects repo card (02 gotoAnalyze)
  *
  * status:   null | { kind: "text" | "muted" | "error" | "running" | "failed" | "done", ... }

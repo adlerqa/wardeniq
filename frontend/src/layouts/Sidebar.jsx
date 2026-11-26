@@ -1,6 +1,22 @@
+import { useState } from "react";
 import BrandMark from "../components/brand/BrandMark.jsx";
+import { navigateTo } from "../lib/compatBridge.js";
 
+/**
+ * Sidebar: navigation entries (navigateTo on click; the active entry is set by
+ * app/navigation.js) and the collapse toggle (was 00-core.js).
+ */
 export default function Sidebar() {
+  const [collapsed, setCollapsed] = useState(false);
+  const toggle = () => {
+    const shell = document.getElementById("app-shell");
+    const now = shell ? shell.classList.toggle("sidebar-collapsed") : !collapsed;
+    setCollapsed(now);
+  };
+  const go = (e) => {
+    const b = e.target.closest("button[data-view]");
+    if (b) navigateTo(b.dataset.view);
+  };
   return (
     <aside className="sidebar">
       <div className="logo-row">
@@ -14,10 +30,17 @@ export default function Sidebar() {
             <span className="logo-subtitle">Engineering Intelligence</span>
           </div>
         </div>
-        <button className="sidebar-toggle" id="sidebar-toggle" title="Collapse sidebar">‹</button>
+        <button
+          className="sidebar-toggle"
+          id="sidebar-toggle"
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          onClick={toggle}
+        >
+          {collapsed ? "›" : "‹"}
+        </button>
       </div>
       <div className="muted brand-subtitle" style={{ fontSize: "10.5px", padding: "0 10px 10px" }}>Test Intelligence Platform</div>
-      <nav>
+      <nav onClick={go}>
         <button data-view="dashboard" title="Dashboard" className="active">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>

@@ -18,7 +18,7 @@ import { deletedText, pickCurrent, statsText } from "../lib/projects.js";
 /**
  * Projects screen: project cards, the detail header, rename / delete and the
  * page switch (list / create / detail). Registered while mounted (called by
- * 00-core.js and other screens; nothing loads on mount):
+ * navigation and other screens; nothing loads on mount):
  *   window.loadProjects()            — reload; keeps window.allProjects and the runtime project in step
  *   window.showProjectList()         — back to the cards
  *   window.showProjectCreate()       — the create wizard (empty-state button)
@@ -46,7 +46,7 @@ export default function useProjects(settings) {
     setPageState(p);
   }, []);
 
-  // The backbar / breadcrumbs (00-core.js) read #project-detail-page.hidden, so
+  // The backbar / breadcrumbs (app/navigation.js) read #project-detail-page.hidden, so
   // they are redrawn once the page switch is on screen.
   const [pageTick, setPageTick] = useState(0);
   useEffect(() => {

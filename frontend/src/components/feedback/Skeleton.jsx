@@ -1,6 +1,6 @@
 /**
  * Shimmer placeholders (React port of the compat `skeleton` helpers in
- * 00-core.js / styles/compat/06-feedback-and-loaders.css).
+ * lib/skeleton.js / styles/compat/06-feedback-and-loaders.css).
  */
 const BASE =
   "relative overflow-hidden rounded-md bg-[#151d29] bg-[linear-gradient(90deg,rgba(255,255,255,0.02)_0%,rgba(255,255,255,0.07)_45%,rgba(255,255,255,0.02)_90%)] bg-[length:320px_100%] bg-no-repeat animate-shimmer";

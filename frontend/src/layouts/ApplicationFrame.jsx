@@ -1,6 +1,8 @@
 import Sidebar from "./Sidebar.jsx";
 import Header from "./Header.jsx";
 import { useServiceStatus } from "./useServiceStatus.js";
+import Backbar from "./Backbar.jsx";
+import { useNavigation } from "../app/useNavigation.js";
 import DashboardPage from "../features/dashboard/pages/DashboardPage.jsx";
 import ProjectsPage from "../features/projects/pages/ProjectsPage.jsx";
 import FeaturesPage from "../features/features/pages/FeaturesPage.jsx";
@@ -18,6 +20,7 @@ import GapAnalysisPage from "../features/gap-analysis/pages/GapAnalysisPage.jsx"
 
 export default function ApplicationFrame() {
   const { status, banner } = useServiceStatus();
+  const backbar = useNavigation();
   return (
     <div className="app min-h-screen" id="app-shell">
       <Sidebar />
@@ -57,11 +60,7 @@ export default function ApplicationFrame() {
           mode. Your Viewer role can browse everything but can&apos;t create, edit, or delete. Ask an admin for Editor access to make changes.
         </span>
       </div>
-      <div className="backbar" id="backbar">
-        <button className="ghost" id="backbar-btn">Back</button>
-        <div className="divider"></div>
-        <span className="crumb" id="backbar-label"></span>
-      </div>
+      <Backbar model={backbar} />
         <DashboardPage />
         <ProjectsPage />
         <FeaturesPage />

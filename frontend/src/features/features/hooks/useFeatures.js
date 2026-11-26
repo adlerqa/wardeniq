@@ -20,8 +20,8 @@ import { escapeHtml } from "../../../lib/html.js";
  * Features screen: the page switch (list / create / workspace), the feature
  * cards and their menu, and the title from the project list. Registered while
  * mounted (nothing loads on mount):
- *   window.loadFeatures()                  — 00-core.js, 07, imports, test cycles
- *   window.showFeatureList()               — back to the cards (00-core.js, 07)
+ *   window.loadFeatures()                  — navigation, imports, test cycles
+ *   window.showFeatureList()               — back to the cards (navigation, back bar)
  *   window.syncFeatureProjects(list, cur)  — after each project-list load (Projects screen)
  *   window.openProjectFeatures(pid)        — a project's feature list (Projects screen)
  * window.showFeatureCreate is registered by useFeatureCreate.
@@ -38,7 +38,7 @@ export default function useFeatures() {
   const [pageTick, setPageTick] = useState(0);
   const seq = useRef(0);
 
-  // The backbar (00-core.js) reads #feature-create-page.hidden, so it is
+  // The backbar (app/navigation.js) reads #feature-create-page.hidden, so it is
   // redrawn once a page switch is on screen.
   useEffect(() => {
     if (pageTick) updateBackbar();

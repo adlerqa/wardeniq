@@ -121,7 +121,7 @@ export function auditTime(ts) {
 
 /**
  * Body of the "Project access" dialog (shared uiModalHTML). The ma-* names and
- * ids are wired by uiModalHTML in 00-core.js (scope toggle, search) and read
+ * ids are wired by the React HtmlModal (uiModalHTML) (scope toggle, search) and read
  * back by readAccessDialog(), so they must not change.
  */
 export function accessDialogHtml(u, projects) {

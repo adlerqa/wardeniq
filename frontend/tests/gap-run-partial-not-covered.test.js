@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 
+// Use the app's real escaper rather than an approximation.
+import { escapeHtml } from "../src/lib/html.js";
+
 // issue #291: the Gap Analysis PR-run screens counted a "partial" match (the PR touches
 // relevant code but the implementation was not confirmed) as covered. This runs the real
 // 13-gap-analysis.js controller (same sandbox style as feature-upload-file-remove.test.js)
@@ -12,12 +15,6 @@ import vm from "node:vm";
 const controllers = (name) =>
   readFileSync(new URL(`../src/compat/runtime/controllers/${name}`, import.meta.url), "utf8");
 
-// Use the app's real escaper rather than an approximation.
-const coreSource = controllers("00-core.js");
-const escSource = coreSource.slice(
-  coreSource.indexOf("const esc = (s) =>"),
-  coreSource.indexOf("// Turn raw backend / httpx error strings"),
-);
 const source = controllers("13-gap-analysis.js");
 
 function harness(api) {
@@ -37,10 +34,9 @@ function harness(api) {
     api, skIn: (sel, html) => { $(sel).innerHTML = html; },
     skeleton: { rows: () => "", block: () => "" },
     currentFeature: "f1", currentProject: "p1", toast() {}, uiPrompt: async () => null,
-    prioBadge: () => "", stepsHtml: () => "",
+    prioBadge: () => "", stepsHtml: () => "", esc: escapeHtml,
     setTimeout: () => 0, clearTimeout() {}, setInterval: () => 0, clearInterval() {}, console,
   });
-  vm.runInContext(escSource, context);
   vm.runInContext(source, context);
   return { $, context, win };
 }

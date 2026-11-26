@@ -13,7 +13,7 @@ import useAnalysisRepos from "./useAnalysisRepos.js";
 
 /**
  * Mind Map controls and coverage list (was the first half of
- * 09-mind-map-and-jobs.js). navigateTo("mindmap") in 00-core.js calls
+ * 09-mind-map-and-jobs.js). navigateTo("mindmap") in app/navigation.js calls
  * window.initMindmap(), registered while mounted; nothing loads on mount.
  * `graphData` is the last /mindmap response that loaded, drawn by the
  * coverage graph (kept when a later load fails, as before).

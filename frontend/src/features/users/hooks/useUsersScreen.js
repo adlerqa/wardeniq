@@ -35,7 +35,7 @@ const INVITE = {
 /**
  * State and actions for the Users screen panels (invite form, users list,
  * audit log), ported from the compat 11-users.js. navigateTo("users") in
- * 00-core.js calls loadProjectPicker(), loadUsers() and loadAudit(); this hook
+ * app/navigation.js calls loadProjectPicker(), loadUsers() and loadAudit(); this hook
  * registers those on window while mounted. Nothing loads on mount: the screen
  * is mounted (hidden) for every role and these APIs are admin-only.
  */

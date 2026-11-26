@@ -24,7 +24,7 @@ const CLOSED_MODAL = {
 
 /**
  * State and actions for the Step Library: list, filters, detail pane and the
- * create / edit dialog. navigateTo("steps") in 00-core.js and the test-case
+ * create / edit dialog. navigateTo("steps") in app/navigation.js and the test-case
  * editor (04-test-cases.js) call window.loadSteps(); this hook registers it
  * while mounted.
  */

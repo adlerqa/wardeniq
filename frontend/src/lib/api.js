@@ -1,7 +1,6 @@
 /**
- * React-side API helper. A port of `api()` and `cleanErr()` from
- * src/compat/runtime/controllers/00-core.js with the same behaviour, so screens
- * moved to React handle responses exactly like the compatibility runtime:
+ * API helper (the former compat `api()` / `cleanErr()`, same behaviour); also
+ * registered on window as `api` for the Gap Analysis compat controller:
  *
  *   - parses the JSON body (a non-JSON body becomes the error detail);
  *   - network failure: "Can't reach the server" toast, then throws;

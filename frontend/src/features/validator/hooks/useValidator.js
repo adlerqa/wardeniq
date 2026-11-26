@@ -42,7 +42,7 @@ const err = (text) => ({ text, error: true });
 /**
  * State and actions for the MCQ Validator screen, ported from the compat
  * 12-validator.js (initValidator, runValidator, watchValidatorJob, answer
- * handlers, submit, retake). navigateTo("validator") in 00-core.js calls
+ * handlers, submit, retake). navigateTo("validator") in app/navigation.js calls
  * window.initValidator(); this hook registers it while mounted.
  *
  * One deliberate difference: opening the screen again stops following the

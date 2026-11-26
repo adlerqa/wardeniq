@@ -24,7 +24,7 @@ const callWindow = (name, ...args) => (typeof window[name] === "function" ? wind
  * The feature workspace (was openFeature and the workspace half of
  * 03-features-and-usage.js, plus the workspace buttons in 07). `fs` is
  * useFeatures(): it owns the page switch. Registered while mounted:
- *   window.openFeature(fid)              — cards, versions, saves, 00-core.js navigateTo
+ *   window.openFeature(fid)              — cards, versions, saves, app/navigation.js navigateTo
  *   window.watchFeatureGen(jobId, fid)   — the generation banner (new-version dialog)
  *   window.viewCase(cid)                 — open a case's detail (Step Library "Open")
  *   window.loadCoverage(fid)             — refresh the coverage card (13 gap analysis)

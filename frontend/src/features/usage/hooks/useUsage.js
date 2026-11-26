@@ -5,7 +5,7 @@ import { keepValue, modelRows, projectOptions } from "../lib/usage.js";
 
 /**
  * LLM Usage & Cost (was loadUsage in 03-features-and-usage.js).
- * navigateTo("usage") in 00-core.js calls window.loadUsage(), registered while
+ * navigateTo("usage") in app/navigation.js calls window.loadUsage(), registered while
  * mounted; nothing loads on mount. A failed reload shows the error in place of
  * the KPI cards and keeps the tables from the last load, as before.
  */

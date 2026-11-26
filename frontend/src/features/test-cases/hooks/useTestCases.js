@@ -16,7 +16,7 @@ import {
  *
  * The compat runtime still drives this screen from outside, so while mounted
  * the hook registers:
- *   window.initCases()            — navigateTo("cases") in 00-core.js
+ *   window.initCases()            — navigateTo("cases") in app/navigation.js
  *   window.loadCases()            — after a case is saved / deleted (04, 07, 03)
  *   window.fillFeatFilter()       — kept for callers of the old name
  *   window.openTestCasesFor(f, p) — "Test cases" link in the feature workspace (03)

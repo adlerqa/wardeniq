@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
-import chunk00 from "./controllers/00-core.js?raw";
 import chunk13 from "./controllers/13-gap-analysis.js?raw";
 
 const runtimeChunks = [
-  chunk00,
   chunk13,
 ];
 

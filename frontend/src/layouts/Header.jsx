@@ -3,6 +3,7 @@ import { openChangePasswordModal, showLogin } from "../lib/compatBridge.js";
 import { useIdentity } from "../features/auth/hooks/useIdentity.js";
 import { canChangePassword } from "../features/auth/lib/identity.js";
 import ServiceChips from "./ServiceChips.jsx";
+import { useViewTitle } from "../app/useNavigation.js";
 
 /** Sign out, then show the sign-in screen even if the request fails (was 10-auth.js). */
 async function signOut() {
@@ -17,6 +18,7 @@ async function signOut() {
 export default function Header({ status }) {
   // The signed-in user as of the last applyRole() (null until then).
   const user = useIdentity();
+  const viewTitle = useViewTitle("Dashboard");
   const role = (user && user.role) || "viewer";
   return (
     <header
@@ -70,7 +72,7 @@ export default function Header({ status }) {
             text-slate-100
           "
         >
-          Dashboard
+          {viewTitle}
         </h1>
       </div>
 

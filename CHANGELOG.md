@@ -191,6 +191,13 @@
   (MongoDB, embeddings, LLM, feature and case counts) and the start-up / boot banner
   are React, with the same markup and behaviour; the boot-status rules live in
   `src/lib/bootStatus.js`. `00-core.js` drops to about 450 lines.
+- **Navigation rebuilt in React; `00-core.js` removed (part of #257).** Switching
+  screens, the shared "where am I" state (project, feature, view, signed-in user), the
+  back bar and breadcrumbs, the sidebar entries and collapse toggle and the page title
+  are React (`src/app/navigation.js`, `src/app/navState.js`). The compat controller
+  `00-core.js` is removed; only `13-gap-analysis.js` remains, and gets `$`, `esc`,
+  `api` and the navigation state from React. Breadcrumbs use click handlers instead
+  of inline `onclick` attributes. No behaviour change.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access
