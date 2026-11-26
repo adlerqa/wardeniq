@@ -104,7 +104,10 @@ export function createModalFocusManager(doc = document) {
   const resolveOpener = (removed) => {
     let opener = doc.activeElement;
     for (const entry of [...removed].reverse()) {
-      if (opener && entry.modal.contains(opener)) {
+      if (
+        opener === doc.body ||
+        (opener && entry.modal.contains(opener))
+      ) {
         opener = entry.opener;
       }
     }

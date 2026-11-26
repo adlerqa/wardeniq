@@ -50,6 +50,13 @@ class FakeElement {
     this.doc.dispatch("focusin", { target: this, options });
   }
 
+  remove() {
+    this.isConnected = false;
+    if (this.contains(this.doc.activeElement)) {
+      this.doc.activeElement = this.doc.body;
+    }
+  }
+
   getClientRects() {
     if (this.hidden) return [];
     const modal = this.findModal();
@@ -105,7 +112,9 @@ class FakeDocument {
 
   querySelectorAll(selector) {
     if (selector === ".modal.show") {
-      return this.modals.filter((modal) => modal.classList.contains("show"));
+      return this.modals.filter(
+        (modal) => modal.isConnected !== false && modal.classList.contains("show"),
+      );
     }
     return [];
   }
@@ -243,6 +252,28 @@ test("replacing a modal preserves the original opener", () => {
   second.classList.remove("show");
   manager.sync();
   assert.equal(doc.activeElement, outerOpener);
+});
+
+test("replacing a detached modal restores focus to its saved opener", () => {
+  const doc = new FakeDocument();
+  const opener = new FakeElement(doc, { focusable: true });
+  const chooser = createModal(doc);
+  const nextModal = createModal(doc);
+  const manager = createModalFocusManager(doc);
+  manager.start();
+
+  opener.focus();
+  chooser.classList.add("show");
+  manager.sync();
+
+  chooser.remove();
+  nextModal.classList.add("show");
+  manager.sync();
+  assert.equal(doc.activeElement, nextModal.controls[0]);
+
+  nextModal.classList.remove("show");
+  manager.sync();
+  assert.equal(doc.activeElement, opener);
 });
 
 test("closing both stacked modals skips hidden dialog controls", () => {
