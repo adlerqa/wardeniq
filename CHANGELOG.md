@@ -67,7 +67,9 @@
   it does for generation. A call that runs out of time raises an error that names both settings and
   the hosted-provider option, and the API answers it with HTTP 504 and that message instead of a bare
   500; a failed job shows the same text. An invalid value is ignored with a warning that names the
-  right variable. Trade-offs: a larger limit means a hung embedding endpoint can hold a request for
+  right variable. In Docker, `docker-compose.app.yml` passes `EMBED_TIMEOUT_SECONDS` to the container
+  like `LLM_TIMEOUT_SECONDS` (found by a tester: the app never reads `.env` itself, so a variable the
+  compose file does not forward cannot be set there). Trade-offs: a larger limit means a hung embedding endpoint can hold a request for
   that long, and a machine whose embedding call is this slow will still be slow, as this fixes the
   failure, not the speed (part of #249).
 - **Assigning a PR to a feature on a private repository no longer saves empty coverage.**

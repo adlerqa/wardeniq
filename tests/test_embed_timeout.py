@@ -231,3 +231,82 @@ class TestAgainstARealSlowServer:
         # the advice in the docs and in the CPU notice: raise LLM_TIMEOUT_SECONDS
         monkeypatch.setattr(embeddings, "LLM_TIMEOUT_SECONDS", 5.0)
         assert Embedder(provider="ollama", model="m", ollama_url=slow_ollama).embed("text") == [0.1, 0.2, 0.3]
+
+
+# ------------------------------------------------------------------ the Docker setup
+class TestDockerComposeForwardsTheSettings:
+    """The app never reads .env itself: Docker Compose passes variables to the container
+    one by one. A setting the compose file does not forward cannot be set in Docker at all
+    (a tester found EMBED_TIMEOUT_SECONDS did nothing there, and the fix only worked through
+    the LLM_TIMEOUT_SECONDS fallback)."""
+
+    COMPOSE = os.path.join(os.path.dirname(__file__), "..", "docker-compose.app.yml")
+
+    @pytest.mark.parametrize("name", ["LLM_TIMEOUT_SECONDS", "EMBED_TIMEOUT_SECONDS"])
+    def test_the_variable_is_passed_to_the_container(self, name):
+        text = open(self.COMPOSE, encoding="utf-8").read()
+        assert f"- {name}=${{{name}:-}}" in text
+
+    def test_a_blank_value_means_unset(self):
+        # compose passes "" when .env leaves it blank; that must read as "not set"
+        assert _timeout_from_env("", "EMBED_TIMEOUT_SECONDS") is None
+
+
+# ------------------------------------------------------------------ Bedrock is not affected
+class TestBedrockKeepsItsOwnTimeout:
+    def test_bedrock_embeddings_do_not_use_the_http_limit(self, monkeypatch):
+        def boom():
+            raise AssertionError("Bedrock must not read the embedding HTTP timeout")
+
+        class Body:
+            def read(self):
+                return json.dumps({"embedding": [0.5, 0.25]}).encode()
+
+        class Client:
+            def invoke_model(self, **kwargs):
+                return {"body": Body()}
+
+        monkeypatch.setattr(embeddings, "embed_timeout", boom)
+        monkeypatch.setattr(embeddings.Embedder, "_bedrock_client", lambda self: Client())
+        monkeypatch.setattr(embeddings.httpx, "post", lambda *a, **k: pytest.fail("Bedrock must not use httpx"))
+        vector = Embedder(provider="bedrock", model="amazon.titan-embed-text-v2:0", region="us-east-1").embed("x")
+        assert vector == [0.5, 0.25]
+
+
+# ------------------------------------------------------------------ through the real routes
+class TestThroughTheRealRoutes:
+    """The 504 is produced by the app's own exception handler, so drive actual requests
+    through the real FastAPI app: the auth middleware, the route, the embed call."""
+
+    @pytest.fixture()
+    def api(self, monkeypatch):
+        import auth as auth_mod
+        import main
+        from api.routes import features as features_routes
+        from core import state
+        from fastapi.testclient import TestClient
+
+        user = {"id": "u1", "email": "u1@example.com", "role": "admin", "active": True,
+                "session_version": 0, "all_projects": True}
+        monkeypatch.setattr(main.store, "get_user", lambda uid: user)
+        monkeypatch.setattr(features_routes, "_generate_feature_summary", lambda name, raw: name)
+
+        def too_slow(*args, **kwargs):
+            raise EmbeddingTimeout("The embedding model 'nomic-embed-text' did not answer within 120 s. "
+                                   "raise EMBED_TIMEOUT_SECONDS")
+
+        monkeypatch.setattr(state.embedder, "embed", too_slow)
+        client = TestClient(main.app, raise_server_exceptions=False)
+        client.cookies.set(auth_mod.SESSION_COOKIE, auth_mod.sign_session("u1", 0))
+        return client
+
+    def test_creating_a_feature_answers_504_with_the_message_not_a_bare_500(self, api):
+        response = api.post("/api/features", data={"name": "Reset", "project_id": "p1",
+                                                    "text": "A user can reset a password by email."})
+        assert response.status_code == 504
+        assert "EMBED_TIMEOUT_SECONDS" in response.json()["detail"]
+
+    def test_the_retrieve_route_answers_the_same_way(self, api):
+        response = api.post("/api/retrieve", json={"text": "password reset"})
+        assert response.status_code == 504
+        assert "EMBED_TIMEOUT_SECONDS" in response.json()["detail"]
