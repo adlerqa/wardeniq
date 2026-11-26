@@ -70,6 +70,19 @@
   right variable. Trade-offs: a larger limit means a hung embedding endpoint can hold a request for
   that long, and a machine whose embedding call is this slow will still be slow, as this fixes the
   failure, not the speed (part of #249).
+- **Assigning a PR to a feature on a private repository no longer saves empty coverage.**
+  `POST /api/prs/{pr_id}/assign` fetched the PR's changed files with the instance-wide
+  `GITHUB_TOKEN` instead of the project's own GitHub PAT, and swallowed the failure. On
+  the normal setup (PAT stored per project, `GITHUB_TOKEN` unset) the fetch was refused,
+  the file list became empty and the job ended as `succeeded` in about a second with no
+  covered cases. It now fetches the files the same way the manual run does (project PAT,
+  GitHub or GitLab), and when the fetch fails the job is `failed` with the reason and the
+  failure is logged, so no empty result is stored.
+- Repository connections now infer GitHub/GitLab from HTTPS and scp-style SSH
+  URL hosts, and project settings switch the provider and PAT panel accordingly.
+  Detection respects `GITLAB_BASE_URL` and accepts `www.github.com`; bare paths
+  retain the selected provider. GitLab URL parsing preserves nested namespaces
+  and removes browser UI paths after `/-/` (provider detection part of #185).
 - **A test from another feature is no longer carried over unless this feature's documents are about
   it.** A real run on a product-search feature (Elasticsearch, brand filters, sort, suggestions), in a
   project whose Login feature already had Google-login tests, attached nine of those login tests to the

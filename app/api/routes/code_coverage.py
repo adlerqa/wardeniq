@@ -28,7 +28,7 @@ from pydantic import BaseModel, Field
 import automation as auto_cov
 import coverage as cov
 
-from core.deps import _ext_error, _implementation_repo_docs, _is_app_repo, _oid, gh_client
+from core.deps import _ext_error, _implementation_repo_docs, _is_app_repo, _oid
 from core.logging_setup import get_logger
 from core.security import (
     _require_code_coverage_run_project, _require_commit_analysis_project, _require_pr_project,
@@ -589,20 +589,25 @@ def assign_pr(pr_id: str, body: AssignPRIn, request: Request):
     pdoc = {**p, "id": pr_id}
 
     def _bg():
-        files = []
-        if repo:
+        # The fetch runs INSIDE the tracked job: a failure then marks the job `failed` with
+        # the reason, instead of coverage being saved from an empty file list.
+        def _compute():
+            if not repo:
+                raise RuntimeError("the repository of this PR was not found")
             try:
-                provider = (repo.get("git_provider") or "github").lower()
-                if provider == "gitlab":
-                    _, files, _ = _fetch_pr_and_files({**repo, "id": str(repo["_id"])}, p["number"])
-                else:
-                    files = gh_client().get_pull_files(repo["owner"], repo["name"], p["number"])
-            except Exception:  # noqa: BLE001
-                files = []
+                # Same provider-aware fetch as the manual run: it uses the project's own PAT
+                # (GitHub or GitLab), not the instance-wide GITHUB_TOKEN env var.
+                _, files, _ = _fetch_pr_and_files({**repo, "id": str(repo["_id"])}, p["number"])
+            except Exception as e:  # noqa: BLE001
+                log.warning("[assign] could not fetch the changed files of PR %s (#%s): %s",
+                            pr_id, p.get("number"), e)
+                raise RuntimeError(f"could not fetch the changed files of PR #{p.get('number')}: {e}") from e
+            return _pr_coverage(pr_id, pdoc, files, body.feature_id)
+
         try:
             run_tracked(
                 "pr_coverage",
-                lambda: _pr_coverage(pr_id, pdoc, files, body.feature_id),
+                _compute,
                 label=f"PR coverage · assign #{p.get('number')}",
                 project_id=(repo or {}).get("project_id"),
                 feature_id=body.feature_id)
