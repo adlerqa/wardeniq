@@ -1,10 +1,10 @@
 /** Shared jlogmodal overlay. */
 export default function JobLogModal() {
   return (
-    <div className="modal" id="jlogmodal">
+    <div className="modal" id="jlogmodal" role="dialog" aria-modal="true" aria-labelledby="jlm-heading">
       <div className="box" style={{ maxWidth: "700px", width: "90%" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-          <h2 style={{ margin: "0", fontSize: "16px" }}>Job execution logs</h2>
+          <h2 id="jlm-heading" style={{ margin: "0", fontSize: "16px" }}>Job execution logs</h2>
           <button className="ghost" id="jlm-close">close</button>
         </div>
         <div id="jlm-meta" className="muted" style={{ fontSize: "12px", marginBottom: "8px" }}></div>

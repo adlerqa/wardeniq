@@ -34,7 +34,7 @@ export default function EmbeddingSettingsCard() {
         </ul>
       </div>
       <div className="cfg-field">
-        <label>
+        <label htmlFor="cfg-embed-provider">
           Provider
           <span className="fi" tabIndex="0" data-tip="Ollama — free local embeddings (no key). OpenAI / Gemini / Voyage — hosted (need an API key). AWS Bedrock — Titan or Cohere embeddings; uses an AWS region plus an IAM role or access keys.">i</span>
         </label>
@@ -48,7 +48,7 @@ export default function EmbeddingSettingsCard() {
         </select>
       </div>
       <div className="cfg-field">
-        <label>
+        <label htmlFor="cfg-embed-model-select">
           Model
           <span className="fi" tabIndex="0" data-tip="The embedding model. Ollama: nomic-embed-text. OpenAI: text-embedding-3-small. AWS Bedrock: amazon.titan-embed-text-v2:0 or cohere.embed-english-v3.">i</span>
         </label>

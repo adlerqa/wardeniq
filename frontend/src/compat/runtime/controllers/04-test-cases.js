@@ -411,8 +411,8 @@ function renderSteps() {
       (s, i) => `
     <div class="steprow" draggable="true" data-i="${i}">
       <div class="drag-handle">⋮⋮</div>
-      <textarea draggable="false" data-i="${i}" data-f="action" placeholder="action">${esc(s.action)}</textarea>
-      <textarea draggable="false" data-i="${i}" data-f="expected" placeholder="expected">${esc(s.expected)}</textarea>
+      <textarea draggable="false" data-i="${i}" data-f="action" aria-label="Step ${i + 1} action" placeholder="action">${esc(s.action)}</textarea>
+      <textarea draggable="false" data-i="${i}" data-f="expected" aria-label="Step ${i + 1} expected result" placeholder="expected">${esc(s.expected)}</textarea>
       <div class="ctrl"><button class="iconbtn" title="Remove step from this testcase" onclick="rmStep(${i})">×</button></div>
       ${s.usage_count > 1 ? `<div class="editor-shared-note">This exact step is shared by ${s.usage_count} testcases. Editing its text updates all of them; removing it only unlinks it from this testcase.</div>` : ""}
     </div>`,

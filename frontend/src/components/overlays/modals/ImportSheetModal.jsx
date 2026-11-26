@@ -1,7 +1,7 @@
 /** Shared imp-modal overlay. */
 export default function ImportSheetModal() {
   return (
-    <div className="modal sheet-modal" id="imp-modal">
+    <div className="modal sheet-modal" id="imp-modal" role="dialog" aria-modal="true" aria-labelledby="imp-heading">
       <div className="box">
         <div className="editor-head">
           <div className="sheet-head-left">
@@ -27,7 +27,7 @@ export default function ImportSheetModal() {
           </div>
           <div className="sheet-upload-panel">
             <div className="sheet-file-row">
-              <input type="file" id="imp-file" accept=".csv,.xlsx,.xlsm,.tsv" />
+              <input type="file" id="imp-file" aria-label="Spreadsheet file to import" accept=".csv,.xlsx,.xlsm,.tsv" />
               <button className="ghost sheet-file-btn" id="imp-file-pick" type="button">Choose file</button>
               <button className="ghost" id="imp-file-clear" type="button">Clear</button>
               <span className="sheet-selected" id="imp-selected">Selected: none</span>

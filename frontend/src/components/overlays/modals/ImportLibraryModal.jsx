@@ -1,13 +1,13 @@
 /** Shared implib-modal overlay. */
 export default function ImportLibraryModal() {
   return (
-    <div className="modal sheet-modal" id="implib-modal">
+    <div className="modal sheet-modal" id="implib-modal" role="dialog" aria-modal="true" aria-labelledby="implib-heading">
       <div className="box">
         <div className="editor-head">
           <div className="sheet-head-left">
             <div className="sheet-icon">DOC</div>
             <div className="sheet-title">
-              <h2>Reuse imported sheets</h2>
+              <h2 id="implib-heading">Reuse imported sheets</h2>
               <div className="muted">Expand an imported sheet and add rows into this feature. Existing rows are reused automatically, so duplicates stay out of the generated list.</div>
             </div>
           </div>

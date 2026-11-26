@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import TestCaseEditorModal from "./modals/TestCaseEditorModal.jsx";
 import CaseConfirmationModal from "./modals/CaseConfirmationModal.jsx";
 import ConfirmationModal from "./modals/ConfirmationModal.jsx";
@@ -10,8 +11,14 @@ import JobLogModal from "./modals/JobLogModal.jsx";
 import ToastHost from "./modals/ToastHost.jsx";
 import ImportSheetModal from "./modals/ImportSheetModal.jsx";
 import ImportLibraryModal from "./modals/ImportLibraryModal.jsx";
+import { installModalFocusManager } from "./modalFocus.js";
 
 export default function AppOverlays() {
+  useEffect(() => {
+    const manager = installModalFocusManager();
+    return () => manager.destroy();
+  }, []);
+
   return (
     <>
       <TestCaseEditorModal />

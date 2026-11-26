@@ -76,14 +76,14 @@ export default function ProjectDetailPanel() {
             </div>
             <div style={{ width: "115px" }}>
               <label>Type</label>
-              <select id="repo-type">
+              <select id="repo-type" aria-label="repo-type">
                 <option value="app">App (with webhook)</option>
                 <option value="test">Test (no webhook)</option>
               </select>
             </div>
             <div style={{ width: "135px" }}>
               <label>Kind</label>
-              <select id="repo-kind">
+              <select id="repo-kind" aria-label="repo-kind">
                 <option value="BE">Backend</option>
                 <option value="FE">Frontend</option>
                 <option value="test">Test</option>

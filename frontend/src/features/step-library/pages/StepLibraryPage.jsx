@@ -164,6 +164,7 @@ export default function StepLibraryPage() {
                   focus:!ring-2
                   focus:!ring-cyan-500/10
                 "
+                aria-label="Filter by type"
               >
                 <option value="">All types</option>
                 <option value="Given">Given</option>
@@ -198,6 +199,7 @@ export default function StepLibraryPage() {
                   focus:!ring-2
                   focus:!ring-cyan-500/10
                 "
+                aria-label="Filter by Usage"
               >
                 <option value="">All usage</option>
                 <option value="used">Used steps</option>

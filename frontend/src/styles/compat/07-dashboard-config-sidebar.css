@@ -675,6 +675,7 @@ button:disabled {
 
 /* Confirmation dialogs must sit ABOVE content modals (e.g. the reuse-sheets modal),
    otherwise a confirm triggered from inside a modal renders behind it. */
-#confirm-modal {
+#confirm-modal,
+#case-confirm {
   z-index: 80;
 }

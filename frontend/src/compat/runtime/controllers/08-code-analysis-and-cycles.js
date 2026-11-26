@@ -136,7 +136,7 @@ async function loadUnmappedPRs() {
           p,
         ) => `<div class="stepitem" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer"><b>#${p.number}</b></a> ${esc(p.title || "")} <span class="muted">· ${esc(p.repo || "")}</span>
-      <select class="asg-feat" data-pr="${p.id}" style="width:auto;flex:0 0 220px">${opts}</select>
+      <select class="asg-feat" data-pr="${p.id}" aria-label="Feature for pull request #${escAttr(p.number)}" style="width:auto;flex:0 0 220px">${opts}</select>
       <button class="go asg-btn" data-pr="${p.id}" style="flex:0 0 auto;padding:5px 12px">Assign & cover</button></div>`,
       )
       .join("");
@@ -684,7 +684,7 @@ function renderCycleDetail(c) {
           ${steps}
         </div>
         <div class="cycle-exec-priority muted">${it.priority ? prioLabel(it.priority) : ""}</div>
-        <div class="cycle-exec-status"><select onchange="startCycleItemStatusEdit('${c.id}','${itemId}',this.value)" style="width:100%">${cycleStatusOptions(status)}</select></div>
+        <div class="cycle-exec-status"><select aria-label="Execution status for ${escAttr(it.title || it.display_id || "test case")}" onchange="startCycleItemStatusEdit('${c.id}','${itemId}',this.value)" style="width:100%">${cycleStatusOptions(status)}</select></div>
       </div>
       ${noteSummary}
       ${editor}
@@ -764,12 +764,13 @@ window.openCreateCaseInCycle = async (cid) => {
     proceed(feats[0].id);
     return;
   }
-  const ov = document.createElement("div");
+  const ov = createRuntimeModal("ncf-title");
   ov.style.cssText =
     "position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9999";
   ov.innerHTML = `<div style="background:#0d151f;border:1px solid var(--line);border-radius:14px;max-width:460px;width:90%;padding:18px">
-    <div style="font-weight:700;font-size:15px;margin-bottom:6px">New test case → which feature?</div>
+    <div id="ncf-title" style="font-weight:700;font-size:15px;margin-bottom:6px">New test case → which feature?</div>
     <div class="muted" style="font-size:12px;margin-bottom:10px">Every test case belongs to a feature. It'll also be added to this cycle and tagged <code>from-test-cycle</code>.</div>
+    <label for="ncf-feat">Feature</label>
     <select id="ncf-feat" style="width:100%">${feats.map((f) => `<option value="${f.id}">${esc(f.name)}</option>`).join("")}</select>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="ghost" id="ncf-cancel">Cancel</button><button class="go" id="ncf-go">Continue</button></div></div>`;
   document.body.appendChild(ov);
@@ -839,11 +840,11 @@ window.editCycleDescription = async (cid) => {
   }
 };
 window.openAddCaseChooser = (cid) => {
-  const ov = document.createElement("div");
+  const ov = createRuntimeModal("acc-title");
   ov.style.cssText =
     "position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9999";
   ov.innerHTML = `<div style="background:#0d151f;border:1px solid var(--line);border-radius:14px;max-width:420px;width:88%;padding:18px">
-    <div style="font-weight:700;font-size:15px;margin-bottom:12px">Add test cases</div>
+    <div id="acc-title" style="font-weight:700;font-size:15px;margin-bottom:12px">Add test cases</div>
     <button class="go" id="acc-existing" style="width:100%;margin-bottom:8px;padding:9px">From existing project cases</button>
     <button class="ghost" id="acc-new" style="width:100%;padding:9px">Create a new test case</button>
     <div style="text-align:right;margin-top:12px"><button class="ghost" id="acc-cancel">Cancel</button></div></div>`;
@@ -886,13 +887,13 @@ window.openAddCasesToCycle = async (cid) => {
     toast("All project test cases are already in this cycle");
     return;
   }
-  const ov = document.createElement("div");
+  const ov = createRuntimeModal("addcase-title");
   ov.style.cssText =
     "position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9999";
   ov.innerHTML = `<div style="background:#0d151f;border:1px solid var(--line);border-radius:14px;max-width:660px;width:92%;max-height:80vh;display:flex;flex-direction:column;padding:18px">
-    <div style="font-weight:700;font-size:15px;margin-bottom:4px">Add existing test cases</div>
+    <div id="addcase-title" style="font-weight:700;font-size:15px;margin-bottom:4px">Add existing test cases</div>
     <div class="muted" style="font-size:12px;margin-bottom:10px">Pick cases from this project to add to the cycle.</div>
-    <input id="addcase-q" placeholder="Filter by title or ID…" style="margin-bottom:10px"/>
+    <input id="addcase-q" aria-label="Filter test cases by title or ID" placeholder="Filter by title or ID…" style="margin-bottom:10px"/>
     <div id="addcase-list" style="overflow:auto;flex:1;border:1px solid var(--line);border-radius:8px;padding:8px"></div>
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px"><button class="ghost" id="addcase-cancel">Cancel</button><button class="go" id="addcase-add">Add selected</button></div></div>`;
   document.body.appendChild(ov);

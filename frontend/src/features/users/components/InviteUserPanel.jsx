@@ -14,15 +14,15 @@ export default function InviteUserPanel() {
       </div>
       <div className="row" style={{ alignItems: "flex-end" }}>
         <div style={{ flex: "2" }}>
-          <label>Email</label>
+          <label htmlFor="u-email">Email</label>
           <input id="u-email" type="email" placeholder="teammate@company.com" />
         </div>
         <div>
-          <label>Name</label>
+          <label htmlFor="u-name">Name</label>
           <input id="u-name" placeholder="optional" />
         </div>
         <div style={{ flex: "0 0 140px" }}>
-          <label>Role</label>
+          <label htmlFor="u-role">Role</label>
           <select id="u-role">
             <option value="viewer">Viewer</option>
             <option value="editor">Editor</option>
