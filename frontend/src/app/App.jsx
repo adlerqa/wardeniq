@@ -5,6 +5,7 @@ import AppOverlays from "../components/overlays/AppOverlays.jsx";
 import RuntimeBridge from "../compat/runtime/RuntimeBridge.jsx";
 import AppErrorBoundary from "../components/feedback/AppErrorBoundary.jsx";
 import { useJobGlobals } from "../lib/useJobGlobals.js";
+import { useBoot } from "./useBoot.js";
 
 /**
  * Root composition only. Business screens live under features/, permanent
@@ -13,13 +14,14 @@ import { useJobGlobals } from "../lib/useJobGlobals.js";
  */
 export default function App() {
   useJobGlobals();
+  const boot = useBoot();
   return (
     <AppErrorBoundary>
       <LoginGate />
       <InviteGate />
       <ApplicationFrame />
       <AppOverlays />
-      <RuntimeBridge />
+      <RuntimeBridge onReady={boot} />
     </AppErrorBoundary>
   );
 }

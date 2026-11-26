@@ -59,7 +59,7 @@ test("injects all eager controller sources in filename order into one classic sc
     source.matchAll(/^import \w+ from "\.\/controllers\/([^"]+)\?raw";$/gm),
     (match) => match[1],
   );
-  assert.equal(importedFiles.length, 3);
+  assert.equal(importedFiles.length, 2);
   assert.deepEqual(importedFiles, controllerFiles);
   const h = harness();
 

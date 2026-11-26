@@ -127,7 +127,7 @@ const EMPTY = { current: "", next: "", confirm: "" };
  * Change-password dialog for the local admin account (was 10-auth.js
  * openChangePasswordModal). Registers window.openChangePasswordModal(mandatory),
  * which resolves true once a new password is saved and false when cancelled.
- * Mandatory mode (first sign-in on the shipped admin123 password, 16-boot.js
+ * Mandatory mode (first sign-in on the shipped admin123 password, app/boot.js
  * startApp) hides Cancel / × and only resolves after a save.
  */
 export default function PasswordModal() {

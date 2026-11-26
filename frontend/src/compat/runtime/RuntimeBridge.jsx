@@ -2,11 +2,10 @@ import { useEffect, useRef, useState } from "react";
 
 import chunk00 from "./controllers/00-core.js?raw";
 import chunk13 from "./controllers/13-gap-analysis.js?raw";
-import chunk16 from "./controllers/16-boot.js?raw";
 
 const runtimeChunks = [
   chunk00,
-  chunk13, chunk16,
+  chunk13,
 ];
 
 let runtimeLoadPromise;
@@ -38,10 +37,12 @@ function loadRuntime() {
  * Compatibility bridge for behavior that has not yet been migrated to React
  * state/hooks. Source is maintained in small domain controllers, then combined
  * in original order at runtime so the existing shared global contract remains
- * intact.
+ * intact. `onReady` runs after a successful load (App starts up from it).
  */
-export default function RuntimeBridge() {
+export default function RuntimeBridge({ onReady }) {
   const [attempt, setAttempt] = useState(0);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   const [failed, setFailed] = useState(false);
   const [pending, setPending] = useState(true);
   const retryPending = useRef(true);
@@ -54,6 +55,8 @@ export default function RuntimeBridge() {
         retryPending.current = false;
         setFailed(false);
         setPending(false);
+        // The app's start-up needs the runtime's helpers (navigateTo, refreshStatus, …).
+        if (onReadyRef.current) onReadyRef.current();
       },
       (error) => {
         if (!active) return;

@@ -172,6 +172,11 @@
   cost formats now live in `src/lib/jobs.js` and `src/lib/format.js`; opening a
   project's feature list is handled by the Features screen. The compat controller
   `03-features-and-usage.js` is removed. No behaviour change.
+- **Start-up moved to React (part of #257).** Invitation links, the sign-in check, the
+  first-run redirect to Configuration, restoring the last view, the periodic status and
+  identity refresh, and the autofill hardening on every field now live in
+  `src/app/boot.js` and run once the compatibility runtime has loaded. The compat
+  controller `16-boot.js` is removed. No behaviour change.
 - **Clearer notifications.** Toasts now have a warning style for an action that worked
   but not completely. It is used when a user is created but the invitation email could
   not be sent (on invite and on resend), and when a project is created but its access

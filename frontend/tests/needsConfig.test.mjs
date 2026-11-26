@@ -1,24 +1,11 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import vm from "node:vm";
+import { needsConfig } from "../src/app/boot.js";
 
 // needsConfig() decides whether boot bounces the admin to Configuration. Run it
 // with a stubbed api() so the redirect only happens when the model is unreachable.
-const src = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), "../src/compat/runtime/controllers/16-boot.js"),
-  "utf8",
-);
-const start = src.indexOf("async function needsConfig");
-const end = src.indexOf("async function startApp");
-assert.ok(start > 0 && end > start, "needsConfig should exist in 16-boot.js");
-
 function harness(api, me) {
-  const context = vm.createContext({ api, ME: me });
-  vm.runInContext(src.slice(start, end), context);
-  return () => context.needsConfig();
+  return () => needsConfig(me, api);
 }
 
 test("a configured instance never probes or redirects", async () => {

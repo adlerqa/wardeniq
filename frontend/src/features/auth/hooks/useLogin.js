@@ -20,7 +20,7 @@ const callWindow = (name, ...args) => (typeof window[name] === "function" ? wind
  * Sign-in screen state (was the login half of compat/runtime/controllers/10-auth.js).
  *
  * Registers window.showLogin({ msg }) — used by api() on a 401, the bridge,
- * logout and the invite-link boot (16-boot.js). After a successful sign-in it
+ * logout and the invite-link boot (app/boot.js). After a successful sign-in it
  * hands off to the compat runtime: applyRole, maybeShowInvite, startApp.
  *
  * The overlay's `hidden` attribute is set directly (not as React state) because
