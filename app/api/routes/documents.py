@@ -50,7 +50,11 @@ async def upload_document_endpoint(
     if not content:
         raise HTTPException(400, detail="File is empty")
     if not s3_storage.is_configured():
-        raise HTTPException(400, detail="AWS S3 document storage is not configured or enabled in Settings")
+        raise HTTPException(400, detail=(
+            "Document storage is not configured. Set up AWS S3 or an S3-compatible "
+            "store (MinIO, LocalStack, R2 — via the S3 endpoint field) under "
+            "Configuration → AWS S3 Document Storage, or the AWS_S3_* env vars."
+        ))
     try:
         meta = s3_storage.upload_document(
             filename=file.filename,
@@ -90,6 +94,15 @@ def list_documents_endpoint(request: Request, project_id: str = "", feature_id: 
             except Exception:
                 d["presigned_url"] = None
     return {"documents": docs, "s3_enabled": is_s3}
+
+
+# Must stay above /api/documents/{doc_id} so it isn't captured as a doc id.
+@router.get("/api/documents/storage-status")
+def documents_storage_status():
+    """Lets any signed-in user's UI know whether original files will be kept
+    (GET /api/settings is admin-only)."""
+    from s3_storage import s3_storage
+    return {"configured": s3_storage.is_configured()}
 
 
 @router.get("/api/documents/{doc_id}")

@@ -164,7 +164,7 @@ def test_get_and_put_settings_s3(monkeypatch):
 def test_post_s3_test_endpoint(monkeypatch):
     cookie = _admin_cookie()
 
-    def mock_test_connection(bucket=None, region=None, access_key_id=None, secret_access_key=None):
+    def mock_test_connection(bucket=None, region=None, access_key_id=None, secret_access_key=None, **_kw):
         if bucket == "valid-bucket":
             return {"ok": True, "message": "Successfully connected", "bucket": bucket, "region": region}
         return {"ok": False, "error": "Bucket does not exist"}

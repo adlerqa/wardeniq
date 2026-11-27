@@ -30,6 +30,10 @@ export default function FeatureCreatePanel() {
           Upload documents
           <span className="muted" style={{ fontWeight: "400" }}>(PRD, HLD, LLD, architecture — PDF, DOCX, MD, TXT · you can select several)</span>
         </label>
+        <div className="muted" id="f-storage-note" style={{ fontSize: "11px", marginBottom: "4px", display: "none" }}>
+          Document storage isn&apos;t configured: files are parsed into features and test cases, but the originals aren&apos;t kept.
+          Set up AWS S3 or an S3-compatible store (e.g. MinIO) under Configuration to store them.
+        </div>
         <input type="file" id="f-file" accept=".pdf,.docx,.md,.txt,.markdown" multiple />
         <div className="muted" id="f-filelist" style={{ fontSize: "11px" }}></div>
         <div className="muted" style={{ fontSize: "11px", marginTop: "4px" }}>Links inside PDFs (and their sub-links) are fetched automatically — public web only.</div>

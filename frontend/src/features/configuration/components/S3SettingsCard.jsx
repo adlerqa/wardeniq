@@ -9,7 +9,25 @@ export default function S3SettingsCard() {
         </div>
         <span className="cfg-badge opt">Optional</span>
       </div>
-      <div className="sub">Persist uploaded requirement documents (PDFs, DOCX, CSVs, etc.) directly into an Amazon S3 Bucket in AWS. Leave credentials blank to use standard AWS environment variables or instance IAM roles.</div>
+      <div className="sub">Persist the original uploaded requirement documents (PDFs, DOCX, CSVs, etc.) in Amazon S3 or any S3-compatible store (MinIO, LocalStack, Garage, Cloudflare R2). Without it, uploads are still parsed into features and test cases, but the original files are not kept. Leave credentials blank to use standard AWS environment variables or instance IAM roles.</div>
+      <div className="cfg-row">
+        <div className="cfg-field" style={{ flex: "2" }}>
+          <label>
+            S3 Endpoint (optional)
+            <span className="fi" tabIndex="0" data-tip="Leave blank for AWS S3. For self-hosted / S3-compatible stores enter the endpoint URL, e.g. http://localhost:9000 for MinIO or https://<account>.r2.cloudflarestorage.com for R2.">i</span>
+          </label>
+          <input id="cfg-s3-endpoint" placeholder="http://localhost:9000 (blank = AWS S3)" />
+        </div>
+        <div className="cfg-field" style={{ flex: "0 0 auto", alignSelf: "flex-end" }}>
+          <div style={{ display: "flex", gap: "14px", alignItems: "center", padding: "8px 0" }}>
+            <label style={{ display: "flex", gap: "5px", alignItems: "center", fontSize: "12px", margin: "0", color: "var(--muted)" }}>
+              <input type="checkbox" id="cfg-s3-path-style" style={{ width: "auto" }} />
+              Path-style addressing
+              <span className="fi" tabIndex="0" data-tip="Use bucket-in-path URLs (endpoint/bucket/key). Required by MinIO, LocalStack and Garage. Defaults to on when an endpoint is set.">i</span>
+            </label>
+          </div>
+        </div>
+      </div>
       <div className="cfg-row">
         <div className="cfg-field" style={{ flex: "2" }}>
           <label>
